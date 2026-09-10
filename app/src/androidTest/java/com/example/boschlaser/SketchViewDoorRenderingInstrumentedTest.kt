@@ -151,6 +151,55 @@ class SketchViewDoorRenderingInstrumentedTest {
         assertEquals(Color.WHITE, bitmap.getPixel(250, 150))
     }
 
+    @Test
+    fun doorHitAreaFollowsItsVisibleSymbolInsteadOfLargeCenterCircle() {
+        val view = newView()
+        val wall = SketchWall(id = "wall", start = SketchPoint(0f, 0f), end = SketchPoint(3000f, 0f), thickness = 240f)
+        val door = SketchOpening(
+            id = "door",
+            type = SketchOpeningType.DOOR,
+            wallId = wall.id,
+            position = .5f,
+            width = 900f,
+        )
+
+        assertTrue(openingSymbolHit(view, SketchPoint(1050f, 450f), door, wall, 30f))
+        assertEquals(false, openingSymbolHit(view, SketchPoint(1500f, -500f), door, wall, 30f))
+    }
+
+    @Test
+    fun windowHitAreaFollowsWindowAndClosureLines() {
+        val view = newView()
+        val wall = SketchWall(id = "wall", start = SketchPoint(0f, 0f), end = SketchPoint(3000f, 0f), thickness = 240f)
+        val window = SketchOpening(
+            id = "window",
+            type = SketchOpeningType.WINDOW,
+            wallId = wall.id,
+            position = .5f,
+            width = 1200f,
+        )
+
+        assertTrue(openingSymbolHit(view, SketchPoint(1500f, 40f), window, wall, 30f))
+        assertEquals(false, openingSymbolHit(view, SketchPoint(1500f, 500f), window, wall, 30f))
+    }
+
+    private fun openingSymbolHit(
+        view: SketchView,
+        point: SketchPoint,
+        opening: SketchOpening,
+        wall: SketchWall,
+        tolerance: Float,
+    ): Boolean {
+        val method = SketchView::class.java.getDeclaredMethod(
+            "isPointNearOpeningSymbol",
+            SketchPoint::class.java,
+            SketchOpening::class.java,
+            SketchWall::class.java,
+            Float::class.javaPrimitiveType,
+        ).apply { isAccessible = true }
+        return method.invoke(view, point, opening, wall, tolerance) as Boolean
+    }
+
     private fun newView(): SketchView {
         if (Looper.myLooper() == null) Looper.prepare()
         return SketchView(InstrumentationRegistry.getInstrumentation().targetContext)

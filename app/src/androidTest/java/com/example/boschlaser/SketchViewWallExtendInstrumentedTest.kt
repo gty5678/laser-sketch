@@ -30,14 +30,44 @@ class SketchViewWallExtendInstrumentedTest {
     }
 
     @Test
-    fun extendNeverTrimsWhenFirstWallAlreadyCrossesTarget() {
+    fun crossingWallsTrimOnlyFirstWallAndFirstPickChoosesRetainedSide() {
         val view = newView()
         val first = SketchWall(id = "first", start = SketchPoint(0f, 0f), end = SketchPoint(200f, 0f))
+        val target = SketchWall(id = "target", start = SketchPoint(100f, -50f), end = SketchPoint(100f, 50f))
+        view.restoreState(SketchState(walls = listOf(first, target)))
+
+        assertEquals(
+            WallExtendResult.SUCCESS,
+            view.extendWallToWall(first.id, target.id, SketchPoint(10f, 0f)),
+        )
+        var walls = view.snapshotState().walls.associateBy { it.id }
+        assertPointEquals(first.start, walls.getValue(first.id).start)
+        assertPointEquals(SketchPoint(100f, 0f), walls.getValue(first.id).end)
+        assertEquals(target, walls.getValue(target.id))
+
+        view.restoreState(SketchState(walls = listOf(first, target)))
+        assertEquals(
+            WallExtendResult.SUCCESS,
+            view.extendWallToWall(first.id, target.id, SketchPoint(190f, 0f)),
+        )
+        walls = view.snapshotState().walls.associateBy { it.id }
+        assertPointEquals(SketchPoint(100f, 0f), walls.getValue(first.id).start)
+        assertPointEquals(first.end, walls.getValue(first.id).end)
+        assertEquals(target, walls.getValue(target.id))
+    }
+
+    @Test
+    fun wallWhoseEndpointAlreadyTouchesTargetIsNotChanged() {
+        val view = newView()
+        val first = SketchWall(id = "first", start = SketchPoint(0f, 0f), end = SketchPoint(100f, 0f))
         val target = SketchWall(id = "target", start = SketchPoint(100f, -50f), end = SketchPoint(100f, 50f))
         val original = SketchState(walls = listOf(first, target))
         view.restoreState(original)
 
-        assertEquals(WallExtendResult.ALREADY_REACHES, view.extendWallToWall(first.id, target.id))
+        assertEquals(
+            WallExtendResult.ALREADY_REACHES,
+            view.extendWallToWall(first.id, target.id, SketchPoint(10f, 0f)),
+        )
         assertEquals(original, view.snapshotState())
     }
 

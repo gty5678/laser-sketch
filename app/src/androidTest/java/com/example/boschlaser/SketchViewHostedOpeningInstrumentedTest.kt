@@ -102,6 +102,22 @@ class SketchViewHostedOpeningInstrumentedTest {
         assertEquals(original, view.snapshotState())
     }
 
+    @Test
+    fun extendTrimThatWouldRemoveOpeningIsRejectedAndTargetStaysUnchanged() {
+        val view = newView()
+        val first = SketchWall(id = "first", start = SketchPoint(0f, 0f), end = SketchPoint(2000f, 0f))
+        val target = SketchWall(id = "target", start = SketchPoint(1000f, -500f), end = SketchPoint(1000f, 500f))
+        val opening = opening(wallId = first.id, position = .15f)
+        val original = SketchState(walls = listOf(first, target), openings = listOf(opening))
+        view.restoreState(original)
+
+        assertEquals(
+            WallExtendResult.OPENING_CONFLICT,
+            view.extendWallToWall(first.id, target.id, SketchPoint(1900f, 0f)),
+        )
+        assertEquals(original, view.snapshotState())
+    }
+
     private fun viewWithOpening(): SketchView = newView().also { view ->
         val wall = SketchWall(id = "wall", start = SketchPoint(0f, 0f), end = SketchPoint(2000f, 0f))
         view.restoreState(SketchState(walls = listOf(wall), openings = listOf(opening(wall.id))))

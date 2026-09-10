@@ -284,7 +284,11 @@ class SketchView @JvmOverloads constructor(
         return WallJoinResult.SUCCESS
     }
 
-    fun extendWallToWall(firstWallId: String, targetWallId: String): WallExtendResult {
+    fun extendWallToWall(
+        firstWallId: String,
+        targetWallId: String,
+        firstPickPoint: SketchPoint? = null,
+    ): WallExtendResult {
         if (firstWallId == targetWallId) return WallExtendResult.SAME_WALL
         val firstIndex = walls.indexOfFirst { it.id == firstWallId }
         val targetIndex = walls.indexOfFirst { it.id == targetWallId }
@@ -298,6 +302,8 @@ class SketchView @JvmOverloads constructor(
         val moveStart = when {
             firstPosition < -0.0001f -> true
             firstPosition > 1.0001f -> false
+            firstPosition <= 0.0001f || firstPosition >= 0.9999f -> return WallExtendResult.ALREADY_REACHES
+            firstPickPoint != null -> shouldMoveWallStartToIntersection(first, intersection, firstPickPoint)
             else -> return WallExtendResult.ALREADY_REACHES
         }
         val changes = buildEndpointChanges(listOf(EndpointMove(first.id, moveStart, intersection)))
@@ -341,6 +347,7 @@ class SketchView @JvmOverloads constructor(
     }
 
     fun applySelectedWallLength(lengthMm: Float, moveStart: Boolean): Boolean {
+        openingConflictOnLastWallEdit = false
         if (!lengthMm.isFinite() || lengthMm <= 10f) return false
         val index = walls.indexOfFirst { it.id == selectedWallId }
         if (index < 0) return false
@@ -1143,8 +1150,8 @@ class SketchView @JvmOverloads constructor(
                     val changes = buildEndpointChanges(
                         listOf(EndpointMove(wall.id, dragEndpoint == 0, moved)),
                     )
-                    applyWallChangesPreservingOpenings(changes, recordUndo = false)
-                    magnifierTarget = moved
+                    val applied = applyWallChangesPreservingOpenings(changes, recordUndo = false)
+                    magnifierTarget = if (applied) moved else if (dragEndpoint == 0) wall.start else wall.end
                 } else {
                     val wallDx = wall.end.x - wall.start.x
                     val wallDy = wall.end.y - wall.start.y
@@ -1308,14 +1315,70 @@ class SketchView @JvmOverloads constructor(
 
     private fun findOpening(x: Float, y: Float): SketchOpening? {
         val point = screenToWorld(x, y)
+        val tolerance = 14f / scale
         return openings.asReversed().firstOrNull { opening ->
             walls.firstOrNull { it.id == opening.wallId }?.let { wall ->
-                val length = distance(wall.start, wall.end)
-                val position = constrainedOpeningPosition(opening.position, length, opening.width)
-                val center = SketchPoint(wall.start.x + (wall.end.x - wall.start.x) * position, wall.start.y + (wall.end.y - wall.start.y) * position)
-                distance(point, center) <= opening.width / 2f + 100f / scale
+                isPointNearOpeningSymbol(point, opening, wall, tolerance)
             } == true
         }
+    }
+
+    private fun isPointNearOpeningSymbol(
+        point: SketchPoint,
+        opening: SketchOpening,
+        wall: SketchWall,
+        tolerance: Float,
+    ): Boolean {
+        val dx = wall.end.x - wall.start.x
+        val dy = wall.end.y - wall.start.y
+        val length = hypot(dx, dy)
+        if (length < 1f) return false
+        val ux = dx / length
+        val uy = dy / length
+        val nx = -uy
+        val ny = ux
+        val position = constrainedOpeningPosition(opening.position, length, opening.width)
+        val center = SketchPoint(wall.start.x + dx * position, wall.start.y + dy * position)
+        val halfOpening = min(opening.width / 2f, length / 2f)
+        val openingWidth = halfOpening * 2f
+        val a = SketchPoint(center.x - ux * halfOpening, center.y - uy * halfOpening)
+        val b = SketchPoint(center.x + ux * halfOpening, center.y + uy * halfOpening)
+        val halfWall = wall.thickness / 2f
+        fun offset(base: SketchPoint, normalDistance: Float) = SketchPoint(
+            base.x + nx * normalDistance,
+            base.y + ny * normalDistance,
+        )
+        fun nearLine(first: SketchPoint, second: SketchPoint): Boolean =
+            pointSegmentDistance(point, first, second) <= tolerance
+
+        if (opening.type == SketchOpeningType.WINDOW) {
+            val innerOffset = halfWall / 3f
+            return nearLine(offset(a, -halfWall), offset(b, -halfWall)) ||
+                nearLine(offset(a, halfWall), offset(b, halfWall)) ||
+                nearLine(offset(a, -innerOffset), offset(b, -innerOffset)) ||
+                nearLine(offset(a, innerOffset), offset(b, innerOffset)) ||
+                nearLine(offset(a, -halfWall), offset(a, halfWall)) ||
+                nearLine(offset(b, -halfWall), offset(b, halfWall))
+        }
+
+        val sign = if (opening.flipped) -1f else 1f
+        val leafEnd = offset(a, openingWidth * sign)
+        if (nearLine(a, leafEnd) ||
+            nearLine(offset(a, -halfWall), offset(a, halfWall)) ||
+            nearLine(offset(b, -halfWall), offset(b, halfWall))
+        ) return true
+
+        var previous = b
+        for (step in 1..12) {
+            val angle = Math.PI.toFloat() * .5f * step / 12f
+            val arcPoint = SketchPoint(
+                a.x + (ux * cos(angle) + nx * sign * sin(angle)) * openingWidth,
+                a.y + (uy * cos(angle) + ny * sign * sin(angle)) * openingWidth,
+            )
+            if (nearLine(previous, arcPoint)) return true
+            previous = arcPoint
+        }
+        return false
     }
 
     private fun nearestWall(point: SketchPoint): SketchWall? = walls.minByOrNull { pointSegmentDistance(point, it.start, it.end) }

@@ -129,6 +129,7 @@ class SketchActivity : AppCompatActivity() {
     private var firstJoinWallPickPoint: SketchPoint? = null
     private var extendWallActive = false
     private var firstExtendWallId: String? = null
+    private var firstExtendWallPickPoint: SketchPoint? = null
     private var systemBottomInset = 0
     private var systemTopInset = 0
 
@@ -180,7 +181,7 @@ class SketchActivity : AppCompatActivity() {
             onWallPicked = { wall, point ->
                 when {
                     joinWallsActive -> handleJoinWallPicked(wall, point)
-                    extendWallActive -> handleExtendWallPicked(wall)
+                    extendWallActive -> handleExtendWallPicked(wall, point)
                 }
             }
         }
@@ -233,7 +234,7 @@ class SketchActivity : AppCompatActivity() {
         extendWallButton = ImageButton(this).apply {
             setImageResource(R.drawable.ic_extend_wall)
             imageTintList = ColorStateList.valueOf(Color.rgb(0, 102, 76))
-            contentDescription = "延长墙到另一面墙"
+            contentDescription = "延长或修剪墙到边界墙"
             setPadding(dp(10), dp(10), dp(10), dp(10))
             background = roundedBackground(Color.WHITE, 10)
             setOnClickListener {
@@ -446,15 +447,17 @@ class SketchActivity : AppCompatActivity() {
         setMode(SketchMode.SELECT)
         extendWallActive = true
         firstExtendWallId = null
+        firstExtendWallPickPoint = null
         sketchView.setWallPickMode(true)
         showSelection(null)
         updateWallExtendToolbar()
-        toast("请选择要延长的第一面墙")
+        toast("请选择第一面墙，并点击要保留的部分")
     }
 
     private fun stopWallExtendMode(showSelectedWall: Boolean = false) {
         extendWallActive = false
         firstExtendWallId = null
+        firstExtendWallPickPoint = null
         sketchView.setWallPickMode(false)
         updateWallExtendToolbar()
         if (showSelectedWall) {
@@ -462,22 +465,24 @@ class SketchActivity : AppCompatActivity() {
         }
     }
 
-    private fun handleExtendWallPicked(wall: SketchWall) {
+    private fun handleExtendWallPicked(wall: SketchWall, pickPoint: SketchPoint) {
         if (!extendWallActive) return
         val firstId = firstExtendWallId
         if (firstId == null) {
             firstExtendWallId = wall.id
+            firstExtendWallPickPoint = pickPoint
             sketchView.excludeWallFromNextPick(wall.id)
             toast("请选择作为边界的第二面墙")
             return
         }
-        when (sketchView.extendWallToWall(firstId, wall.id)) {
+        val firstPickPoint = firstExtendWallPickPoint ?: return
+        when (sketchView.extendWallToWall(firstId, wall.id, firstPickPoint)) {
             WallExtendResult.SUCCESS -> {
                 stopWallExtendMode(showSelectedWall = true)
-                toast("第一面墙已延长到目标墙")
+                toast("第一面墙已延长或修剪到目标墙")
             }
             WallExtendResult.PARALLEL -> resetWallExtendSelection("两墙平行，无法延长")
-            WallExtendResult.ALREADY_REACHES -> resetWallExtendSelection("第一面墙已到达目标墙，无需延长")
+            WallExtendResult.ALREADY_REACHES -> resetWallExtendSelection("第一面墙端点已到达目标墙，无需处理")
             WallExtendResult.TARGET_MISSED -> resetWallExtendSelection("交点不在第二面墙上")
             WallExtendResult.OPENING_CONFLICT -> resetWallExtendSelection("延长关联墙后门窗空间不足，操作已取消")
             WallExtendResult.SAME_WALL -> toast("请选择两面不同的墙")
@@ -487,6 +492,7 @@ class SketchActivity : AppCompatActivity() {
 
     private fun resetWallExtendSelection(message: String) {
         firstExtendWallId = null
+        firstExtendWallPickPoint = null
         sketchView.setWallPickMode(true)
         toast(message)
     }
@@ -494,7 +500,7 @@ class SketchActivity : AppCompatActivity() {
     private fun updateWallExtendToolbar() {
         val foreground = if (extendWallActive) Color.WHITE else Color.rgb(0, 102, 76)
         extendWallButton.imageTintList = ColorStateList.valueOf(foreground)
-        extendWallButton.contentDescription = if (extendWallActive) "取消延长墙" else "延长墙到另一面墙"
+        extendWallButton.contentDescription = if (extendWallActive) "取消延长或修剪墙" else "延长或修剪墙到边界墙"
         extendWallButton.background = roundedBackground(
             if (extendWallActive) Color.rgb(0, 122, 92) else Color.WHITE,
             10,
