@@ -1,0 +1,52 @@
+# Android Studio / IntelliJ IDEA project files
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Gradle
+.gradle/
+.gradle-local/
+build/
+*/build/
+
+# Kotlin
+.kotlin/
+
+# Local SDK and machine-specific configuration
+local.properties
+
+# Android build outputs
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+
+# Native build outputs
+.cxx/
+.externalNativeBuild/
+
+# Android Studio and test artifacts
+.navigation/
+captures/
+.artifacts/
+
+# ProGuard / R8 mapping and generated files
+proguard/
+mapping.txt
+usage.txt
+seeds.txt
+
+# Signing keys and sensitive service configuration
+*.jks
+*.keystore
+google-services.json
+
+# Logs and OS-generated files
+*.log
+.DS_Store
+Thumbs.db
+
+# Local Android tooling cache
+.android/
