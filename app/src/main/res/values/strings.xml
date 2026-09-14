@@ -1,3 +1,9 @@
 <resources>
     <string name="app_name">LaserSketch</string>
+    <string name="wall_control_line_label">控制线</string>
+    <string name="wall_control_line_center">中心线</string>
+    <string name="wall_control_line_inner">内侧线</string>
+    <string name="wall_control_line_outer">外侧线</string>
+    <string name="door_flip_left_right">左右翻转</string>
+    <string name="door_flip_up_down">上下翻转</string>
 </resources>

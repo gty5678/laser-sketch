@@ -14,12 +14,15 @@ import java.util.UUID
 
 data class SketchPoint(val x: Float, val y: Float)
 
+enum class SketchWallControlLine { CENTER, INNER, OUTER }
+
 data class SketchWall(
     val id: String = UUID.randomUUID().toString(),
     val start: SketchPoint,
     val end: SketchPoint,
     val thickness: Float = 240f,
     val measuredLength: Float? = null,
+    val controlLine: SketchWallControlLine = SketchWallControlLine.CENTER,
 )
 
 enum class SketchColumnType { RECTANGLE, CIRCLE }
@@ -41,6 +44,7 @@ data class SketchOpening(
     val position: Float,
     val width: Float = if (type == SketchOpeningType.DOOR) 900f else 1200f,
     val flipped: Boolean = false,
+    val hingeFlipped: Boolean = false,
 )
 
 data class SketchState(
@@ -142,6 +146,7 @@ object SketchProjectStore {
         put("walls", JSONArray().apply { state.walls.forEach { wall -> put(JSONObject().apply {
             put("id", wall.id); point("start", wall.start); point("end", wall.end)
             put("thickness", wall.thickness); wall.measuredLength?.let { put("measuredLength", it) }
+            put("controlLine", wall.controlLine.name)
         }) } })
         put("columns", JSONArray().apply { state.columns.forEach { column -> put(JSONObject().apply {
             put("id", column.id); put("type", column.type.name); point("center", column.center)
@@ -150,6 +155,7 @@ object SketchProjectStore {
         put("openings", JSONArray().apply { state.openings.forEach { opening -> put(JSONObject().apply {
             put("id", opening.id); put("type", opening.type.name); put("wallId", opening.wallId)
             put("position", opening.position); put("width", opening.width); put("flipped", opening.flipped)
+            put("hingeFlipped", opening.hingeFlipped)
         }) } })
     }
 
@@ -158,6 +164,8 @@ object SketchProjectStore {
             item.optString("id", UUID.randomUUID().toString()), item.point("start"), item.point("end"),
             item.optDouble("thickness", 240.0).toFloat(),
             if (item.has("measuredLength")) item.optDouble("measuredLength").toFloat() else null,
+            runCatching { SketchWallControlLine.valueOf(item.optString("controlLine")) }
+                .getOrDefault(SketchWallControlLine.CENTER),
         ) },
         columns = data.optJSONArray("columns").objects().map { item -> SketchColumn(
             item.optString("id", UUID.randomUUID().toString()),
@@ -168,7 +176,7 @@ object SketchProjectStore {
             item.optString("id", UUID.randomUUID().toString()),
             runCatching { SketchOpeningType.valueOf(item.optString("type")) }.getOrDefault(SketchOpeningType.DOOR),
             item.optString("wallId"), item.optDouble("position", .5).toFloat().coerceIn(0f, 1f),
-            item.optDouble("width", 900.0).toFloat(), item.optBoolean("flipped"),
+            item.optDouble("width", 900.0).toFloat(), item.optBoolean("flipped"), item.optBoolean("hingeFlipped"),
         ) },
     )
 

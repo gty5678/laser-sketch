@@ -7,6 +7,7 @@ import android.os.Looper
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -40,6 +41,51 @@ class SketchViewDoorRenderingInstrumentedTest {
         drawOpening.invoke(view, canvas, door, wall, 1f, 100f, 100f, false)
 
         assertEquals(Color.rgb(29, 94, 145), bitmap.getPixel(200, 195))
+    }
+
+    @Test
+    fun doorHingeCanFlipLeftRightWithoutChangingUpDownSwing() {
+        val view = newView()
+        val wall = SketchWall(id = "wall", start = SketchPoint(0f, 0f), end = SketchPoint(300f, 0f))
+        val door = SketchOpening(
+            id = "door",
+            type = SketchOpeningType.DOOR,
+            wallId = wall.id,
+            position = .5f,
+            width = 100f,
+        )
+        view.restoreState(SketchState(walls = listOf(wall), openings = listOf(door)))
+        SketchView::class.java.getDeclaredField("selectedOpeningId").apply {
+            isAccessible = true
+            set(view, door.id)
+        }
+
+        assertTrue(view.updateSelectedOpening(door.width, flipHinge = true))
+        val flippedDoor = view.snapshotState().openings.single()
+        assertTrue(flippedDoor.hingeFlipped)
+        assertFalse(flippedDoor.flipped)
+
+        val bitmap = Bitmap.createBitmap(500, 400, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap).apply { drawColor(Color.WHITE) }
+        drawOpening(view, canvas, flippedDoor, wall)
+
+        assertEquals(Color.rgb(29, 94, 145), bitmap.getPixel(300, 195))
+        assertEquals(Color.WHITE, bitmap.getPixel(200, 195))
+
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val projectId = SketchProjectStore.create(context)
+        try {
+            assertTrue(
+                SketchProjectStore.save(
+                    context,
+                    projectId,
+                    SketchState(walls = listOf(wall), openings = listOf(flippedDoor)),
+                ),
+            )
+            assertTrue(SketchProjectStore.load(context, projectId)?.state?.openings?.single()?.hingeFlipped == true)
+        } finally {
+            SketchProjectStore.delete(context, projectId)
+        }
     }
 
     @Test
@@ -165,6 +211,10 @@ class SketchViewDoorRenderingInstrumentedTest {
 
         assertTrue(openingSymbolHit(view, SketchPoint(1050f, 450f), door, wall, 30f))
         assertEquals(false, openingSymbolHit(view, SketchPoint(1500f, -500f), door, wall, 30f))
+
+        val rightHingedDoor = door.copy(hingeFlipped = true)
+        assertTrue(openingSymbolHit(view, SketchPoint(1950f, 450f), rightHingedDoor, wall, 30f))
+        assertFalse(openingSymbolHit(view, SketchPoint(1050f, 450f), rightHingedDoor, wall, 30f))
     }
 
     @Test
@@ -198,6 +248,19 @@ class SketchViewDoorRenderingInstrumentedTest {
             Float::class.javaPrimitiveType,
         ).apply { isAccessible = true }
         return method.invoke(view, point, opening, wall, tolerance) as Boolean
+    }
+
+    private fun drawOpening(view: SketchView, canvas: Canvas, opening: SketchOpening, wall: SketchWall) {
+        SketchView::class.java.getDeclaredMethod(
+            "drawOpening",
+            Canvas::class.java,
+            SketchOpening::class.java,
+            SketchWall::class.java,
+            Float::class.javaPrimitiveType,
+            Float::class.javaPrimitiveType,
+            Float::class.javaPrimitiveType,
+            Boolean::class.javaPrimitiveType,
+        ).apply { isAccessible = true }.invoke(view, canvas, opening, wall, 1f, 100f, 100f, false)
     }
 
     private fun newView(): SketchView {

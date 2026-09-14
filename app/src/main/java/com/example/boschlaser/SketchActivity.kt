@@ -546,6 +546,37 @@ class SketchActivity : AppCompatActivity() {
     }
 
     private fun showWallProperties(wall: SketchWall) {
+        val controlLineRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        controlLineRow.addView(TextView(this).apply {
+            setText(R.string.wall_control_line_label)
+            textSize = 15f
+        })
+        listOf(
+            SketchWallControlLine.CENTER to R.string.wall_control_line_center,
+            SketchWallControlLine.INNER to R.string.wall_control_line_inner,
+            SketchWallControlLine.OUTER to R.string.wall_control_line_outer,
+        ).forEach { (controlLine, label) ->
+            controlLineRow.addView(Button(this).apply {
+                setText(label)
+                isAllCaps = false
+                val selected = wall.controlLine == controlLine
+                setTextColor(if (selected) Color.WHITE else Color.rgb(0, 102, 76))
+                background = roundedBackground(
+                    if (selected) Color.rgb(0, 122, 92) else Color.rgb(232, 240, 237),
+                    8,
+                )
+                setOnClickListener {
+                    if (sketchView.updateSelectedWallControlLine(controlLine)) {
+                        showSelection(sketchView.selectedWall()?.let(SketchSelection::Wall))
+                    }
+                }
+            }, LinearLayout.LayoutParams(0, dp(44), 1f).apply { marginStart = dp(6) })
+        }
+        propertyPanel.addView(controlLineRow)
+
         val current = wall.measuredLength ?: kotlin.math.hypot(wall.end.x - wall.start.x, wall.end.y - wall.start.y)
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         val input = numberInput(current.roundToInt().toString())
@@ -622,9 +653,23 @@ class SketchActivity : AppCompatActivity() {
                 if (value == null || !sketchView.updateSelectedOpening(value)) toast("请输入有效宽度")
             }
         })
-        if (opening.type == SketchOpeningType.DOOR) row.addView(Button(this).apply {
-            text = "翻转"; isAllCaps = false; setOnClickListener { sketchView.updateSelectedOpening(opening.width, true) }
-        })
+        if (opening.type == SketchOpeningType.DOOR) {
+            val flipColumn = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+            }
+            flipColumn.addView(Button(this).apply {
+                setText(R.string.door_flip_left_right)
+                isAllCaps = false
+                setOnClickListener { sketchView.updateSelectedOpening(opening.width, flipHinge = true) }
+            }, LinearLayout.LayoutParams(dp(104), dp(40)))
+            flipColumn.addView(Button(this).apply {
+                setText(R.string.door_flip_up_down)
+                isAllCaps = false
+                setOnClickListener { sketchView.updateSelectedOpening(opening.width, flip = true) }
+            }, LinearLayout.LayoutParams(dp(104), dp(40)).apply { topMargin = dp(4) })
+            row.addView(flipColumn, LinearLayout.LayoutParams(dp(104), -2).apply { marginStart = dp(8) })
+        }
         propertyPanel.addView(row)
     }
 
