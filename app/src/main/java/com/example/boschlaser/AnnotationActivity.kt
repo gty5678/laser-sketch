@@ -82,6 +82,7 @@ class AnnotationActivity : AppCompatActivity() {
     private lateinit var textModeButton: ImageButton
     private lateinit var angleModeButton: ImageButton
     private lateinit var areaModeButton: ImageButton
+    private lateinit var finishAnnotationButton: ImageButton
     private lateinit var deleteSelectedButton: ImageButton
     private lateinit var deleteAreaPointButton: ImageButton
     private lateinit var recentOverlay: LinearLayout
@@ -98,6 +99,7 @@ class AnnotationActivity : AppCompatActivity() {
     private var selectedTextMark: TextMark? = null
     private var selectedAngleMark: AngleMark? = null
     private var selectedAreaMark: AreaMark? = null
+    private var editorMode = AnnotationMode.DIMENSION
     private var updatingEditor = false
     private var latestMeasurements: List<Float> = emptyList()
     private var observedMeasurementSnapshot: List<Float>? = null
@@ -379,9 +381,23 @@ class AnnotationActivity : AppCompatActivity() {
         thicknessRow.addView(mediumLineButton)
         thicknessRow.addView(thickLineButton)
 
-        deleteSelectedButton = iconButton(R.drawable.ic_delete, "删除选中") {
-            if (!annotationView.deleteSelected()) toast("请先选择一条标注")
-        }.apply { setColorFilter(Color.rgb(190, 35, 45)) }
+        deleteSelectedButton = ImageButton(this).apply {
+            setImageResource(R.drawable.ic_delete)
+            contentDescription = getString(R.string.annotation_delete_selected)
+            setColorFilter(Color.WHITE)
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+            elevation = dp(6).toFloat()
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Color.rgb(190, 35, 45))
+            }
+            translationY = dp(64).toFloat()
+            visibility = android.view.View.GONE
+        }.apply {
+            setOnClickListener {
+                if (!annotationView.deleteSelected()) toast("请先选择一条标注")
+            }
+        }
         deleteAreaPointButton = iconButton(R.drawable.ic_delete_point, "删除面积控制点") {
             if (!annotationView.deleteSelectedAreaPoint()) {
                 toast("请先选择控制点；面积至少保留三个点")
@@ -407,6 +423,31 @@ class AnnotationActivity : AppCompatActivity() {
         }
         val imageContainer = FrameLayout(this)
         imageContainer.addView(annotationView, FrameLayout.LayoutParams(-1, -1))
+        finishAnnotationButton = ImageButton(this).apply {
+            setImageResource(R.drawable.ic_confirm)
+            contentDescription = getString(R.string.annotation_finish)
+            setColorFilter(Color.WHITE)
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+            elevation = dp(6).toFloat()
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Color.rgb(0, 112, 82))
+            }
+            setOnClickListener { setEditorMode(AnnotationMode.MOVE) }
+        }
+        imageContainer.addView(
+            finishAnnotationButton,
+            FrameLayout.LayoutParams(dp(52), dp(52), Gravity.CENTER_VERTICAL or Gravity.END).apply {
+                marginEnd = dp(12)
+            },
+        )
+        imageContainer.addView(
+            deleteSelectedButton,
+            FrameLayout.LayoutParams(dp(52), dp(52), Gravity.CENTER_VERTICAL or Gravity.END).apply {
+                marginEnd = dp(12)
+            },
+        )
+        updateFinishAnnotationButton()
         recentOverlay = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
@@ -491,7 +532,6 @@ class AnnotationActivity : AppCompatActivity() {
             addView(row().apply {
                 gravity = Gravity.END
                 addView(deleteAreaPointButton, LinearLayout.LayoutParams(dp(52), dp(52)))
-                addView(deleteSelectedButton, LinearLayout.LayoutParams(dp(52), dp(52)))
             }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4) })
         }
         imageContainer.addView(
@@ -509,6 +549,7 @@ class AnnotationActivity : AppCompatActivity() {
         selectedTextMark = (selection as? AnnotationSelection.Text)?.mark
         selectedAngleMark = (selection as? AnnotationSelection.Angle)?.mark
         selectedAreaMark = (selection as? AnnotationSelection.Area)?.mark
+        updateDeleteSelectedButton()
         selectionPanel.animate().cancel()
         selectionPanel.translationY = 0f
         selectionPanel.alpha = 1f
@@ -595,14 +636,39 @@ class AnnotationActivity : AppCompatActivity() {
     }
 
     private fun setEditorMode(mode: AnnotationMode) {
+        editorMode = mode
         annotationView.setMode(mode)
         updateModeButtons(mode)
+        updateFinishAnnotationButton()
+        updateDeleteSelectedButton()
         hintText.text = when (mode) {
-            AnnotationMode.MOVE -> "移动模式：拖动尺寸、文字、角度或面积标注调整位置"
+            AnnotationMode.MOVE -> getString(R.string.annotation_move_mode_hint)
             AnnotationMode.DIMENSION -> "尺寸模式：在图片上拖动添加尺寸线"
             AnnotationMode.TEXT -> "文字模式：点按图片位置添加单行文字"
-            AnnotationMode.ANGLE -> "角度模式：点按图片添加角度，拖动三个点调整位置"
-            AnnotationMode.AREA -> "面积模式：第三个点后自动闭合，可继续点击添加更多控制点"
+            AnnotationMode.ANGLE -> getString(R.string.annotation_angle_mode_hint)
+            AnnotationMode.AREA -> getString(R.string.annotation_area_mode_hint)
+        }
+    }
+
+    private fun updateFinishAnnotationButton() {
+        if (::finishAnnotationButton.isInitialized) {
+            finishAnnotationButton.visibility = if (editorMode == AnnotationMode.MOVE) {
+                android.view.View.GONE
+            } else {
+                android.view.View.VISIBLE
+            }
+        }
+    }
+
+    private fun updateDeleteSelectedButton() {
+        if (::deleteSelectedButton.isInitialized) {
+            val hasSelection = selectedMark != null || selectedTextMark != null ||
+                selectedAngleMark != null || selectedAreaMark != null
+            deleteSelectedButton.visibility = if (editorMode == AnnotationMode.MOVE && hasSelection) {
+                android.view.View.VISIBLE
+            } else {
+                android.view.View.GONE
+            }
         }
     }
 

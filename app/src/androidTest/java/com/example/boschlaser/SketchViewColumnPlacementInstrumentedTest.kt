@@ -34,6 +34,9 @@ class SketchViewColumnPlacementInstrumentedTest {
         touch(view, MotionEvent.ACTION_UP, 180f, 180f)
         assertEquals(1, view.snapshotState().columns.size)
         assertEquals(SketchPoint(1500f, 1500f), view.snapshotState().columns.single().center)
+        assertEquals(SketchMode.RECT_COLUMN, privateField("mode").get(view))
+        assertEquals(view.snapshotState().columns.single().id, privateField("selectedColumnId").get(view))
+        assertNull(magnifier.get(view))
         assertNull(preview.get(view))
         assertNull(magnifier.get(view))
 
@@ -43,6 +46,12 @@ class SketchViewColumnPlacementInstrumentedTest {
         assertEquals(1, view.snapshotState().columns.size)
         assertNull(preview.get(view))
         assertNull(magnifier.get(view))
+
+        touch(view, MotionEvent.ACTION_DOWN, 360f, 360f)
+        assertNotNull(magnifier.get(view))
+        touch(view, MotionEvent.ACTION_UP, 360f, 360f)
+        assertEquals(2, view.snapshotState().columns.size)
+        assertEquals(SketchMode.RECT_COLUMN, privateField("mode").get(view))
     }
 
     private fun privateField(name: String) = SketchView::class.java.getDeclaredField(name).apply {

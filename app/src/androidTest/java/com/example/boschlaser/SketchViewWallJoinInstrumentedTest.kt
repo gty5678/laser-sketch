@@ -69,6 +69,42 @@ class SketchViewWallJoinInstrumentedTest {
     }
 
     @Test
+    fun joinUsesTheSelectedControlLineOfEachWall() {
+        val view = newView()
+        val horizontal = SketchWall(
+            id = "horizontal",
+            start = SketchPoint(0f, 0f),
+            end = SketchPoint(500f, 0f),
+            thickness = 200f,
+            controlLine = SketchWallControlLine.OUTER,
+        )
+        val vertical = SketchWall(
+            id = "vertical",
+            start = SketchPoint(500f, -500f),
+            end = SketchPoint(500f, 500f),
+            thickness = 300f,
+            controlLine = SketchWallControlLine.INNER,
+        )
+        view.restoreState(SketchState(walls = listOf(horizontal, vertical)))
+
+        assertEquals(
+            WallJoinResult.SUCCESS,
+            view.joinWallsAtIntersection(
+                horizontal.id,
+                SketchPoint(450f, 0f),
+                vertical.id,
+                SketchPoint(500f, -400f),
+            ),
+        )
+
+        val walls = view.snapshotState().walls.associateBy { it.id }
+        val horizontalControls = wallControlLinePoints(walls.getValue(horizontal.id))
+        val verticalControls = wallControlLinePoints(walls.getValue(vertical.id))
+        assertPointEquals(SketchPoint(650f, 100f), horizontalControls.second)
+        assertPointEquals(SketchPoint(650f, 100f), verticalControls.second)
+    }
+
+    @Test
     fun tWallClickingOppositeSidesChoosesOppositeTrimEndpoints() {
         if (Looper.myLooper() == null) Looper.prepare()
         val context = InstrumentationRegistry.getInstrumentation().targetContext
@@ -116,5 +152,10 @@ class SketchViewWallJoinInstrumentedTest {
     private fun assertPointEquals(expected: SketchPoint, actual: SketchPoint) {
         assertEquals(expected.x, actual.x, .001f)
         assertEquals(expected.y, actual.y, .001f)
+    }
+
+    private fun newView(): SketchView {
+        if (Looper.myLooper() == null) Looper.prepare()
+        return SketchView(InstrumentationRegistry.getInstrumentation().targetContext)
     }
 }

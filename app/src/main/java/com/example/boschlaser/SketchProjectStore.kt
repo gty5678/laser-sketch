@@ -33,6 +33,7 @@ data class SketchColumn(
     val center: SketchPoint,
     val width: Float = 400f,
     val depth: Float = 400f,
+    val rotationDegrees: Float = 0f,
 )
 
 enum class SketchOpeningType { DOOR, WINDOW }
@@ -150,7 +151,7 @@ object SketchProjectStore {
         }) } })
         put("columns", JSONArray().apply { state.columns.forEach { column -> put(JSONObject().apply {
             put("id", column.id); put("type", column.type.name); point("center", column.center)
-            put("width", column.width); put("depth", column.depth)
+            put("width", column.width); put("depth", column.depth); put("rotationDegrees", column.rotationDegrees)
         }) } })
         put("openings", JSONArray().apply { state.openings.forEach { opening -> put(JSONObject().apply {
             put("id", opening.id); put("type", opening.type.name); put("wallId", opening.wallId)
@@ -171,6 +172,7 @@ object SketchProjectStore {
             item.optString("id", UUID.randomUUID().toString()),
             runCatching { SketchColumnType.valueOf(item.optString("type")) }.getOrDefault(SketchColumnType.RECTANGLE),
             item.point("center"), item.optDouble("width", 400.0).toFloat(), item.optDouble("depth", 400.0).toFloat(),
+            item.optDouble("rotationDegrees", 0.0).toFloat(),
         ) },
         openings = data.optJSONArray("openings").objects().map { item -> SketchOpening(
             item.optString("id", UUID.randomUUID().toString()),

@@ -116,6 +116,7 @@ class SketchActivity : AppCompatActivity() {
     private lateinit var placementActions: LinearLayout
     private lateinit var deleteSelectionButton: ImageButton
     private lateinit var straightenWallButton: ImageButton
+    private lateinit var doorFlipActions: LinearLayout
     private lateinit var snapGridSwitch: SwitchCompat
     private lateinit var joinWallsButton: ImageButton
     private lateinit var extendWallButton: ImageButton
@@ -178,6 +179,11 @@ class SketchActivity : AppCompatActivity() {
         val root = FrameLayout(this)
         sketchView = SketchView(this).apply {
             onSelectionChanged = { if (!joinWallsActive && !extendWallActive) showSelection(it) }
+            onStateChanged = {
+                if (!this@SketchActivity.saveProject()) {
+                    this@SketchActivity.toast(getString(R.string.sketch_auto_save_failed))
+                }
+            }
             onWallPicked = { wall, point ->
                 when {
                     joinWallsActive -> handleJoinWallPicked(wall, point)
@@ -195,9 +201,6 @@ class SketchActivity : AppCompatActivity() {
             elevation = dp(8).toFloat()
         }
         modeBar.addView(modeIconButton(R.drawable.ic_back, "返回") { finish() })
-        modeBar.addView(modeIconButton(R.drawable.ic_save, "保存草稿") {
-            if (saveProject()) toast("草稿已保存") else toast("保存失败，请重试")
-        })
         listOf(
             Triple(SketchMode.SELECT, R.drawable.ic_select, "选择与移动"),
             Triple(SketchMode.WALL, R.drawable.ic_wall, "放置墙体"),
@@ -314,6 +317,38 @@ class SketchActivity : AppCompatActivity() {
             if (!sketchView.straightenSelectedWall(moveStart)) toast("请先选择墙体")
         }.apply { visibility = View.GONE }
         root.addView(straightenWallButton, FrameLayout.LayoutParams(dp(56), dp(56), Gravity.END or Gravity.CENTER_VERTICAL).apply {
+            marginEnd = dp(14)
+        })
+        doorFlipActions = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            visibility = View.GONE
+            addView(
+                floatingIconButton(
+                    R.drawable.ic_flip_horizontal,
+                    getString(R.string.door_flip_left_right),
+                    Color.rgb(0, 122, 92),
+                ) {
+                    sketchView.selectedOpening()
+                        ?.takeIf { it.type == SketchOpeningType.DOOR }
+                        ?.let { sketchView.updateSelectedOpening(it.width, flipHinge = true) }
+                },
+                LinearLayout.LayoutParams(dp(56), dp(56)),
+            )
+            addView(
+                floatingIconButton(
+                    R.drawable.ic_flip_vertical,
+                    getString(R.string.door_flip_up_down),
+                    Color.rgb(0, 122, 92),
+                ) {
+                    sketchView.selectedOpening()
+                        ?.takeIf { it.type == SketchOpeningType.DOOR }
+                        ?.let { sketchView.updateSelectedOpening(it.width, flip = true) }
+                },
+                LinearLayout.LayoutParams(dp(56), dp(56)).apply { topMargin = dp(10) },
+            )
+        }
+        root.addView(doorFlipActions, FrameLayout.LayoutParams(dp(56), -2, Gravity.END or Gravity.CENTER_VERTICAL).apply {
             marginEnd = dp(14)
         })
         setContentView(root)
@@ -513,6 +548,11 @@ class SketchActivity : AppCompatActivity() {
             if (selection != null && currentMode == SketchMode.SELECT) View.VISIBLE else View.GONE
         straightenWallButton.visibility =
             if (selection is SketchSelection.Wall && currentMode == SketchMode.SELECT) View.VISIBLE else View.GONE
+        doorFlipActions.visibility =
+            if (selection is SketchSelection.Opening &&
+                selection.opening.type == SketchOpeningType.DOOR &&
+                currentMode == SketchMode.SELECT
+            ) View.VISIBLE else View.GONE
         val undoButton = placementActions.getChildAt(0)
         (undoButton.layoutParams as? LinearLayout.LayoutParams)?.let { params ->
             params.marginEnd = if (currentMode == SketchMode.SELECT && selection == null) 0 else dp(10)
@@ -626,7 +666,7 @@ class SketchActivity : AppCompatActivity() {
         val depth = numberInput(column.depth.roundToInt().toString())
         row.addView(TextView(this).apply { text = "宽/直径" })
         row.addView(width, LinearLayout.LayoutParams(0, dp(48), 1f))
-        if (column.type == SketchColumnType.RECTANGLE) {
+        if (column.type == SketchColumnType.RECTANGLE && currentMode == SketchMode.SELECT) {
             row.addView(TextView(this).apply { text = "  深" })
             row.addView(depth, LinearLayout.LayoutParams(0, dp(48), 1f))
         }
@@ -639,6 +679,26 @@ class SketchActivity : AppCompatActivity() {
             }
         })
         propertyPanel.addView(row)
+        if (column.type == SketchColumnType.RECTANGLE) {
+            val rotationRow = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            val rotation = numberInput(column.rotationDegrees.roundToInt().toString())
+            rotationRow.addView(TextView(this).apply { setText(R.string.column_rotation_angle) })
+            rotationRow.addView(rotation, LinearLayout.LayoutParams(0, dp(48), 1f))
+            rotationRow.addView(Button(this).apply {
+                setText(R.string.column_rotation_apply)
+                isAllCaps = false
+                setOnClickListener {
+                    val angle = rotation.text.toString().toFloatOrNull()
+                    if (angle == null || !sketchView.updateSelectedColumnRotation(angle)) {
+                        toast(getString(R.string.column_rotation_invalid))
+                    }
+                }
+            })
+            propertyPanel.addView(rotationRow)
+        }
     }
 
     private fun showOpeningProperties(opening: SketchOpening) {
@@ -653,23 +713,6 @@ class SketchActivity : AppCompatActivity() {
                 if (value == null || !sketchView.updateSelectedOpening(value)) toast("请输入有效宽度")
             }
         })
-        if (opening.type == SketchOpeningType.DOOR) {
-            val flipColumn = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                gravity = Gravity.CENTER
-            }
-            flipColumn.addView(Button(this).apply {
-                setText(R.string.door_flip_left_right)
-                isAllCaps = false
-                setOnClickListener { sketchView.updateSelectedOpening(opening.width, flipHinge = true) }
-            }, LinearLayout.LayoutParams(dp(104), dp(40)))
-            flipColumn.addView(Button(this).apply {
-                setText(R.string.door_flip_up_down)
-                isAllCaps = false
-                setOnClickListener { sketchView.updateSelectedOpening(opening.width, flip = true) }
-            }, LinearLayout.LayoutParams(dp(104), dp(40)).apply { topMargin = dp(4) })
-            row.addView(flipColumn, LinearLayout.LayoutParams(dp(104), -2).apply { marginStart = dp(8) })
-        }
         propertyPanel.addView(row)
     }
 

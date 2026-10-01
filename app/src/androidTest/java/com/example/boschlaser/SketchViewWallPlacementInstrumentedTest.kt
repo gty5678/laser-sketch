@@ -6,11 +6,45 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class SketchViewWallPlacementInstrumentedTest {
+    @Test
+    fun continuousWallPlacementInheritsChangedControlLine() {
+        if (Looper.myLooper() == null) Looper.prepare()
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val first = SketchWall(
+            id = "first",
+            start = SketchPoint(0f, 0f),
+            end = SketchPoint(1000f, 0f),
+            thickness = 240f,
+        )
+        val view = SketchView(context).apply {
+            setGridSnapEnabled(false)
+            setMode(SketchMode.WALL)
+            restoreState(SketchState(walls = listOf(first)))
+        }
+        privateField("selectedWallId").set(view, first.id)
+        privateField("wallStart").set(view, first.end)
+
+        assertEquals(true, view.updateSelectedWallControlLine(SketchWallControlLine.OUTER))
+        handleWall(view, MotionEvent.ACTION_DOWN, SketchPoint(2000f, 0f))
+        handleWall(view, MotionEvent.ACTION_UP, SketchPoint(2000f, 0f))
+
+        val walls = view.snapshotState().walls
+        assertEquals(2, walls.size)
+        val next = walls.last()
+        assertEquals(SketchWallControlLine.OUTER, next.controlLine)
+        val (controlStart, controlEnd) = wallControlLinePoints(next)
+        assertEquals(SketchPoint(1000f, 0f), controlStart)
+        assertEquals(SketchPoint(2000f, 0f), controlEnd)
+        assertEquals(-120f, next.start.y, .001f)
+        assertEquals(-120f, next.end.y, .001f)
+    }
+
     @Test
     fun magnifierFollowsWallPreviewUntilFingerIsReleasedOrCancelled() {
         if (Looper.myLooper() == null) Looper.prepare()
@@ -60,5 +94,22 @@ class SketchViewWallPlacementInstrumentedTest {
         } finally {
             event.recycle()
         }
+    }
+
+    private fun handleWall(view: SketchView, action: Int, point: SketchPoint) {
+        val event = MotionEvent.obtain(0L, 0L, action, 0f, 0f, 0)
+        try {
+            SketchView::class.java.getDeclaredMethod(
+                "handleWall",
+                MotionEvent::class.java,
+                SketchPoint::class.java,
+            ).apply { isAccessible = true }.invoke(view, event, point)
+        } finally {
+            event.recycle()
+        }
+    }
+
+    private fun privateField(name: String) = SketchView::class.java.getDeclaredField(name).apply {
+        isAccessible = true
     }
 }

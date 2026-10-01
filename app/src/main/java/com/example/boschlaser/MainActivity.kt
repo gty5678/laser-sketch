@@ -675,8 +675,6 @@ class MainActivity : AppCompatActivity(), BoschBleManager.Listener {
     private val requiredPermissions = arrayOf(
         Manifest.permission.BLUETOOTH_SCAN,
         Manifest.permission.BLUETOOTH_CONNECT,
-        Manifest.permission.ACCESS_COARSE_LOCATION,
-        Manifest.permission.ACCESS_FINE_LOCATION,
     )
 
     private fun sectionTitle(text: String) = TextView(this).apply {
