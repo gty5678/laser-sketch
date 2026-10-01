@@ -1,4 +1,18 @@
-# LaserSketch
+<div align="center">
+
+<h1>LaserSketch</h1>
+
+<p><strong>Android 激光测距与空间记录工具</strong></p>
+
+<p>通过 BLE 连接 Bosch GLM 测距设备，记录数据、绘制平面草稿，并在照片上添加尺寸标注。</p>
+
+<p>
+  <img alt="Platform" src="https://img.shields.io/badge/Platform-Android%2012%2B-3DDC84?logo=android&logoColor=white">
+  <img alt="Language" src="https://img.shields.io/badge/Language-Kotlin-7F52FF?logo=kotlin&logoColor=white">
+  <img alt="Build" src="https://img.shields.io/badge/Build-Gradle%209.5-02303A?logo=gradle&logoColor=white">
+</p>
+
+</div>
 
 LaserSketch 是一款面向 Android 的激光测距与空间记录工具。应用通过 Bluetooth Low Energy（BLE）连接 Bosch GLM 系列测距设备，将测量结果保存为历史记录，并支持绘制平面草稿、在照片上添加尺寸标注以及导出和分享结果。
 
@@ -135,6 +149,27 @@ app/build/outputs/apk/debug/app-debug.apk
 - `BLUETOOTH_CONNECT`
 
 Android 12 及以上版本会在运行时请求“附近设备”权限。BLE 扫描明确声明为不用于推断位置，应用不申请粗略或精确位置权限。
+
+<div align="center">
+
+<h2>Android 使用与安全规范</h2>
+
+<table>
+  <thead>
+    <tr><th>使用场景</th><th>请遵守的规范</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>📱 <strong>设备与系统</strong></td><td>请在 Android 12（API 31）及以上设备上使用，并及时安装系统安全更新。</td></tr>
+    <tr><td>📶 <strong>蓝牙连接</strong></td><td>仅连接自己确认的 Bosch GLM 设备；测量时保持蓝牙开启，并在设备超出范围、断开或数据异常时重新确认测量结果。</td></tr>
+    <tr><td>🔐 <strong>权限管理</strong></td><td>“附近设备”权限仅用于扫描和连接测距设备。拒绝该权限时，BLE 测距功能无法使用；可稍后在系统设置中重新授权。</td></tr>
+    <tr><td>📐 <strong>测量安全</strong></td><td>测量值仅供现场记录与辅助参考。涉及施工、验收、承重、安全距离或法律用途时，请使用经校准的专业设备并进行人工复核。</td></tr>
+    <tr><td>🖼️ <strong>照片与分享</strong></td><td>导出图片、CSV 或通过第三方应用分享前，请检查其中是否包含住址、平面布局、客户信息或其他敏感内容。</td></tr>
+    <tr><td>🗂️ <strong>本地数据</strong></td><td>测量历史、草稿和标注项目默认保存在本机。卸载应用、清除应用数据或更换设备前，请先导出需要保留的内容。</td></tr>
+    <tr><td>⚠️ <strong>异常处理</strong></td><td>若出现连接失败、读数异常或应用无响应，请停止依赖当前读数，重启蓝牙或应用后重新测量；持续异常时请勿用于关键决策。</td></tr>
+  </tbody>
+</table>
+
+</div>
 
 ## 数据与隐私
 
