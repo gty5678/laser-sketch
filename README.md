@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="app/src/main/res/mipmap-xxxhdpi/ic_launcher.webp" width="120" alt="LaserSketch 应用图标">
+
 <h1>LaserSketch</h1>
 
 <p><strong>Android 激光测距与空间记录工具</strong></p>
