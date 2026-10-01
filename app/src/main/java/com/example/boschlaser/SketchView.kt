@@ -10,6 +10,7 @@ import android.graphics.Path
 import android.graphics.RectF
 import android.graphics.Typeface
 import android.util.AttributeSet
+import android.util.TypedValue
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.View
@@ -133,7 +134,8 @@ class SketchView @JvmOverloads constructor(
     private val symbolPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(29, 94, 145); style = Paint.Style.STROKE; strokeWidth = 3f }
     private val columnPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(110, 116, 118); style = Paint.Style.FILL }
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.rgb(25, 25, 25); textSize = 13f * resources.displayMetrics.scaledDensity
+        color = Color.rgb(25, 25, 25)
+        textSize = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, 13f, resources.displayMetrics)
         textAlign = Paint.Align.CENTER; typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
     }
     private val previewPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(0, 122, 92); strokeWidth = 4f; style = Paint.Style.STROKE }

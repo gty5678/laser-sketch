@@ -8,6 +8,7 @@ import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
 import android.util.AttributeSet
+import android.util.TypedValue
 import android.view.MotionEvent
 import android.view.View
 import kotlin.math.atan2
@@ -392,7 +393,11 @@ class ImageAnnotationView @JvmOverloads constructor(
         val source = bitmap
         if (source == null) {
             textPaint.color = Color.LTGRAY
-            textPaint.textSize = 18f * resources.displayMetrics.scaledDensity
+            textPaint.textSize = TypedValue.applyDimension(
+                TypedValue.COMPLEX_UNIT_SP,
+                18f,
+                resources.displayMetrics,
+            )
             canvas.drawText("请先拍照或从图库选择图片", width / 2f, height / 2f, textPaint)
             textPaint.color = Color.rgb(180, 0, 12)
             return

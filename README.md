@@ -110,6 +110,7 @@ LaserSketch 是一款面向 Android 的激光测距与空间记录工具。应�
 
 ```powershell
 .\gradlew.bat :app:assembleDebug
+.\gradlew.bat :app:assembleRelease
 ```
 
 生成的 Debug APK 位于：
