@@ -9,6 +9,10 @@
 <p>
   <img alt="Platform" src="https://img.shields.io/badge/Platform-Android%2012%2B-3DDC84?logo=android&logoColor=white">
   <img alt="Language" src="https://img.shields.io/badge/Language-Kotlin-7F52FF?logo=kotlin&logoColor=white">
+  <img alt="UI" src="https://img.shields.io/badge/UI-View%20%2B%20Canvas-4285F4?logo=android&logoColor=white">
+  <img alt="Material Components" src="https://img.shields.io/badge/UI-Material%20Components-757575?logo=materialdesign&logoColor=white">
+  <img alt="Bluetooth Low Energy" src="https://img.shields.io/badge/Bluetooth-Low%20Energy-0082FC?logo=bluetooth&logoColor=white">
+  <img alt="SQLite" src="https://img.shields.io/badge/Storage-SQLite-003B57?logo=sqlite&logoColor=white">
   <img alt="Build" src="https://img.shields.io/badge/Build-Gradle%209.5-02303A?logo=gradle&logoColor=white">
 </p>
 
