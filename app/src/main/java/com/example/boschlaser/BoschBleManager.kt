@@ -12,6 +12,7 @@ import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.content.Context
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -125,13 +126,13 @@ class BoschBleManager(context: Context, private val listener: Listener) {
                 return
             }
             val useIndication = found.properties and BluetoothGattCharacteristic.PROPERTY_INDICATE != 0
-            descriptor.value = if (useIndication) {
+            val cccdValue = if (useIndication) {
                 BluetoothGattDescriptor.ENABLE_INDICATION_VALUE
             } else {
                 BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
             }
             postStatus("已找到Bosch服务，正在订阅测量通知…")
-            if (!currentGatt.writeDescriptor(descriptor)) failAndClose("写入通知描述符失败")
+            if (!currentGatt.writeDescriptor(descriptor, cccdValue)) failAndClose("写入通知描述符失败")
         }
 
         @SuppressLint("MissingPermission")
@@ -158,6 +159,7 @@ class BoschBleManager(context: Context, private val listener: Listener) {
         }
 
         @Deprecated("Called on Android 12")
+        @Suppress("DEPRECATION")
         override fun onCharacteristicChanged(currentGatt: BluetoothGatt, changed: BluetoothGattCharacteristic) {
             consumeChunk(changed.value?.clone() ?: return)
         }
@@ -240,7 +242,14 @@ class BoschBleManager(context: Context, private val listener: Listener) {
         assembler.reset()
         ready = false
         postStatus("发现GLM，正在连接 ${device.address}…")
-        gatt = device.connectGatt(appContext, false, callback, android.bluetooth.BluetoothDevice.TRANSPORT_LE)
+        gatt = device.connectGatt(
+            appContext,
+            false,
+            callback,
+            android.bluetooth.BluetoothDevice.TRANSPORT_LE,
+            android.bluetooth.BluetoothDevice.PHY_LE_1M_MASK,
+            null,
+        )
     }
 
     @SuppressLint("MissingPermission")
@@ -289,9 +298,12 @@ class BoschBleManager(context: Context, private val listener: Listener) {
             writeInProgress = true
             writeQueue.removeFirst()
         }
-        currentCharacteristic.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
-        currentCharacteristic.value = payload
-        if (!currentGatt.writeCharacteristic(currentCharacteristic)) {
+        if (!currentGatt.writeCharacteristic(
+                currentCharacteristic,
+                payload,
+                BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT,
+            )
+        ) {
             synchronized(writeQueue) { writeInProgress = false }
             postError("Android未接受蓝牙写入请求")
             writeNext()
@@ -302,6 +314,45 @@ class BoschBleManager(context: Context, private val listener: Listener) {
         for (frame in assembler.feed(chunk)) {
             mainHandler.post { listener.onFrame(frame) }
         }
+    }
+
+    private fun BluetoothGatt.writeDescriptor(
+        descriptor: BluetoothGattDescriptor,
+        value: ByteArray,
+    ): Boolean = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        writeDescriptor(descriptor, value) == android.bluetooth.BluetoothStatusCodes.SUCCESS
+    } else {
+        writeDescriptorLegacy(descriptor, value)
+    }
+
+    @Suppress("DEPRECATION")
+    private fun BluetoothGatt.writeDescriptorLegacy(
+        descriptor: BluetoothGattDescriptor,
+        value: ByteArray,
+    ): Boolean {
+        descriptor.value = value
+        return writeDescriptor(descriptor)
+    }
+
+    private fun BluetoothGatt.writeCharacteristic(
+        characteristic: BluetoothGattCharacteristic,
+        value: ByteArray,
+        writeType: Int,
+    ): Boolean = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        writeCharacteristic(characteristic, value, writeType) == android.bluetooth.BluetoothStatusCodes.SUCCESS
+    } else {
+        writeCharacteristicLegacy(characteristic, value, writeType)
+    }
+
+    @Suppress("DEPRECATION")
+    private fun BluetoothGatt.writeCharacteristicLegacy(
+        characteristic: BluetoothGattCharacteristic,
+        value: ByteArray,
+        writeType: Int,
+    ): Boolean {
+        characteristic.writeType = writeType
+        characteristic.value = value
+        return writeCharacteristic(characteristic)
     }
 
     @SuppressLint("MissingPermission")
