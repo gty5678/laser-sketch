@@ -13,7 +13,7 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class SketchViewWallControlLineSelectionInstrumentedTest {
     @Test
-    fun selectedControlLineMovesHandlesWithoutMovingWallBody() {
+    fun switchingControlLineKeepsLocatorFixedAndMovesWallBody() {
         if (Looper.myLooper() == null) Looper.prepare()
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val wall = SketchWall(
@@ -31,22 +31,22 @@ class SketchViewWallControlLineSelectionInstrumentedTest {
 
         assertEquals(true, view.updateSelectedWallControlLine(SketchWallControlLine.INNER))
         val innerWall = view.snapshotState().walls.single()
-        assertEquals(wall.start, innerWall.start)
-        assertEquals(wall.end, innerWall.end)
+        assertEquals(SketchPoint(100f, 320f), innerWall.start)
+        assertEquals(SketchPoint(1100f, 320f), innerWall.end)
         assertEquals(SketchWallControlLine.INNER, innerWall.controlLine)
-        assertNotNull(findEndpoint(view, 100f, 80f))
+        assertNotNull(findEndpoint(view, 100f, 200f))
         assertNull(findEndpoint(view, 100f, 320f))
 
         assertEquals(true, view.updateSelectedWallControlLine(SketchWallControlLine.OUTER))
         val outerWall = view.snapshotState().walls.single()
-        assertEquals(wall.start, outerWall.start)
-        assertEquals(wall.end, outerWall.end)
-        assertNotNull(findEndpoint(view, 100f, 320f))
+        assertEquals(SketchPoint(100f, 80f), outerWall.start)
+        assertEquals(SketchPoint(1100f, 80f), outerWall.end)
+        assertNotNull(findEndpoint(view, 100f, 200f))
         assertNull(findEndpoint(view, 100f, 80f))
 
         privateField("dragEndpoint").setInt(view, 0)
-        moveSelection(view, SketchPoint(200f, 320f))
-        assertEquals(SketchPoint(200f, 200f), view.snapshotState().walls.single().start)
+        moveSelection(view, SketchPoint(200f, 200f))
+        assertEquals(SketchPoint(200f, 80f), view.snapshotState().walls.single().start)
     }
 
     @Test
@@ -64,6 +64,29 @@ class SketchViewWallControlLineSelectionInstrumentedTest {
         } finally {
             SketchProjectStore.delete(context, projectId)
         }
+    }
+
+    @Test
+    fun changingThicknessKeepsSelectedSideControlLineFixed() {
+        if (Looper.myLooper() == null) Looper.prepare()
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val wall = SketchWall(
+            id = "wall",
+            start = SketchPoint(100f, 200f),
+            end = SketchPoint(1100f, 200f),
+            thickness = 200f,
+            controlLine = SketchWallControlLine.OUTER,
+        )
+        val view = SketchView(context).apply { restoreState(SketchState(walls = listOf(wall))) }
+        privateField("selectedWallId").set(view, wall.id)
+        val originalControls = wallControlLinePoints(wall)
+
+        assertTrue(view.updateSelectedWallThickness(400f))
+
+        val updated = view.snapshotState().walls.single()
+        assertEquals(originalControls, wallControlLinePoints(updated))
+        assertEquals(100f, updated.start.y, .001f)
+        assertEquals(100f, updated.end.y, .001f)
     }
 
     private fun privateField(name: String) = SketchView::class.java.getDeclaredField(name).apply {

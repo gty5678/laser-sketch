@@ -6,4 +6,16 @@
     <string name="wall_control_line_outer">外侧线</string>
     <string name="door_flip_left_right">左右翻转</string>
     <string name="door_flip_up_down">上下翻转</string>
+    <string name="sketch_auto_save_failed">自动保存失败，请重试</string>
+    <string name="column_rotation_angle">角度(°)</string>
+    <string name="column_rotation_apply">应用角度</string>
+    <string name="column_rotation_invalid">角度请输入有效数字</string>
+    <string name="annotation_move_mode_hint">移动模式：点按选中标注，拖动主体移动；拖动控制点调整形状</string>
+    <string name="annotation_angle_mode_hint">角度模式：依次点按三个位置创建角度标注</string>
+    <string name="annotation_area_mode_hint">面积模式：依次点按三个位置创建并自动闭合</string>
+    <string name="annotation_area_created_hint">面积已自动闭合；切换到移动模式可调整或添加控制点</string>
+    <string name="annotation_area_point_added">已在边线中间添加控制点</string>
+    <string name="annotation_area_point_add_again">再次点击同一条边，在边线正中间添加控制点</string>
+    <string name="annotation_finish">完成标注</string>
+    <string name="annotation_delete_selected">删除选中标注</string>
 </resources>

@@ -48,6 +48,9 @@ class SketchView @JvmOverloads constructor(
         const val MIN_MAGNIFIER_ZOOM = 1f
         const val MAX_MAGNIFIER_ZOOM = 8f
         private const val COLUMN_TOUCH_TOLERANCE_DP = 14f
+        private const val COLUMN_ROTATION_HANDLE_OFFSET_DP = 32f
+        private const val COLUMN_ROTATION_HANDLE_RADIUS_DP = 10f
+        private const val COLUMN_ROTATION_SNAP_DEGREES = 15f
     }
 
     private val walls = mutableListOf<SketchWall>()
@@ -73,9 +76,11 @@ class SketchView @JvmOverloads constructor(
     private var panning = false
     private var zoomGesture = false
     private var dragEndpoint = -1
+    private var rotatingColumn = false
     private var defaultDoorWidth = 900f
     private var defaultWindowWidth = 1200f
     private var currentWallThickness = 240f
+    private var currentWallControlLine = SketchWallControlLine.CENTER
     private var gridSnapEnabled = true
     private var gridDisplayStepMm = DEFAULT_GRID_DISPLAY_STEP_MM
     private var scale = .12f
@@ -92,6 +97,13 @@ class SketchView @JvmOverloads constructor(
         val moveStart: Boolean,
         val newPoint: SketchPoint,
         val measuredLength: Float? = null,
+    )
+
+    private data class ConnectedWallEnds(
+        val firstJoint: SketchPoint,
+        val firstOther: SketchPoint,
+        val secondJoint: SketchPoint,
+        val secondOther: SketchPoint,
     )
 
     var onSelectionChanged: ((SketchSelection?) -> Unit)? = null
@@ -201,7 +213,10 @@ class SketchView @JvmOverloads constructor(
         walls.clear(); walls += state.walls
         columns.clear(); columns += state.columns
         openings.clear(); openings += state.openings.filter { opening -> walls.any { it.id == opening.wallId } }
-        if (adoptWallThickness) currentWallThickness = state.walls.lastOrNull()?.thickness ?: 240f
+        if (adoptWallThickness) {
+            currentWallThickness = state.walls.lastOrNull()?.thickness ?: 240f
+            currentWallControlLine = state.walls.lastOrNull()?.controlLine ?: SketchWallControlLine.CENTER
+        }
         clearSelection()
         invalidate()
     }
@@ -252,6 +267,8 @@ class SketchView @JvmOverloads constructor(
     }
 
     fun selectedWall(): SketchWall? = walls.firstOrNull { it.id == selectedWallId }
+
+    fun selectedOpening(): SketchOpening? = openings.firstOrNull { it.id == selectedOpeningId }
 
     fun lastWallEditHadOpeningConflict(): Boolean = openingConflictOnLastWallEdit
 
@@ -318,11 +335,12 @@ class SketchView @JvmOverloads constructor(
     }
 
     private fun unboundedWallPosition(wall: SketchWall, point: SketchPoint): Float {
-        val dx = wall.end.x - wall.start.x
-        val dy = wall.end.y - wall.start.y
+        val (controlStart, controlEnd) = wallControlLinePoints(wall)
+        val dx = controlEnd.x - controlStart.x
+        val dy = controlEnd.y - controlStart.y
         val lengthSquared = dx * dx + dy * dy
         if (lengthSquared < 1f) return 0f
-        return ((point.x - wall.start.x) * dx + (point.y - wall.start.y) * dy) / lengthSquared
+        return ((point.x - controlStart.x) * dx + (point.y - controlStart.y) * dy) / lengthSquared
     }
 
     private fun shouldMoveWallStartToIntersection(
@@ -330,19 +348,20 @@ class SketchView @JvmOverloads constructor(
         intersection: SketchPoint,
         retainedPickPoint: SketchPoint,
     ): Boolean {
-        val dx = wall.end.x - wall.start.x
-        val dy = wall.end.y - wall.start.y
+        val (controlStart, controlEnd) = wallControlLinePoints(wall)
+        val dx = controlEnd.x - controlStart.x
+        val dy = controlEnd.y - controlStart.y
         val lengthSquared = dx * dx + dy * dy
         if (lengthSquared < 1f) return false
         val intersectionPosition = (
-            (intersection.x - wall.start.x) * dx +
-                (intersection.y - wall.start.y) * dy
+            (intersection.x - controlStart.x) * dx +
+                (intersection.y - controlStart.y) * dy
             ) / lengthSquared
         if (intersectionPosition <= 0f) return true
         if (intersectionPosition >= 1f) return false
         val pickedPosition = (
-            (retainedPickPoint.x - wall.start.x) * dx +
-                (retainedPickPoint.y - wall.start.y) * dy
+            (retainedPickPoint.x - controlStart.x) * dx +
+                (retainedPickPoint.y - controlStart.y) * dy
             ) / lengthSquared
         return pickedPosition >= intersectionPosition
     }
@@ -353,19 +372,20 @@ class SketchView @JvmOverloads constructor(
         val index = walls.indexOfFirst { it.id == selectedWallId }
         if (index < 0) return false
         val wall = walls[index]
-        val dx = wall.end.x - wall.start.x
-        val dy = wall.end.y - wall.start.y
+        val (controlStart, controlEnd) = wallControlLinePoints(wall)
+        val dx = controlEnd.x - controlStart.x
+        val dy = controlEnd.y - controlStart.y
         val current = hypot(dx, dy)
         if (current < 1f) return false
         val ux = dx / current
         val uy = dy / current
         val newPoint: SketchPoint
         val updated = if (moveStart) {
-            newPoint = SketchPoint(wall.end.x - ux * lengthMm, wall.end.y - uy * lengthMm)
-            wall.copy(start = newPoint, measuredLength = lengthMm)
+            newPoint = SketchPoint(controlEnd.x - ux * lengthMm, controlEnd.y - uy * lengthMm)
+            wallFromControlLine(wall, newPoint, controlEnd, lengthMm)
         } else {
-            newPoint = SketchPoint(wall.start.x + ux * lengthMm, wall.start.y + uy * lengthMm)
-            wall.copy(end = newPoint, measuredLength = lengthMm)
+            newPoint = SketchPoint(controlStart.x + ux * lengthMm, controlStart.y + uy * lengthMm)
+            wallFromControlLine(wall, controlStart, newPoint, lengthMm)
         }
         val changes = buildEndpointChanges(
             listOf(EndpointMove(wall.id, moveStart, newPoint, measuredLength = lengthMm)),
@@ -384,8 +404,9 @@ class SketchView @JvmOverloads constructor(
         val index = walls.indexOfFirst { it.id == selectedWallId }
         if (index < 0) return false
         val wall = walls[index]
-        val dx = wall.end.x - wall.start.x
-        val dy = wall.end.y - wall.start.y
+        val (controlStart, controlEnd) = wallControlLinePoints(wall)
+        val dx = controlEnd.x - controlStart.x
+        val dy = controlEnd.y - controlStart.y
         val length = hypot(dx, dy)
         if (length < 1f) return false
 
@@ -398,13 +419,13 @@ class SketchView @JvmOverloads constructor(
         val newPoint: SketchPoint
         if (moveStart) {
             newPoint = SketchPoint(
-                wall.end.x - direction.x * length,
-                wall.end.y - direction.y * length,
+                controlEnd.x - direction.x * length,
+                controlEnd.y - direction.y * length,
             )
         } else {
             newPoint = SketchPoint(
-                wall.start.x + direction.x * length,
-                wall.start.y + direction.y * length,
+                controlStart.x + direction.x * length,
+                controlStart.y + direction.y * length,
             )
         }
 
@@ -419,8 +440,15 @@ class SketchView @JvmOverloads constructor(
         if (!thicknessMm.isFinite() || thicknessMm !in 50f..1000f) return false
         val index = walls.indexOfFirst { it.id == selectedWallId }
         if (index < 0) return false
+        val wall = walls[index]
+        val (controlStart, controlEnd) = wallControlLinePoints(wall)
         pushUndo()
-        walls[index] = walls[index].copy(thickness = thicknessMm)
+        walls[index] = wallFromControlLine(
+            wall.copy(thickness = thicknessMm),
+            controlStart,
+            controlEnd,
+            wall.measuredLength,
+        )
         currentWallThickness = thicknessMm
         notifySelection(); changed()
         return true
@@ -429,9 +457,21 @@ class SketchView @JvmOverloads constructor(
     fun updateSelectedWallControlLine(controlLine: SketchWallControlLine): Boolean {
         val index = walls.indexOfFirst { it.id == selectedWallId }
         if (index < 0) return false
-        if (walls[index].controlLine == controlLine) return true
+        val wall = walls[index]
+        val (fixedControlStart, fixedControlEnd) = wallControlLinePoints(wall)
+        currentWallControlLine = controlLine
+        if (mode == SketchMode.WALL) {
+            wallStart = fixedControlEnd
+            wallPreview = fixedControlEnd
+        }
+        if (wall.controlLine == controlLine) return true
         pushUndo()
-        walls[index] = walls[index].copy(controlLine = controlLine)
+        walls[index] = wallFromControlLine(
+            wall.copy(controlLine = controlLine),
+            fixedControlStart,
+            fixedControlEnd,
+            wall.measuredLength,
+        )
         notifySelection(); changed()
         return true
     }
@@ -442,6 +482,16 @@ class SketchView @JvmOverloads constructor(
         if (index < 0) return false
         pushUndo()
         columns[index] = columns[index].copy(width = width, depth = depth)
+        notifySelection(); changed()
+        return true
+    }
+
+    fun updateSelectedColumnRotation(rotationDegrees: Float): Boolean {
+        if (!rotationDegrees.isFinite()) return false
+        val index = columns.indexOfFirst { it.id == selectedColumnId }
+        if (index < 0 || columns[index].type != SketchColumnType.RECTANGLE) return false
+        pushUndo()
+        columns[index] = columns[index].copy(rotationDegrees = normalizedDegrees(rotationDegrees))
         notifySelection(); changed()
         return true
     }
@@ -568,9 +618,16 @@ class SketchView @JvmOverloads constructor(
                 canvas.drawLine(startX - 14f, startY, startX + 14f, startY, previewPaint)
                 canvas.drawLine(startX, startY - 14f, startX, startY + 14f, previewPaint)
             } else {
+                val previewWall = SketchWall(
+                    id = "preview",
+                    start = start,
+                    end = end,
+                    thickness = currentWallThickness,
+                    controlLine = currentWallControlLine,
+                ).let { wall -> wallFromControlLine(wall, start, end) }
                 drawWall(
                     canvas,
-                    SketchWall(id = "preview", start = start, end = end, thickness = currentWallThickness),
+                    previewWall,
                     drawingScale,
                     ox,
                     oy,
@@ -702,11 +759,10 @@ class SketchView @JvmOverloads constructor(
                 val first = walls[firstIndex]
                 val second = walls[secondIndex]
                 val connection = sharedWallEndpoint(first, second) ?: continue
-                val (joint, firstOther, secondOther) = connection
-                val firstDx = firstOther.x - joint.x
-                val firstDy = firstOther.y - joint.y
-                val secondDx = secondOther.x - joint.x
-                val secondDy = secondOther.y - joint.y
+                val firstDx = connection.firstOther.x - connection.firstJoint.x
+                val firstDy = connection.firstOther.y - connection.firstJoint.y
+                val secondDx = connection.secondOther.x - connection.secondJoint.x
+                val secondDy = connection.secondOther.y - connection.secondJoint.y
                 val firstLength = hypot(firstDx, firstDy)
                 val secondLength = hypot(secondDx, secondDy)
                 if (firstLength < 1f || secondLength < 1f) continue
@@ -730,25 +786,29 @@ class SketchView @JvmOverloads constructor(
                 val secondNy = secondUx
                 val firstHalf = max(2.5f, first.thickness * drawingScale / 2f)
                 val secondHalf = max(2.5f, second.thickness * drawingScale / 2f)
-                val jointScreen = SketchPoint(
-                    sx(joint.x, drawingScale, ox),
-                    sy(joint.y, drawingScale, oy),
+                val firstJointScreen = SketchPoint(
+                    sx(connection.firstJoint.x, drawingScale, ox),
+                    sy(connection.firstJoint.y, drawingScale, oy),
+                )
+                val secondJointScreen = SketchPoint(
+                    sx(connection.secondJoint.x, drawingScale, ox),
+                    sy(connection.secondJoint.y, drawingScale, oy),
                 )
                 val firstLeft = SketchPoint(
-                    jointScreen.x - firstNx * firstHalf,
-                    jointScreen.y - firstNy * firstHalf,
+                    firstJointScreen.x - firstNx * firstHalf,
+                    firstJointScreen.y - firstNy * firstHalf,
                 )
                 val firstRight = SketchPoint(
-                    jointScreen.x + firstNx * firstHalf,
-                    jointScreen.y + firstNy * firstHalf,
+                    firstJointScreen.x + firstNx * firstHalf,
+                    firstJointScreen.y + firstNy * firstHalf,
                 )
                 val secondLeft = SketchPoint(
-                    jointScreen.x + secondNx * secondHalf,
-                    jointScreen.y + secondNy * secondHalf,
+                    secondJointScreen.x + secondNx * secondHalf,
+                    secondJointScreen.y + secondNy * secondHalf,
                 )
                 val secondRight = SketchPoint(
-                    jointScreen.x - secondNx * secondHalf,
-                    jointScreen.y - secondNy * secondHalf,
+                    secondJointScreen.x - secondNx * secondHalf,
+                    secondJointScreen.y - secondNy * secondHalf,
                 )
                 val useExtendedJoin = usesExtendedWallJoin(dot)
                 // The first ray is the incoming wall when the two walls are treated as
@@ -829,21 +889,27 @@ class SketchView @JvmOverloads constructor(
     private fun sharedWallEndpoint(
         first: SketchWall,
         second: SketchWall,
-    ): Triple<SketchPoint, SketchPoint, SketchPoint>? {
-        val candidates = listOf(
-            Triple(first.start, first.end, second.start to second.end),
-            Triple(first.start, first.end, second.end to second.start),
-            Triple(first.end, first.start, second.start to second.end),
-            Triple(first.end, first.start, second.end to second.start),
+    ): ConnectedWallEnds? {
+        val (firstStart, firstEnd) = wallControlLinePoints(first)
+        val (secondStart, secondEnd) = wallControlLinePoints(second)
+        val firstCandidates = listOf(
+            Triple(firstStart, first.start, first.end),
+            Triple(firstEnd, first.end, first.start),
         )
-        candidates.forEach { (firstJoint, firstOther, secondPoints) ->
-            val (secondJoint, secondOther) = secondPoints
-            if (distance(firstJoint, secondJoint) < 12f) {
-                val joint = SketchPoint(
-                    (firstJoint.x + secondJoint.x) / 2f,
-                    (firstJoint.y + secondJoint.y) / 2f,
-                )
-                return Triple(joint, firstOther, secondOther)
+        val secondCandidates = listOf(
+            Triple(secondStart, second.start, second.end),
+            Triple(secondEnd, second.end, second.start),
+        )
+        firstCandidates.forEach { (firstControl, firstBodyJoint, firstBodyOther) ->
+            secondCandidates.forEach { (secondControl, secondBodyJoint, secondBodyOther) ->
+                if (distance(firstControl, secondControl) < 12f) {
+                    return ConnectedWallEnds(
+                        firstBodyJoint,
+                        firstBodyOther,
+                        secondBodyJoint,
+                        secondBodyOther,
+                    )
+                }
             }
         }
         return null
@@ -859,15 +925,26 @@ class SketchView @JvmOverloads constructor(
         val ux = (x2 - x1) / length
         val uy = (y2 - y1) / length
         val nx = -uy * half; val ny = ux * half
-        val startExtension = endpointIntersectionExtension(wall, renderStart, half)
-        val endExtension = endpointIntersectionExtension(wall, renderEnd, half)
-        val startX = x1 - ux * startExtension
-        val startY = y1 - uy * startExtension
-        val endX = x2 + ux * endExtension
-        val endY = y2 + uy * endExtension
+        val (startLeftExtension, startRightExtension) = endpointIntersectionExtensions(
+            wall,
+            renderStart,
+            SketchPoint(-ux, -uy),
+            SketchPoint(-uy, ux),
+            drawingScale,
+        )
+        val (endLeftExtension, endRightExtension) = endpointIntersectionExtensions(
+            wall,
+            renderEnd,
+            SketchPoint(ux, uy),
+            SketchPoint(-uy, ux),
+            drawingScale,
+        )
         return Path().apply {
-            moveTo(startX + nx, startY + ny); lineTo(endX + nx, endY + ny)
-            lineTo(endX - nx, endY - ny); lineTo(startX - nx, startY - ny); close()
+            moveTo(x1 + nx - ux * startLeftExtension, y1 + ny - uy * startLeftExtension)
+            lineTo(x2 + nx + ux * endLeftExtension, y2 + ny + uy * endLeftExtension)
+            lineTo(x2 - nx + ux * endRightExtension, y2 - ny + uy * endRightExtension)
+            lineTo(x1 - nx - ux * startRightExtension, y1 - ny - uy * startRightExtension)
+            close()
         }
     }
 
@@ -877,20 +954,41 @@ class SketchView @JvmOverloads constructor(
         return if (startFirst) wall.start to wall.end else wall.end to wall.start
     }
 
-    private fun endpointIntersectionExtension(
+    private fun endpointIntersectionExtensions(
         wall: SketchWall,
         point: SketchPoint,
-        ownHalfWidthPx: Float,
-    ): Float {
-        var extension = 0f
+        outwardDirection: SketchPoint,
+        bodyNormal: SketchPoint,
+        drawingScale: Float,
+    ): Pair<Float, Float> {
+        var leftExtension = 0f
+        var rightExtension = 0f
+        val atStart = distance(point, wall.start) <= distance(point, wall.end)
+        val (wallControlStart, wallControlEnd) = wallControlLinePoints(wall)
+        val controlPoint = if (atStart) wallControlStart else wallControlEnd
+        val halfWall = wall.thickness / 2f
+        val leftCorner = SketchPoint(
+            point.x + bodyNormal.x * halfWall,
+            point.y + bodyNormal.y * halfWall,
+        )
+        val rightCorner = SketchPoint(
+            point.x - bodyNormal.x * halfWall,
+            point.y - bodyNormal.y * halfWall,
+        )
         walls.forEach { other ->
             if (other.id == wall.id) return@forEach
-            val sharesEndpoint = distance(point, other.start) < 12f || distance(point, other.end) < 12f
-            if (!sharesEndpoint && pointSegmentDistance(point, other.start, other.end) < 12f) {
-                extension = max(extension, ownHalfWidthPx)
+            val (otherStart, otherEnd) = wallControlLinePoints(other)
+            val sharesEndpoint = distance(controlPoint, otherStart) < 12f || distance(controlPoint, otherEnd) < 12f
+            if (!sharesEndpoint && pointSegmentDistance(controlPoint, otherStart, otherEnd) < 12f) {
+                wallCornerExtensionThroughTarget(leftCorner, outwardDirection, other)?.let { required ->
+                    leftExtension = max(leftExtension, required * drawingScale)
+                }
+                wallCornerExtensionThroughTarget(rightCorner, outwardDirection, other)?.let { required ->
+                    rightExtension = max(rightExtension, required * drawingScale)
+                }
             }
         }
-        return extension
+        return leftExtension to rightExtension
     }
 
     private fun drawWallDetails(canvas: Canvas, wall: SketchWall, drawingScale: Float, ox: Float, oy: Float, selected: Boolean) {
@@ -921,11 +1019,30 @@ class SketchView @JvmOverloads constructor(
         val halfW = max(5f, column.width * drawingScale / 2f)
         val halfD = max(5f, column.depth * drawingScale / 2f)
         if (column.type == SketchColumnType.CIRCLE) canvas.drawCircle(cx, cy, halfW, columnPaint)
-        else canvas.drawRect(cx - halfW, cy - halfD, cx + halfW, cy + halfD, columnPaint)
+        else {
+            canvas.save()
+            canvas.rotate(column.rotationDegrees, cx, cy)
+            canvas.drawRect(cx - halfW, cy - halfD, cx + halfW, cy + halfD, columnPaint)
+            canvas.restore()
+        }
         if (selected) {
             if (column.type == SketchColumnType.CIRCLE) canvas.drawCircle(cx, cy, halfW + 4f, selectedPaint)
-            else canvas.drawRect(cx - halfW - 4f, cy - halfD - 4f, cx + halfW + 4f, cy + halfD + 4f, selectedPaint)
-            if (dragging) drawWallControlPoint(canvas, column.center, drawingScale, ox, oy)
+            else {
+                canvas.save()
+                canvas.rotate(column.rotationDegrees, cx, cy)
+                canvas.drawRect(cx - halfW - 4f, cy - halfD - 4f, cx + halfW + 4f, cy + halfD + 4f, selectedPaint)
+                canvas.restore()
+                if (mode == SketchMode.SELECT) {
+                    val handle = columnRotationHandleScreen(column, drawingScale, ox, oy)
+                    val radians = Math.toRadians(column.rotationDegrees.toDouble())
+                    val topX = cx + sin(radians).toFloat() * halfD
+                    val topY = cy - cos(radians).toFloat() * halfD
+                    canvas.drawLine(topX, topY, handle.x, handle.y, selectedPaint)
+                    canvas.drawCircle(handle.x, handle.y, COLUMN_ROTATION_HANDLE_RADIUS_DP * resources.displayMetrics.density + 3f, controlPointHaloPaint)
+                    canvas.drawCircle(handle.x, handle.y, COLUMN_ROTATION_HANDLE_RADIUS_DP * resources.displayMetrics.density, controlPointPaint)
+                }
+            }
+            if (dragging && !rotatingColumn) drawWallControlPoint(canvas, column.center, drawingScale, ox, oy)
         }
     }
 
@@ -1065,7 +1182,12 @@ class SketchView @JvmOverloads constructor(
                 if (distance(start, end) >= 100f) {
                     pushUndo()
                     wallPlacementStarts.addLast(start)
-                    val wall = SketchWall(start = start, end = end, thickness = currentWallThickness)
+                    val wall = SketchWall(
+                        start = start,
+                        end = end,
+                        thickness = currentWallThickness,
+                        controlLine = currentWallControlLine,
+                    ).let { candidate -> wallFromControlLine(candidate, start, end) }
                     walls += wall
                     wallStart = end
                     wallPreview = end
@@ -1096,13 +1218,19 @@ class SketchView @JvmOverloads constructor(
                 lastWorld = world
                 lastScreenX = event.x
                 lastScreenY = event.y
-                dragging = false; panning = false; dragEndpoint = -1
+                dragging = false; panning = false; dragEndpoint = -1; rotatingColumn = false
                 magnifierTarget = null
+                val rotationHandleColumn = findColumnRotationHandle(event.x, event.y)
                 val endpointHit = findEndpoint(event.x, event.y)
                 val opening = findOpening(event.x, event.y)
                 val column = findColumn(event.x, event.y)
                 val wall = findWall(event.x, event.y)
                 when {
+                    rotationHandleColumn != null -> {
+                        selectColumn(rotationHandleColumn.id)
+                        rotatingColumn = true
+                        pushUndo()
+                    }
                     endpointHit != null -> { selectWall(endpointHit.first.id); dragEndpoint = endpointHit.second; pushUndo() }
                     opening != null -> { selectOpening(opening.id); pushUndo() }
                     column != null -> { selectColumn(column.id); pushUndo() }
@@ -1118,6 +1246,8 @@ class SketchView @JvmOverloads constructor(
                 if (panning) {
                     offsetX += screenDx
                     offsetY += screenDy
+                } else if (dragging && rotatingColumn) {
+                    rotateSelectedColumn(world)
                 } else if (dragging) moveSelection(dx, dy, world)
                 lastWorld = if (panning) screenToWorld(event.x, event.y) else world
                 lastScreenX = event.x
@@ -1127,7 +1257,7 @@ class SketchView @JvmOverloads constructor(
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 if (!dragging && !panning && undo.isNotEmpty()) undo.removeLast()
                 if (dragging) changed()
-                dragging = false; panning = false; dragEndpoint = -1
+                dragging = false; panning = false; dragEndpoint = -1; rotatingColumn = false
                 magnifierTarget = null
                 invalidate()
             }
@@ -1174,15 +1304,28 @@ class SketchView @JvmOverloads constructor(
                     val oldControlPoint = wallControlLinePoints(wall).let {
                         if (dragEndpoint == 0) it.first else it.second
                     }
-                    val oldCenterPoint = if (dragEndpoint == 0) wall.start else wall.end
-                    val moved = SketchPoint(
-                        oldCenterPoint.x + movedControlPoint.x - oldControlPoint.x,
-                        oldCenterPoint.y + movedControlPoint.y - oldControlPoint.y,
+                    val connectedWallCount = walls.count { candidate ->
+                        val (candidateStart, candidateEnd) = wallControlLinePoints(candidate)
+                        distance(candidateStart, oldControlPoint) < 5f ||
+                            distance(candidateEnd, oldControlPoint) < 5f
+                    }
+                    val changes = if (connectedWallCount <= 2) {
+                        buildEndpointChanges(
+                            listOf(EndpointMove(wall.id, dragEndpoint == 0, movedControlPoint)),
+                        )
+                    } else {
+                        val (controlStart, controlEnd) = wallControlLinePoints(wall)
+                        val movedWall = wallFromControlLine(
+                            wall,
+                            if (dragEndpoint == 0) movedControlPoint else controlStart,
+                            if (dragEndpoint == 1) movedControlPoint else controlEnd,
+                        )
+                        mapOf(wall.id to movedWall)
+                    }
+                    val applied = applyWallChangesPreservingOpenings(
+                        changes,
+                        recordUndo = false,
                     )
-                    val changes = buildEndpointChanges(
-                        listOf(EndpointMove(wall.id, dragEndpoint == 0, moved)),
-                    )
-                    val applied = applyWallChangesPreservingOpenings(changes, recordUndo = false)
                     magnifierTarget = if (applied) {
                         walls.getOrNull(index)?.let(::wallControlLinePoints)?.let {
                             if (dragEndpoint == 0) it.first else it.second
@@ -1203,11 +1346,12 @@ class SketchView @JvmOverloads constructor(
                         val movedStart = SketchPoint(wall.start.x + moveX, wall.start.y + moveY)
                         val movedEnd = SketchPoint(wall.end.x + moveX, wall.end.y + moveY)
                         val movedWall = wall.copy(start = movedStart, end = movedEnd)
+                        val (movedControlStart, movedControlEnd) = wallControlLinePoints(movedWall)
                         val followerMoves = controlLineFollowerMoves(wall, movedWall)
                         val changes = buildEndpointChanges(
                             listOf(
-                                EndpointMove(wall.id, moveStart = true, movedStart),
-                                EndpointMove(wall.id, moveStart = false, movedEnd),
+                                EndpointMove(wall.id, moveStart = true, movedControlStart),
+                                EndpointMove(wall.id, moveStart = false, movedControlEnd),
                             ) + followerMoves,
                         )
                         applyWallChangesPreservingOpenings(changes, recordUndo = false)
@@ -1258,30 +1402,43 @@ class SketchView @JvmOverloads constructor(
     private fun buildEndpointChanges(moves: List<EndpointMove>): Map<String, SketchWall> {
         val explicitWallIds = moves.mapTo(mutableSetOf()) { it.wallId }
         val originals = walls.associateBy { it.id }
-        val changes = linkedMapOf<String, SketchWall>()
+        val controlChanges = linkedMapOf<String, Pair<SketchPoint, SketchPoint>>()
+        val measuredLengths = mutableMapOf<String, Float?>()
         moves.forEach { move ->
             val original = originals[move.wallId] ?: return@forEach
-            val oldPoint = if (move.moveStart) original.start else original.end
-            val current = changes[move.wallId] ?: original
-            changes[move.wallId] = if (move.moveStart) {
-                current.copy(start = move.newPoint, measuredLength = move.measuredLength)
+            val originalControls = wallControlLinePoints(original)
+            val oldPoint = if (move.moveStart) originalControls.first else originalControls.second
+            val current = controlChanges[move.wallId] ?: originalControls
+            controlChanges[move.wallId] = if (move.moveStart) {
+                move.newPoint to current.second
             } else {
-                current.copy(end = move.newPoint, measuredLength = move.measuredLength)
+                current.first to move.newPoint
             }
+            measuredLengths[move.wallId] = move.measuredLength
             walls.forEach connectedLoop@{ connected ->
                 if (connected.id in explicitWallIds) return@connectedLoop
-                val connectedCurrent = changes[connected.id] ?: connected
+                val connectedOriginal = wallControlLinePoints(connected)
+                val connectedCurrent = controlChanges[connected.id] ?: connectedOriginal
                 when {
-                    distance(connected.start, oldPoint) < 5f -> {
-                        changes[connected.id] = connectedCurrent.copy(start = move.newPoint, measuredLength = null)
+                    distance(connectedOriginal.first, oldPoint) < 5f -> {
+                        controlChanges[connected.id] = move.newPoint to connectedCurrent.second
+                        measuredLengths[connected.id] = null
                     }
-                    distance(connected.end, oldPoint) < 5f -> {
-                        changes[connected.id] = connectedCurrent.copy(end = move.newPoint, measuredLength = null)
+                    distance(connectedOriginal.second, oldPoint) < 5f -> {
+                        controlChanges[connected.id] = connectedCurrent.first to move.newPoint
+                        measuredLengths[connected.id] = null
                     }
                 }
             }
         }
-        return changes
+        return controlChanges.mapValues { (wallId, controls) ->
+            wallFromControlLine(
+                originals.getValue(wallId),
+                controls.first,
+                controls.second,
+                measuredLengths[wallId],
+            )
+        }
     }
 
     /**
@@ -1297,9 +1454,11 @@ class SketchView @JvmOverloads constructor(
         val handledNodes = mutableListOf<SketchPoint>()
         walls.forEach { candidate ->
             if (candidate.id == oldHost.id) return@forEach
-            listOf(true to candidate.start, false to candidate.end).forEach endpointLoop@{ (moveStart, endpoint) ->
+            val (candidateStart, candidateEnd) = wallControlLinePoints(candidate)
+            val (oldHostStart, oldHostEnd) = wallControlLinePoints(oldHost)
+            listOf(true to candidateStart, false to candidateEnd).forEach endpointLoop@{ (moveStart, endpoint) ->
                 if (handledNodes.any { distance(it, endpoint) < 5f }) return@endpointLoop
-                if (pointSegmentDistance(endpoint, oldHost.start, oldHost.end) >= 12f) return@endpointLoop
+                if (pointSegmentDistance(endpoint, oldHostStart, oldHostEnd) >= 12f) return@endpointLoop
                 val hostPosition = unboundedWallPosition(oldHost, endpoint)
                 if (hostPosition <= .0001f || hostPosition >= .9999f) return@endpointLoop
                 val intersection = infiniteWallLineIntersection(candidate, newHost) ?: return@endpointLoop
@@ -1331,8 +1490,10 @@ class SketchView @JvmOverloads constructor(
                 openingConflictOnLastWallEdit = true
                 return false
             }
-            val startChanged = distance(oldWall.start, newWall.start) >= .001f
-            val endChanged = distance(oldWall.end, newWall.end) >= .001f
+            val (oldControlStart, oldControlEnd) = wallControlLinePoints(oldWall)
+            val (newControlStart, newControlEnd) = wallControlLinePoints(newWall)
+            val startChanged = distance(oldControlStart, newControlStart) >= .001f
+            val endChanged = distance(oldControlEnd, newControlEnd) >= .001f
             openings.forEachIndexed { openingIndex, opening ->
                 if (opening.wallId != wallId) return@forEachIndexed
                 val oldPosition = constrainedOpeningPosition(opening.position, oldLength, opening.width)
@@ -1365,24 +1526,19 @@ class SketchView @JvmOverloads constructor(
 
     private fun findEndpoint(x: Float, y: Float): Pair<SketchWall, Int>? {
         val threshold = 24f / scale
-        walls.asReversed().forEach { wall ->
+        val point = screenToWorld(x, y)
+        selectedWall()?.let { wall ->
             val (controlStart, controlEnd) = wallControlLinePoints(wall)
-            if (distance(screenToWorld(x, y), controlStart) <= threshold) return wall to 0
-            if (distance(screenToWorld(x, y), controlEnd) <= threshold) return wall to 1
+            if (distance(point, controlStart) <= threshold) return wall to 0
+            if (distance(point, controlEnd) <= threshold) return wall to 1
+        }
+        walls.asReversed().forEach { wall ->
+            if (wall.id == selectedWallId) return@forEach
+            val (controlStart, controlEnd) = wallControlLinePoints(wall)
+            if (distance(point, controlStart) <= threshold) return wall to 0
+            if (distance(point, controlEnd) <= threshold) return wall to 1
         }
         return null
-    }
-
-    private fun wallControlLinePoints(wall: SketchWall): Pair<SketchPoint, SketchPoint> {
-        val dx = wall.end.x - wall.start.x
-        val dy = wall.end.y - wall.start.y
-        val length = hypot(dx, dy)
-        if (length < 1f || wall.controlLine == SketchWallControlLine.CENTER) return wall.start to wall.end
-        val side = if (wall.controlLine == SketchWallControlLine.INNER) -1f else 1f
-        val offsetX = -dy / length * wall.thickness / 2f * side
-        val offsetY = dx / length * wall.thickness / 2f * side
-        return SketchPoint(wall.start.x + offsetX, wall.start.y + offsetY) to
-            SketchPoint(wall.end.x + offsetX, wall.end.y + offsetY)
     }
 
     private fun findWall(x: Float, y: Float): SketchWall? {
@@ -1397,12 +1553,63 @@ class SketchView @JvmOverloads constructor(
             when (column.type) {
                 SketchColumnType.CIRCLE -> distance(point, column.center) <= column.width / 2f + tolerance
                 SketchColumnType.RECTANGLE -> {
-                    abs(point.x - column.center.x) <= column.width / 2f + tolerance &&
-                        abs(point.y - column.center.y) <= column.depth / 2f + tolerance
+                    val radians = Math.toRadians(column.rotationDegrees.toDouble())
+                    val cosAngle = cos(radians).toFloat()
+                    val sinAngle = sin(radians).toFloat()
+                    val dx = point.x - column.center.x
+                    val dy = point.y - column.center.y
+                    val localX = dx * cosAngle + dy * sinAngle
+                    val localY = -dx * sinAngle + dy * cosAngle
+                    abs(localX) <= column.width / 2f + tolerance &&
+                        abs(localY) <= column.depth / 2f + tolerance
                 }
             }
         }
     }
+
+    private fun findColumnRotationHandle(x: Float, y: Float): SketchColumn? {
+        if (mode != SketchMode.SELECT) return null
+        val column = columns.firstOrNull { it.id == selectedColumnId }
+            ?.takeIf { it.type == SketchColumnType.RECTANGLE }
+            ?: return null
+        val handle = columnRotationHandleScreen(column, scale, offsetX, offsetY)
+        val hitRadius = (COLUMN_ROTATION_HANDLE_RADIUS_DP + 10f) * resources.displayMetrics.density
+        return column.takeIf { hypot(x - handle.x, y - handle.y) <= hitRadius }
+    }
+
+    private fun columnRotationHandleScreen(
+        column: SketchColumn,
+        drawingScale: Float,
+        ox: Float,
+        oy: Float,
+    ): SketchPoint {
+        val cx = sx(column.center.x, drawingScale, ox)
+        val cy = sy(column.center.y, drawingScale, oy)
+        val distance = max(5f, column.depth * drawingScale / 2f) +
+            COLUMN_ROTATION_HANDLE_OFFSET_DP * resources.displayMetrics.density
+        val radians = Math.toRadians(column.rotationDegrees.toDouble())
+        return SketchPoint(
+            cx + sin(radians).toFloat() * distance,
+            cy - cos(radians).toFloat() * distance,
+        )
+    }
+
+    private fun rotateSelectedColumn(pointer: SketchPoint) {
+        val index = columns.indexOfFirst { it.id == selectedColumnId }
+        if (index < 0 || columns[index].type != SketchColumnType.RECTANGLE) return
+        val column = columns[index]
+        val rawDegrees = Math.toDegrees(
+            atan2(
+                (pointer.y - column.center.y).toDouble(),
+                (pointer.x - column.center.x).toDouble(),
+            ),
+        ).toFloat() + 90f
+        val snapped = (rawDegrees / COLUMN_ROTATION_SNAP_DEGREES).roundToInt() * COLUMN_ROTATION_SNAP_DEGREES
+        columns[index] = column.copy(rotationDegrees = normalizedDegrees(snapped))
+        notifySelection()
+    }
+
+    private fun normalizedDegrees(value: Float): Float = ((value % 360f) + 360f) % 360f
 
     private fun findOpening(x: Float, y: Float): SketchOpening? {
         val point = screenToWorld(x, y)
@@ -1475,8 +1682,13 @@ class SketchView @JvmOverloads constructor(
         return false
     }
 
-    private fun nearestWall(point: SketchPoint): SketchWall? = walls.minByOrNull { pointSegmentDistance(point, it.start, it.end) }
-        ?.takeIf { pointSegmentDistance(point, it.start, it.end) <= 500f }
+    private fun nearestWall(point: SketchPoint): SketchWall? = walls.minByOrNull { wall ->
+        val (start, end) = wallControlLinePoints(wall)
+        pointSegmentDistance(point, start, end)
+    }?.takeIf { wall ->
+        val (start, end) = wallControlLinePoints(wall)
+        pointSegmentDistance(point, start, end) <= 500f
+    }
 
     private fun projection(point: SketchPoint, wall: SketchWall, openingWidth: Float): Float {
         val dx = wall.end.x - wall.start.x; val dy = wall.end.y - wall.start.y
@@ -1505,13 +1717,20 @@ class SketchView @JvmOverloads constructor(
 
     private fun snapToEndpoint(point: SketchPoint): SketchPoint? {
         val threshold = max(18f / scale, 140f)
-        val endpoint = walls.flatMap { wall -> listOf(wall.start, wall.end) }
+        val endpoint = walls.flatMap { wall ->
+            val (start, end) = wallControlLinePoints(wall)
+            listOf(start, end)
+        }
             .minByOrNull { distance(it, point) }
             ?.takeIf { distance(it, point) <= threshold }
         if (endpoint != null) return endpoint
-        val nearest = walls.minByOrNull { pointSegmentDistance(point, it.start, it.end) } ?: return null
-        val projected = projectToSegment(point, nearest.start, nearest.end)
-        return projected.takeIf { pointSegmentDistance(point, nearest.start, nearest.end) <= threshold }
+        val nearest = walls.minByOrNull { wall ->
+            val (start, end) = wallControlLinePoints(wall)
+            pointSegmentDistance(point, start, end)
+        } ?: return null
+        val (controlStart, controlEnd) = wallControlLinePoints(nearest)
+        val projected = projectToSegment(point, controlStart, controlEnd)
+        return projected.takeIf { pointSegmentDistance(point, controlStart, controlEnd) <= threshold }
     }
 
     private fun snappedColumnCenter(column: SketchColumn, proposedCenter: SketchPoint): SketchPoint {
@@ -1520,7 +1739,8 @@ class SketchView @JvmOverloads constructor(
         var bestEdgeX: Float? = null
         var bestEdgeY: Float? = null
         walls.forEach { wall ->
-            val projectedCenter = projectToSegment(proposedCenter, wall.start, wall.end)
+            val (controlStart, controlEnd) = wallControlLinePoints(wall)
+            val projectedCenter = projectToSegment(proposedCenter, controlStart, controlEnd)
             val centerDistance = distance(proposedCenter, projectedCenter)
             if (centerDistance <= threshold &&
                 (bestCenterAdjustment == null || centerDistance < bestCenterAdjustment!!.first)
@@ -1533,6 +1753,11 @@ class SketchView @JvmOverloads constructor(
             }
 
             if (column.type != SketchColumnType.RECTANGLE) return@forEach
+            val columnRadians = Math.toRadians(column.rotationDegrees.toDouble())
+            val columnCos = abs(cos(columnRadians).toFloat())
+            val columnSin = abs(sin(columnRadians).toFloat())
+            val columnHalfExtentX = columnCos * column.width / 2f + columnSin * column.depth / 2f
+            val columnHalfExtentY = columnSin * column.width / 2f + columnCos * column.depth / 2f
             val dx = wall.end.x - wall.start.x
             val dy = wall.end.y - wall.start.y
             val wallLength = hypot(dx, dy)
@@ -1542,13 +1767,13 @@ class SketchView @JvmOverloads constructor(
                 val wallCenterY = (wall.start.y + wall.end.y) / 2f
                 val wallEdges = floatArrayOf(wallCenterY - halfWall, wallCenterY + halfWall)
                 val columnEdges = floatArrayOf(
-                    proposedCenter.y - column.depth / 2f,
-                    proposedCenter.y + column.depth / 2f,
+                    proposedCenter.y - columnHalfExtentY,
+                    proposedCenter.y + columnHalfExtentY,
                 )
                 val wallMinX = min(wall.start.x, wall.end.x)
                 val wallMaxX = max(wall.start.x, wall.end.x)
-                val columnMinX = proposedCenter.x - column.width / 2f
-                val columnMaxX = proposedCenter.x + column.width / 2f
+                val columnMinX = proposedCenter.x - columnHalfExtentX
+                val columnMaxX = proposedCenter.x + columnHalfExtentX
                 if (intervalGap(wallMinX, wallMaxX, columnMinX, columnMaxX) <= threshold) {
                     wallEdges.forEach { wallEdge ->
                         columnEdges.forEach { columnEdge ->
@@ -1565,13 +1790,13 @@ class SketchView @JvmOverloads constructor(
                 val wallCenterX = (wall.start.x + wall.end.x) / 2f
                 val wallEdges = floatArrayOf(wallCenterX - halfWall, wallCenterX + halfWall)
                 val columnEdges = floatArrayOf(
-                    proposedCenter.x - column.width / 2f,
-                    proposedCenter.x + column.width / 2f,
+                    proposedCenter.x - columnHalfExtentX,
+                    proposedCenter.x + columnHalfExtentX,
                 )
                 val wallMinY = min(wall.start.y, wall.end.y)
                 val wallMaxY = max(wall.start.y, wall.end.y)
-                val columnMinY = proposedCenter.y - column.depth / 2f
-                val columnMaxY = proposedCenter.y + column.depth / 2f
+                val columnMinY = proposedCenter.y - columnHalfExtentY
+                val columnMaxY = proposedCenter.y + columnHalfExtentY
                 if (intervalGap(wallMinY, wallMaxY, columnMinY, columnMaxY) <= threshold) {
                     wallEdges.forEach { wallEdge ->
                         columnEdges.forEach { columnEdge ->

@@ -12,11 +12,54 @@ import java.io.FileOutputStream
 import kotlin.math.cos
 import kotlin.math.sin
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class WallJointRenderingInstrumentedTest {
+    @Test
+    fun obliqueTJunctionFusesInsideHostWithoutProtrudingPastFarFace() {
+        if (Looper.myLooper() == null) Looper.prepare()
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val drawWallNetwork = SketchView::class.java.getDeclaredMethod(
+            "drawWallNetwork",
+            Canvas::class.java,
+            Float::class.javaPrimitiveType,
+            Float::class.javaPrimitiveType,
+            Float::class.javaPrimitiveType,
+        ).apply { isAccessible = true }
+        val host = SketchWall(
+            id = "host",
+            start = SketchPoint(-180f, 0f),
+            end = SketchPoint(180f, 0f),
+            thickness = 80f,
+        )
+        val stem = SketchWall(
+            id = "stem",
+            start = SketchPoint(-160f, -160f),
+            end = SketchPoint(0f, 0f),
+            thickness = 60f,
+        )
+
+        val bitmap = renderNetwork(context, drawWallNetwork, listOf(host, stem))
+        val origin = bitmap.width / 2
+        val hostFarFaceOffset = (host.thickness / 2f * .7f).toInt()
+        val insideOffset = hostFarFaceOffset - 4
+        val outsideOffset = hostFarFaceOffset + 4
+
+        assertEquals(
+            "The oblique stem must remain fused inside the host",
+            Color.rgb(245, 245, 242),
+            bitmap.getPixel(origin + insideOffset, origin + insideOffset),
+        )
+        assertEquals(
+            "The oblique stem must not protrude beyond the host far face",
+            Color.WHITE,
+            bitmap.getPixel(origin + outsideOffset, origin + outsideOffset),
+        )
+    }
+
     @Test
     fun renderSharedEndpointThroughFullRotation() {
         if (Looper.myLooper() == null) Looper.prepare()

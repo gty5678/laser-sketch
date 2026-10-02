@@ -80,34 +80,29 @@ class ImageAnnotationView @JvmOverloads constructor(
     private var selectedIndex = -1
     private var selectedTextIndex = -1
     private var selectedAngleIndex = -1
-    private var editingEndpoint = -1
-    private var endpointMoved = false
     private var magnifierFocusX: Float? = null
     private var magnifierFocusY: Float? = null
-    private var draggingTextIndex = -1
-    private var textTouchStartX = 0f
-    private var textTouchStartY = 0f
-    private var textTouchMoved = false
-    private var editingAnglePoint = -1
-    private var anglePointMoved = false
-    private var angleTouchStartX = 0f
-    private var angleTouchStartY = 0f
     private val pendingAnglePoints = mutableListOf<Pair<Float, Float>>()
     private val pendingAreaPoints = mutableListOf<AreaPoint>()
     private var selectedAreaIndex = -1
     private var selectedAreaPointIndex = -1
-    private var editingAreaPoint = -1
-    private var areaPointMoved = false
-    private var areaTouchStartX = 0f
-    private var areaTouchStartY = 0f
     private var lastAreaEdgeTapAt = 0L
     private var lastAreaEdgeTapArea = -1
     private var lastAreaEdgeTapIndex = -1
-    private var activeAreaBuildIndex = -1
     private var mode = AnnotationMode.DIMENSION
-    private enum class MoveKind { NONE, DIMENSION, TEXT, ANGLE, AREA }
+    private enum class MoveKind {
+        NONE,
+        DIMENSION,
+        TEXT,
+        ANGLE,
+        AREA,
+        DIMENSION_ENDPOINT,
+        ANGLE_POINT,
+        AREA_POINT,
+    }
     private var moveKind = MoveKind.NONE
     private var moveIndex = -1
+    private var moveControlPointIndex = -1
     private var moveTouchStartX = 0f
     private var moveTouchStartY = 0f
     private var moveStarted = false
@@ -173,7 +168,6 @@ class ImageAnnotationView @JvmOverloads constructor(
         selectedAreaPointIndex = -1
         pendingAnglePoints.clear()
         pendingAreaPoints.clear()
-        activeAreaBuildIndex = -1
         magnifierFocusX = null
         magnifierFocusY = null
         resetMoveTarget()
@@ -206,7 +200,6 @@ class ImageAnnotationView @JvmOverloads constructor(
         selectedAreaPointIndex = -1
         pendingAnglePoints.clear()
         pendingAreaPoints.clear()
-        activeAreaBuildIndex = -1
         resetMoveTarget()
         clearPreview()
         notifySelectionChanged()
@@ -221,16 +214,7 @@ class ImageAnnotationView @JvmOverloads constructor(
     }
 
     fun setMode(value: AnnotationMode) {
-        if (mode == value) {
-            if (value == AnnotationMode.AREA && activeAreaBuildIndex in areaMarks.indices) {
-                activeAreaBuildIndex = -1
-                selectedAreaPointIndex = -1
-                notifySelectionChanged()
-                onMessage?.invoke("面积绘制已完成；现在可双击边线添加中间控制点")
-                invalidate()
-            }
-            return
-        }
+        if (mode == value) return
         mode = value
         selectedIndex = -1
         selectedTextIndex = -1
@@ -239,7 +223,6 @@ class ImageAnnotationView @JvmOverloads constructor(
         selectedAreaPointIndex = -1
         pendingAnglePoints.clear()
         pendingAreaPoints.clear()
-        activeAreaBuildIndex = -1
         magnifierFocusX = null
         magnifierFocusY = null
         resetMoveTarget()
@@ -319,10 +302,7 @@ class ImageAnnotationView @JvmOverloads constructor(
             selectedIndex in marks.indices -> marks.removeAt(selectedIndex)
             selectedTextIndex in textMarks.indices -> textMarks.removeAt(selectedTextIndex)
             selectedAngleIndex in angleMarks.indices -> angleMarks.removeAt(selectedAngleIndex)
-            selectedAreaIndex in areaMarks.indices -> {
-                if (activeAreaBuildIndex == selectedAreaIndex) activeAreaBuildIndex = -1
-                areaMarks.removeAt(selectedAreaIndex)
-            }
+            selectedAreaIndex in areaMarks.indices -> areaMarks.removeAt(selectedAreaIndex)
             else -> return false
         }
         selectedIndex = -1
@@ -360,7 +340,6 @@ class ImageAnnotationView @JvmOverloads constructor(
         selectedAreaIndex = -1
         selectedAreaPointIndex = -1
         pendingAreaPoints.clear()
-        activeAreaBuildIndex = -1
         clearPreview()
         notifySelectionChanged()
         invalidate()
@@ -427,12 +406,12 @@ class ImageAnnotationView @JvmOverloads constructor(
                 mark,
                 imageRect,
                 displayScale,
-                (index == selectedAreaIndex || index == activeAreaBuildIndex) && editingAreaPoint < 0,
+                index == selectedAreaIndex,
             )
         }
         marks.forEachIndexed { index, mark ->
             drawMark(canvas, mark, imageRect, displayScale)
-            if (index == selectedIndex && editingEndpoint < 0) {
+            if (index == selectedIndex) {
                 drawSelectionHandles(canvas, mark, imageRect, displayScale)
             }
         }
@@ -445,18 +424,12 @@ class ImageAnnotationView @JvmOverloads constructor(
                 mark,
                 imageRect,
                 displayScale,
-                index == selectedAngleIndex && editingAnglePoint < 0,
+                index == selectedAngleIndex,
             )
         }
         drawPendingAngle(canvas, imageRect, displayScale)
         drawPendingArea(canvas, imageRect, displayScale)
-        val startX = dragStartX
-        val startY = dragStartY
-        val endX = dragEndX
-        val endY = dragEndY
-        if (startX != null && startY != null && endX != null && endY != null) {
-            drawMark(canvas, normalizedMark(startX, startY, endX, endY, ""), imageRect, displayScale)
-        }
+        drawDimensionPreview(canvas, displayScale)
         drawMagnifier(canvas, source, displayScale)
     }
 
@@ -471,56 +444,32 @@ class ImageAnnotationView @JvmOverloads constructor(
             MotionEvent.ACTION_DOWN -> {
                 if (!imageRect.contains(event.x, event.y)) return false
                 onCanvasTouched?.invoke()
-                editingEndpoint = endpointAt(event.x, event.y)
-                if (editingEndpoint >= 0) {
-                    endpointMoved = false
-                    magnifierFocusX = event.x
-                    magnifierFocusY = event.y
-                    parent?.requestDisallowInterceptTouchEvent(true)
-                    invalidate()
-                    return true
-                }
                 dragStartX = event.x.coerceIn(imageRect.left, imageRect.right)
                 dragStartY = event.y.coerceIn(imageRect.top, imageRect.bottom)
                 dragEndX = dragStartX
                 dragEndY = dragStartY
+                onManipulationStarted?.invoke()
+                parent?.requestDisallowInterceptTouchEvent(true)
                 invalidate()
                 return true
             }
             MotionEvent.ACTION_MOVE -> {
-                if (editingEndpoint >= 0) {
-                    if (!endpointMoved) {
-                        endpointMoved = true
-                        onManipulationStarted?.invoke()
-                    }
-                    magnifierFocusX = event.x.coerceIn(imageRect.left, imageRect.right)
-                    magnifierFocusY = event.y.coerceIn(imageRect.top, imageRect.bottom)
-                    moveSelectedEndpoint(editingEndpoint, event.x, event.y)
-                    return true
-                }
                 if (dragStartX == null) return false
                 dragEndX = event.x.coerceIn(imageRect.left, imageRect.right)
                 dragEndY = event.y.coerceIn(imageRect.top, imageRect.bottom)
+                magnifierFocusX = dragEndX
+                magnifierFocusY = dragEndY
                 invalidate()
                 return true
             }
             MotionEvent.ACTION_UP -> {
-                if (editingEndpoint >= 0) {
-                    moveSelectedEndpoint(editingEndpoint, event.x, event.y)
-                    editingEndpoint = -1
-                    magnifierFocusX = null
-                    magnifierFocusY = null
-                    parent?.requestDisallowInterceptTouchEvent(false)
-                    notifySelectionChanged()
-                    endpointMoved = false
-                    onMessage?.invoke("尺寸线端点已调整")
-                    invalidate()
-                    return true
-                }
                 val sx = dragStartX ?: return false
                 val sy = dragStartY ?: return false
                 val ex = event.x.coerceIn(imageRect.left, imageRect.right)
                 val ey = event.y.coerceIn(imageRect.top, imageRect.bottom)
+                magnifierFocusX = null
+                magnifierFocusY = null
+                parent?.requestDisallowInterceptTouchEvent(false)
                 val dx = ex - sx
                 val dy = ey - sy
                 val dragThreshold = 12f * resources.displayMetrics.density
@@ -539,16 +488,12 @@ class ImageAnnotationView @JvmOverloads constructor(
                             "已添加尺寸线，默认使用最新测量值 $defaultDimensionLabel"
                         },
                     )
-                } else {
-                    selectNearestMark(ex, ey)
                 }
                 clearPreview()
                 invalidate()
                 return true
             }
             MotionEvent.ACTION_CANCEL -> {
-                editingEndpoint = -1
-                endpointMoved = false
                 magnifierFocusX = null
                 magnifierFocusY = null
                 parent?.requestDisallowInterceptTouchEvent(false)
@@ -560,6 +505,14 @@ class ImageAnnotationView @JvmOverloads constructor(
         return super.onTouchEvent(event)
     }
 
+    private fun drawDimensionPreview(canvas: Canvas, displayScale: Float) {
+        val startX = dragStartX ?: return
+        val startY = dragStartY ?: return
+        val endX = dragEndX ?: return
+        val endY = dragEndY ?: return
+        drawMark(canvas, normalizedMark(startX, startY, endX, endY, ""), imageRect, displayScale)
+    }
+
     private fun handleMoveTouch(event: MotionEvent): Boolean {
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
@@ -568,33 +521,7 @@ class ImageAnnotationView @JvmOverloads constructor(
                 moveTouchStartX = event.x
                 moveTouchStartY = event.y
                 moveStarted = false
-                val textIndex = textMarkAt(event.x, event.y)
-                val dimensionIndex = dimensionMarkAt(event.x, event.y)
-                val angleIndex = angleMarkAt(event.x, event.y)
-                val areaIndex = areaMarkAt(event.x, event.y)
-                when {
-                    textIndex >= 0 -> {
-                        moveKind = MoveKind.TEXT
-                        moveIndex = textIndex
-                        moveTextOriginal = textMarks[textIndex]
-                    }
-                    dimensionIndex >= 0 -> {
-                        moveKind = MoveKind.DIMENSION
-                        moveIndex = dimensionIndex
-                        moveDimensionOriginal = marks[dimensionIndex]
-                    }
-                    angleIndex >= 0 -> {
-                        moveKind = MoveKind.ANGLE
-                        moveIndex = angleIndex
-                        moveAngleOriginal = angleMarks[angleIndex]
-                    }
-                    areaIndex >= 0 -> {
-                        moveKind = MoveKind.AREA
-                        moveIndex = areaIndex
-                        moveAreaOriginal = areaMarks[moveIndex]
-                    }
-                    else -> resetMoveTarget()
-                }
+                startMoveTarget(event.x, event.y)
                 if (moveKind != MoveKind.NONE) parent?.requestDisallowInterceptTouchEvent(true)
                 return true
             }
@@ -606,25 +533,20 @@ class ImageAnnotationView @JvmOverloads constructor(
                 if (moveStarted || dx * dx + dy * dy > threshold * threshold) {
                     if (!moveStarted) onManipulationStarted?.invoke()
                     moveStarted = true
-                    moveWholeTarget(event.x, event.y)
+                    moveTarget(event.x, event.y)
                 }
                 return true
             }
             MotionEvent.ACTION_UP -> {
                 if (moveKind != MoveKind.NONE && moveStarted) {
-                    moveWholeTarget(event.x, event.y)
-                    onMessage?.invoke(
-                        when (moveKind) {
-                            MoveKind.DIMENSION -> "尺寸标注位置已调整"
-                            MoveKind.TEXT -> "文字位置已调整"
-                            MoveKind.ANGLE -> "角度标注位置已调整"
-                            MoveKind.AREA -> "面积标注位置已调整"
-                            MoveKind.NONE -> ""
-                        },
-                    )
+                    moveTarget(event.x, event.y)
+                    onMessage?.invoke(moveCompletionMessage())
+                } else if (moveKind == MoveKind.AREA && selectedAreaIndex in areaMarks.indices) {
+                    addAreaPointOnDoubleTap(event.x, event.y)
                 }
                 resetMoveTarget()
                 parent?.requestDisallowInterceptTouchEvent(false)
+                notifySelectionChanged()
                 invalidate()
                 return true
             }
@@ -636,6 +558,104 @@ class ImageAnnotationView @JvmOverloads constructor(
             }
         }
         return true
+    }
+
+    private fun startMoveTarget(x: Float, y: Float) {
+        resetMoveTarget()
+        val selectedAreaPoint = findAreaPointAt(x, y)
+        when {
+            selectedIndex in marks.indices && endpointAt(x, y) >= 0 -> {
+                moveKind = MoveKind.DIMENSION_ENDPOINT
+                moveIndex = selectedIndex
+                moveControlPointIndex = endpointAt(x, y)
+            }
+            selectedAngleIndex in angleMarks.indices && anglePointAt(x, y) >= 0 -> {
+                moveKind = MoveKind.ANGLE_POINT
+                moveIndex = selectedAngleIndex
+                moveControlPointIndex = anglePointAt(x, y)
+            }
+            selectedAreaPoint != null -> {
+                selectedAreaIndex = selectedAreaPoint.first
+                selectedAreaPointIndex = selectedAreaPoint.second
+                clearOtherSelectionsForArea()
+                moveKind = MoveKind.AREA_POINT
+                moveIndex = selectedAreaPoint.first
+                moveControlPointIndex = selectedAreaPoint.second
+            }
+            else -> startWholeMarkMove(x, y)
+        }
+        if (moveKind == MoveKind.DIMENSION_ENDPOINT || moveKind == MoveKind.ANGLE_POINT || moveKind == MoveKind.AREA_POINT) {
+            magnifierFocusX = x
+            magnifierFocusY = y
+        }
+        notifySelectionChanged()
+        invalidate()
+    }
+
+    private fun startWholeMarkMove(x: Float, y: Float) {
+        val textIndex = textMarkAt(x, y)
+        val dimensionIndex = dimensionMarkAt(x, y)
+        val angleIndex = angleMarkAt(x, y)
+        val areaIndex = areaMarkAt(x, y)
+        when {
+            textIndex >= 0 -> {
+                selectText(textIndex)
+                moveKind = MoveKind.TEXT
+                moveIndex = textIndex
+                moveTextOriginal = textMarks[textIndex]
+            }
+            dimensionIndex >= 0 -> {
+                selectDimension(dimensionIndex)
+                moveKind = MoveKind.DIMENSION
+                moveIndex = dimensionIndex
+                moveDimensionOriginal = marks[dimensionIndex]
+            }
+            angleIndex >= 0 -> {
+                selectAngle(angleIndex)
+                moveKind = MoveKind.ANGLE
+                moveIndex = angleIndex
+                moveAngleOriginal = angleMarks[angleIndex]
+            }
+            areaIndex >= 0 -> {
+                selectArea(areaIndex)
+                moveKind = MoveKind.AREA
+                moveIndex = areaIndex
+                moveAreaOriginal = areaMarks[areaIndex]
+            }
+            else -> clearSelection()
+        }
+    }
+
+    private fun moveTarget(x: Float, y: Float) {
+        when (moveKind) {
+            MoveKind.DIMENSION_ENDPOINT -> {
+                magnifierFocusX = x.coerceIn(imageRect.left, imageRect.right)
+                magnifierFocusY = y.coerceIn(imageRect.top, imageRect.bottom)
+                moveSelectedEndpoint(moveControlPointIndex, x, y)
+            }
+            MoveKind.ANGLE_POINT -> {
+                magnifierFocusX = x.coerceIn(imageRect.left, imageRect.right)
+                magnifierFocusY = y.coerceIn(imageRect.top, imageRect.bottom)
+                moveAnglePoint(moveControlPointIndex, x, y)
+            }
+            MoveKind.AREA_POINT -> {
+                magnifierFocusX = x.coerceIn(imageRect.left, imageRect.right)
+                magnifierFocusY = y.coerceIn(imageRect.top, imageRect.bottom)
+                moveAreaPoint(moveControlPointIndex, x, y)
+            }
+            else -> moveWholeTarget(x, y)
+        }
+    }
+
+    private fun moveCompletionMessage() = when (moveKind) {
+        MoveKind.DIMENSION -> "尺寸标注位置已调整"
+        MoveKind.TEXT -> "文字位置已调整"
+        MoveKind.ANGLE -> "角度标注位置已调整"
+        MoveKind.AREA -> "面积标注位置已调整"
+        MoveKind.DIMENSION_ENDPOINT -> "尺寸线端点已调整"
+        MoveKind.ANGLE_POINT -> "角度控制点已调整"
+        MoveKind.AREA_POINT -> "面积控制点已调整"
+        MoveKind.NONE -> ""
     }
 
     private fun moveWholeTarget(x: Float, y: Float) {
@@ -693,7 +713,11 @@ class ImageAnnotationView @JvmOverloads constructor(
                     )
                 }
             }
-            MoveKind.NONE -> Unit
+            MoveKind.DIMENSION_ENDPOINT,
+            MoveKind.ANGLE_POINT,
+            MoveKind.AREA_POINT,
+            MoveKind.NONE,
+            -> Unit
         }
         invalidate()
     }
@@ -701,6 +725,7 @@ class ImageAnnotationView @JvmOverloads constructor(
     private fun resetMoveTarget() {
         moveKind = MoveKind.NONE
         moveIndex = -1
+        moveControlPointIndex = -1
         moveStarted = false
         moveDimensionOriginal = null
         moveTextOriginal = null
@@ -825,6 +850,7 @@ class ImageAnnotationView @JvmOverloads constructor(
         marks.forEach { mark ->
             drawMark(canvas, mark, imageRect, displayScale)
         }
+        drawDimensionPreview(canvas, displayScale)
         textMarks.forEach { drawTextMark(canvas, it, imageRect, displayScale) }
         angleMarks.forEach { drawAngleMark(canvas, it, imageRect, displayScale, false) }
         canvas.restoreToCount(saveCount)
@@ -980,142 +1006,25 @@ class ImageAnnotationView @JvmOverloads constructor(
             MotionEvent.ACTION_DOWN -> {
                 if (!imageRect.contains(event.x, event.y)) return false
                 onCanvasTouched?.invoke()
-                areaTouchStartX = event.x
-                areaTouchStartY = event.y
-                areaPointMoved = false
-                val pointHit = if (pendingAreaPoints.isEmpty()) findAreaPointAt(event.x, event.y) else null
-                editingAreaPoint = pointHit?.second ?: -1
-                if (pointHit != null) {
-                    selectedAreaIndex = pointHit.first
-                    selectedAreaPointIndex = pointHit.second
-                    clearOtherSelectionsForArea()
-                    magnifierFocusX = event.x
-                    magnifierFocusY = event.y
-                    parent?.requestDisallowInterceptTouchEvent(true)
-                    notifySelectionChanged()
-                    invalidate()
-                }
-                return true
-            }
-            MotionEvent.ACTION_MOVE -> {
-                if (editingAreaPoint < 0) return true
-                val dx = event.x - areaTouchStartX
-                val dy = event.y - areaTouchStartY
-                val threshold = 4f * resources.displayMetrics.density
-                if (areaPointMoved || dx * dx + dy * dy > threshold * threshold) {
-                    if (!areaPointMoved) onManipulationStarted?.invoke()
-                    areaPointMoved = true
-                    magnifierFocusX = event.x.coerceIn(imageRect.left, imageRect.right)
-                    magnifierFocusY = event.y.coerceIn(imageRect.top, imageRect.bottom)
-                    moveAreaPoint(editingAreaPoint, event.x, event.y)
-                }
                 return true
             }
             MotionEvent.ACTION_UP -> {
-                if (editingAreaPoint >= 0) {
-                    if (areaPointMoved) moveAreaPoint(editingAreaPoint, event.x, event.y)
-                    editingAreaPoint = -1
-                    areaPointMoved = false
-                    magnifierFocusX = null
-                    magnifierFocusY = null
-                    parent?.requestDisallowInterceptTouchEvent(false)
-                    notifySelectionChanged()
-                    invalidate()
-                    return true
-                }
-
-                if (pendingAreaPoints.isNotEmpty()) {
-                    pendingAreaPoints += normalizedAreaPoint(event.x, event.y)
-                    if (pendingAreaPoints.size >= 3) {
+                pendingAreaPoints += normalizedAreaPoint(event.x, event.y)
+                when (pendingAreaPoints.size) {
+                    1 -> onMessage?.invoke("已放置第一个面积控制点，请继续点击")
+                    2 -> onMessage?.invoke("继续点击第三个点，放置后会自动闭合")
+                    3 -> {
                         areaMarks += AreaMark(pendingAreaPoints.toList())
                         pendingAreaPoints.clear()
-                        selectedAreaIndex = areaMarks.lastIndex
-                        activeAreaBuildIndex = selectedAreaIndex
-                        selectedAreaPointIndex = -1
-                        clearOtherSelectionsForArea()
-                        onMessage?.invoke("面积已自动闭合；可继续点击添加更多控制点，切换模式后完成")
-                    } else {
-                        onMessage?.invoke("继续点击第三个点，放置后会自动闭合")
+                        selectArea(areaMarks.lastIndex)
+                        onMessage?.invoke(context.getString(R.string.annotation_area_created_hint))
                     }
-                    notifySelectionChanged()
-                    invalidate()
-                    return true
-                }
-
-                if (activeAreaBuildIndex in areaMarks.indices) {
-                    val edgeIndex = areaEdgeAt(activeAreaBuildIndex, event.x, event.y)
-                    val now = System.currentTimeMillis()
-                    if (edgeIndex >= 0) {
-                        if (
-                            activeAreaBuildIndex == lastAreaEdgeTapArea && edgeIndex == lastAreaEdgeTapIndex &&
-                            now - lastAreaEdgeTapAt <= 450L
-                        ) {
-                            insertAreaPointAtEdge(activeAreaBuildIndex, edgeIndex)
-                            lastAreaEdgeTapAt = 0L
-                            onMessage?.invoke("已在所选边线的正中间添加控制点")
-                        } else {
-                            lastAreaEdgeTapAt = now
-                            lastAreaEdgeTapArea = activeAreaBuildIndex
-                            lastAreaEdgeTapIndex = edgeIndex
-                            onMessage?.invoke("再次点击同一条边，在边线正中间添加控制点")
-                        }
-                        selectedAreaIndex = activeAreaBuildIndex
-                        if (lastAreaEdgeTapAt != 0L) selectedAreaPointIndex = -1
-                        clearOtherSelectionsForArea()
-                        notifySelectionChanged()
-                        invalidate()
-                        return true
-                    }
-                    val mark = areaMarks[activeAreaBuildIndex]
-                    val points = mark.points + normalizedAreaPoint(event.x, event.y)
-                    areaMarks[activeAreaBuildIndex] = mark.copy(points = points)
-                    selectedAreaIndex = activeAreaBuildIndex
-                    selectedAreaPointIndex = points.lastIndex
-                    lastAreaEdgeTapAt = 0L
-                    clearOtherSelectionsForArea()
-                    onMessage?.invoke("已添加第 ${points.size} 个控制点，面积保持自动闭合")
-                    notifySelectionChanged()
-                    invalidate()
-                    return true
-                }
-
-                val hitArea = areaMarkAt(event.x, event.y)
-                if (hitArea >= 0) {
-                    selectedAreaIndex = hitArea
-                    selectedAreaPointIndex = -1
-                    clearOtherSelectionsForArea()
-                    val edgeIndex = areaEdgeAt(hitArea, event.x, event.y)
-                    val now = System.currentTimeMillis()
-                    if (
-                        edgeIndex >= 0 && hitArea == lastAreaEdgeTapArea && edgeIndex == lastAreaEdgeTapIndex &&
-                        now - lastAreaEdgeTapAt <= 450L
-                    ) {
-                        insertAreaPointAtEdge(hitArea, edgeIndex)
-                        lastAreaEdgeTapAt = 0L
-                        onMessage?.invoke("已在边线中间添加控制点")
-                    } else {
-                        lastAreaEdgeTapAt = now
-                        lastAreaEdgeTapArea = hitArea
-                        lastAreaEdgeTapIndex = edgeIndex
-                        onMessage?.invoke("已选中面积；双击边线可添加控制点")
-                    }
-                } else {
-                    selectedAreaIndex = -1
-                    selectedAreaPointIndex = -1
-                    clearOtherSelectionsForArea()
-                    pendingAreaPoints += normalizedAreaPoint(event.x, event.y)
-                    onMessage?.invoke("已放置第一个面积控制点，请继续点击")
                 }
                 notifySelectionChanged()
                 invalidate()
                 return true
             }
             MotionEvent.ACTION_CANCEL -> {
-                editingAreaPoint = -1
-                areaPointMoved = false
-                magnifierFocusX = null
-                magnifierFocusY = null
-                parent?.requestDisallowInterceptTouchEvent(false)
                 invalidate()
                 return true
             }
@@ -1132,6 +1041,46 @@ class ImageAnnotationView @JvmOverloads constructor(
         selectedIndex = -1
         selectedTextIndex = -1
         selectedAngleIndex = -1
+    }
+
+    private fun selectDimension(index: Int) {
+        selectedIndex = index
+        selectedTextIndex = -1
+        selectedAngleIndex = -1
+        selectedAreaIndex = -1
+        selectedAreaPointIndex = -1
+    }
+
+    private fun selectText(index: Int) {
+        selectedIndex = -1
+        selectedTextIndex = index
+        selectedAngleIndex = -1
+        selectedAreaIndex = -1
+        selectedAreaPointIndex = -1
+    }
+
+    private fun selectAngle(index: Int) {
+        selectedIndex = -1
+        selectedTextIndex = -1
+        selectedAngleIndex = index
+        selectedAreaIndex = -1
+        selectedAreaPointIndex = -1
+    }
+
+    private fun selectArea(index: Int) {
+        selectedIndex = -1
+        selectedTextIndex = -1
+        selectedAngleIndex = -1
+        selectedAreaIndex = index
+        selectedAreaPointIndex = -1
+    }
+
+    private fun clearSelection() {
+        selectedIndex = -1
+        selectedTextIndex = -1
+        selectedAngleIndex = -1
+        selectedAreaIndex = -1
+        selectedAreaPointIndex = -1
     }
 
     private fun areaPointAt(x: Float, y: Float): Int {
@@ -1243,65 +1192,39 @@ class ImageAnnotationView @JvmOverloads constructor(
         selectedAreaPointIndex = insertionIndex
     }
 
+    private fun addAreaPointOnDoubleTap(x: Float, y: Float) {
+        val edgeIndex = areaEdgeAt(selectedAreaIndex, x, y)
+        if (edgeIndex < 0) return
+        val now = System.currentTimeMillis()
+        if (
+            selectedAreaIndex == lastAreaEdgeTapArea && edgeIndex == lastAreaEdgeTapIndex &&
+            now - lastAreaEdgeTapAt <= 450L
+        ) {
+            insertAreaPointAtEdge(selectedAreaIndex, edgeIndex)
+            lastAreaEdgeTapAt = 0L
+            onMessage?.invoke(context.getString(R.string.annotation_area_point_added))
+        } else {
+            lastAreaEdgeTapAt = now
+            lastAreaEdgeTapArea = selectedAreaIndex
+            lastAreaEdgeTapIndex = edgeIndex
+            onMessage?.invoke(context.getString(R.string.annotation_area_point_add_again))
+        }
+    }
+
     private fun handleAngleTouch(event: MotionEvent): Boolean {
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 if (!imageRect.contains(event.x, event.y)) return false
                 onCanvasTouched?.invoke()
-                angleTouchStartX = event.x
-                angleTouchStartY = event.y
-                editingAnglePoint = anglePointAt(event.x, event.y)
-                anglePointMoved = false
-                if (editingAnglePoint >= 0) {
-                    magnifierFocusX = event.x
-                    magnifierFocusY = event.y
-                    parent?.requestDisallowInterceptTouchEvent(true)
-                    invalidate()
-                }
-                return true
-            }
-            MotionEvent.ACTION_MOVE -> {
-                if (editingAnglePoint < 0) return true
-                val dx = event.x - angleTouchStartX
-                val dy = event.y - angleTouchStartY
-                val threshold = 4f * resources.displayMetrics.density
-                if (anglePointMoved || dx * dx + dy * dy > threshold * threshold) {
-                    if (!anglePointMoved) onManipulationStarted?.invoke()
-                    anglePointMoved = true
-                    magnifierFocusX = event.x.coerceIn(imageRect.left, imageRect.right)
-                    magnifierFocusY = event.y.coerceIn(imageRect.top, imageRect.bottom)
-                    moveAnglePoint(editingAnglePoint, event.x, event.y)
-                }
                 return true
             }
             MotionEvent.ACTION_UP -> {
-                if (editingAnglePoint >= 0) {
-                    if (anglePointMoved) moveAnglePoint(editingAnglePoint, event.x, event.y)
-                    editingAnglePoint = -1
-                    anglePointMoved = false
-                    magnifierFocusX = null
-                    magnifierFocusY = null
-                    parent?.requestDisallowInterceptTouchEvent(false)
-                    notifySelectionChanged()
-                    invalidate()
-                    return true
-                }
-                if (pendingAnglePoints.isEmpty() && selectNearestAngle(event.x, event.y)) {
-                    notifySelectionChanged()
-                    invalidate()
-                    return true
-                }
                 addPendingAnglePoint(event.x, event.y)
                 notifySelectionChanged()
                 invalidate()
                 return true
             }
             MotionEvent.ACTION_CANCEL -> {
-                editingAnglePoint = -1
-                anglePointMoved = false
-                magnifierFocusX = null
-                magnifierFocusY = null
-                parent?.requestDisallowInterceptTouchEvent(false)
                 invalidate()
                 return true
             }
@@ -1431,55 +1354,16 @@ class ImageAnnotationView @JvmOverloads constructor(
             MotionEvent.ACTION_DOWN -> {
                 if (!imageRect.contains(event.x, event.y)) return false
                 onCanvasTouched?.invoke()
-                textTouchStartX = event.x
-                textTouchStartY = event.y
-                textTouchMoved = false
-                draggingTextIndex = textMarkAt(event.x, event.y)
-                if (draggingTextIndex >= 0) {
-                    selectedTextIndex = draggingTextIndex
-                    selectedIndex = -1
-                    selectedAngleIndex = -1
-                    selectedAreaIndex = -1
-                    selectedAreaPointIndex = -1
-                    parent?.requestDisallowInterceptTouchEvent(true)
-                    notifySelectionChanged()
-                    invalidate()
-                }
-                return true
-            }
-            MotionEvent.ACTION_MOVE -> {
-                if (draggingTextIndex < 0) return true
-                val dx = event.x - textTouchStartX
-                val dy = event.y - textTouchStartY
-                val threshold = 4f * resources.displayMetrics.density
-                if (textTouchMoved || dx * dx + dy * dy > threshold * threshold) {
-                    if (!textTouchMoved) onManipulationStarted?.invoke()
-                    textTouchMoved = true
-                    moveTextMark(draggingTextIndex, event.x, event.y)
-                }
                 return true
             }
             MotionEvent.ACTION_UP -> {
-                if (draggingTextIndex >= 0) {
-                    if (textTouchMoved) {
-                        moveTextMark(draggingTextIndex, event.x, event.y)
-                        onMessage?.invoke("文字位置已调整")
-                    } else {
-                        onMessage?.invoke("已选中文字标注")
-                    }
-                    draggingTextIndex = -1
-                    parent?.requestDisallowInterceptTouchEvent(false)
-                } else if (imageRect.contains(event.x, event.y)) {
+                if (imageRect.contains(event.x, event.y)) {
                     textMarks += TextMark(
                         x = (event.x - imageRect.left) / imageRect.width(),
                         y = (event.y - imageRect.top) / imageRect.height(),
                         text = "文字",
                     )
-                    selectedTextIndex = textMarks.lastIndex
-                    selectedIndex = -1
-                    selectedAngleIndex = -1
-                    selectedAreaIndex = -1
-                    selectedAreaPointIndex = -1
+                    selectText(textMarks.lastIndex)
                     onMessage?.invoke("已添加文字，请在下方输入内容")
                 }
                 notifySelectionChanged()
@@ -1487,9 +1371,6 @@ class ImageAnnotationView @JvmOverloads constructor(
                 return true
             }
             MotionEvent.ACTION_CANCEL -> {
-                draggingTextIndex = -1
-                textTouchMoved = false
-                parent?.requestDisallowInterceptTouchEvent(false)
                 return true
             }
         }
