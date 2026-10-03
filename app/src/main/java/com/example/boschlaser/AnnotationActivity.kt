@@ -52,6 +52,7 @@ class AnnotationActivity : AppCompatActivity() {
         private const val STATE_IMAGE_URI = "annotation_image_uri"
         private const val STATE_CAMERA_URI = "annotation_camera_uri"
         private const val STATE_PROJECT_ID = "annotation_project_id_state"
+        private const val STATE_CONTINUOUS_PLACEMENT = "annotation_continuous_placement"
     }
 
     private lateinit var annotationView: ImageAnnotationView
@@ -82,6 +83,9 @@ class AnnotationActivity : AppCompatActivity() {
     private lateinit var textModeButton: ImageButton
     private lateinit var angleModeButton: ImageButton
     private lateinit var areaModeButton: ImageButton
+    private lateinit var placementModeRow: LinearLayout
+    private lateinit var singlePlacementButton: Button
+    private lateinit var continuousPlacementButton: Button
     private lateinit var finishAnnotationButton: ImageButton
     private lateinit var deleteSelectedButton: ImageButton
     private lateinit var deleteAreaPointButton: ImageButton
@@ -100,6 +104,7 @@ class AnnotationActivity : AppCompatActivity() {
     private var selectedAngleMark: AngleMark? = null
     private var selectedAreaMark: AreaMark? = null
     private var editorMode = AnnotationMode.DIMENSION
+    private var continuousPlacement = false
     private var updatingEditor = false
     private var latestMeasurements: List<Float> = emptyList()
     private var observedMeasurementSnapshot: List<Float>? = null
@@ -134,6 +139,8 @@ class AnnotationActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         supportActionBar?.hide()
         buildInterface()
+        continuousPlacement = savedInstanceState?.getBoolean(STATE_CONTINUOUS_PLACEMENT) ?: false
+        updatePlacementButtons()
         currentProjectId = savedInstanceState?.getString(STATE_PROJECT_ID)
             ?: intent.getStringExtra(EXTRA_PROJECT_ID)
         cameraUri = savedInstanceState?.getString(STATE_CAMERA_URI)?.let(Uri::parse)
@@ -156,6 +163,7 @@ class AnnotationActivity : AppCompatActivity() {
         currentImageUri?.let { outState.putString(STATE_IMAGE_URI, it.toString()) }
         cameraUri?.let { outState.putString(STATE_CAMERA_URI, it.toString()) }
         currentProjectId?.let { outState.putString(STATE_PROJECT_ID, it) }
+        outState.putBoolean(STATE_CONTINUOUS_PLACEMENT, continuousPlacement)
         super.onSaveInstanceState(outState)
     }
 
@@ -194,6 +202,7 @@ class AnnotationActivity : AppCompatActivity() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(0, dp(8), 0, dp(10))
+            setBackgroundColor(Color.WHITE)
         }
         setContentView(root)
         applyWindowInsets(root)
@@ -231,6 +240,26 @@ class AnnotationActivity : AppCompatActivity() {
         imageActions.addView(iconButton(R.drawable.ic_share, "分享到微信") { shareToWeChat() })
         imageActions.addView(iconButton(R.drawable.ic_save, "保存到相册") { saveToGallery() })
         root.addView(imageActions)
+
+        placementModeRow = row().apply {
+            setPadding(dp(10), dp(3), dp(10), dp(3))
+            addView(TextView(this@AnnotationActivity).apply {
+                text = getString(R.string.annotation_placement_mode)
+                textSize = 13f
+                setTextColor(Color.DKGRAY)
+            })
+            addView(android.view.View(this@AnnotationActivity), LinearLayout.LayoutParams(0, 1, 1f))
+        }
+        singlePlacementButton = modeButton(getString(R.string.annotation_placement_single)) {
+            setContinuousPlacement(false)
+        }
+        continuousPlacementButton = modeButton(getString(R.string.annotation_placement_continuous)) {
+            setContinuousPlacement(true)
+        }
+        placementModeRow.addView(singlePlacementButton)
+        placementModeRow.addView(continuousPlacementButton)
+        root.addView(placementModeRow)
+        updatePlacementButtons()
         updateModeButtons(AnnotationMode.DIMENSION)
 
         distanceRow = row()
@@ -418,10 +447,13 @@ class AnnotationActivity : AppCompatActivity() {
                 }
             }
             onSelectionChanged = { selection -> showSelection(selection) }
+            onAnnotationCreated = { mode -> handleAnnotationCreated(mode) }
             onCanvasTouched = { finishDistanceEditing() }
             onManipulationStarted = { dismissSelectionPanel() }
         }
-        val imageContainer = FrameLayout(this)
+        val imageContainer = FrameLayout(this).apply {
+            setBackgroundColor(Color.WHITE)
+        }
         imageContainer.addView(annotationView, FrameLayout.LayoutParams(-1, -1))
         finishAnnotationButton = ImageButton(this).apply {
             setImageResource(R.drawable.ic_confirm)
@@ -635,10 +667,11 @@ class AnnotationActivity : AppCompatActivity() {
         selectedAreaMark = selectedAreaMark?.copy(label = label)
     }
 
-    private fun setEditorMode(mode: AnnotationMode) {
+    private fun setEditorMode(mode: AnnotationMode, preserveSelection: Boolean = false) {
         editorMode = mode
-        annotationView.setMode(mode)
+        annotationView.setMode(mode, preserveSelection)
         updateModeButtons(mode)
+        updatePlacementButtons()
         updateFinishAnnotationButton()
         updateDeleteSelectedButton()
         hintText.text = when (mode) {
@@ -648,6 +681,30 @@ class AnnotationActivity : AppCompatActivity() {
             AnnotationMode.ANGLE -> getString(R.string.annotation_angle_mode_hint)
             AnnotationMode.AREA -> getString(R.string.annotation_area_mode_hint)
         }
+    }
+
+    private fun handleAnnotationCreated(mode: AnnotationMode) {
+        if (continuousPlacement || editorMode != mode) return
+        setEditorMode(AnnotationMode.MOVE, preserveSelection = true)
+        hintText.text = getString(R.string.annotation_single_placement_completed_hint)
+    }
+
+    private fun setContinuousPlacement(enabled: Boolean) {
+        continuousPlacement = enabled
+        updatePlacementButtons()
+    }
+
+    private fun updatePlacementButtons() {
+        if (!::placementModeRow.isInitialized || !::singlePlacementButton.isInitialized ||
+            !::continuousPlacementButton.isInitialized
+        ) return
+        placementModeRow.visibility = if (editorMode == AnnotationMode.MOVE) {
+            android.view.View.INVISIBLE
+        } else {
+            android.view.View.VISIBLE
+        }
+        styleChoiceButton(singlePlacementButton, !continuousPlacement)
+        styleChoiceButton(continuousPlacementButton, continuousPlacement)
     }
 
     private fun updateFinishAnnotationButton() {

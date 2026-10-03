@@ -132,7 +132,7 @@ class BoschBleManager(context: Context, private val listener: Listener) {
                 BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
             }
             postStatus("已找到Bosch服务，正在订阅测量通知…")
-            if (!currentGatt.writeDescriptor(descriptor, cccdValue)) failAndClose("写入通知描述符失败")
+            if (!currentGatt.writeDescriptorCompat(descriptor, cccdValue)) failAndClose("写入通知描述符失败")
         }
 
         @SuppressLint("MissingPermission")
@@ -298,7 +298,7 @@ class BoschBleManager(context: Context, private val listener: Listener) {
             writeInProgress = true
             writeQueue.removeFirst()
         }
-        if (!currentGatt.writeCharacteristic(
+        if (!currentGatt.writeCharacteristicCompat(
                 currentCharacteristic,
                 payload,
                 BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT,
@@ -316,7 +316,7 @@ class BoschBleManager(context: Context, private val listener: Listener) {
         }
     }
 
-    private fun BluetoothGatt.writeDescriptor(
+    private fun BluetoothGatt.writeDescriptorCompat(
         descriptor: BluetoothGattDescriptor,
         value: ByteArray,
     ): Boolean = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -334,7 +334,7 @@ class BoschBleManager(context: Context, private val listener: Listener) {
         return writeDescriptor(descriptor)
     }
 
-    private fun BluetoothGatt.writeCharacteristic(
+    private fun BluetoothGatt.writeCharacteristicCompat(
         characteristic: BluetoothGattCharacteristic,
         value: ByteArray,
         writeType: Int,

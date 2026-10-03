@@ -18,4 +18,8 @@
     <string name="annotation_area_point_add_again">再次点击同一条边，在边线正中间添加控制点</string>
     <string name="annotation_finish">完成标注</string>
     <string name="annotation_delete_selected">删除选中标注</string>
+    <string name="annotation_placement_mode">放置方式</string>
+    <string name="annotation_placement_single">单次</string>
+    <string name="annotation_placement_continuous">连续</string>
+    <string name="annotation_single_placement_completed_hint">标注已完成，已进入移动模式；可拖动调整或编辑属性</string>
 </resources>

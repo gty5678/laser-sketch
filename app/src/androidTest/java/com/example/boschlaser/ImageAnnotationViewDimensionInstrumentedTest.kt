@@ -8,6 +8,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -95,6 +96,100 @@ class ImageAnnotationViewDimensionInstrumentedTest {
         assertEquals(0.35f, adjusted.startY, 0.001f)
         assertEquals(original.endX, adjusted.endX, 0.001f)
         assertEquals(original.endY, adjusted.endY, 0.001f)
+    }
+
+    @Test
+    fun dimensionCreationCallbackOnlyFiresForAValidDimension() {
+        if (Looper.myLooper() == null) Looper.prepare()
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val createdModes = mutableListOf<AnnotationMode>()
+        val view = ImageAnnotationView(context).apply {
+            setBitmap(Bitmap.createBitmap(400, 400, Bitmap.Config.ARGB_8888))
+            measure(exactly(400), exactly(400))
+            layout(0, 0, 400, 400)
+            onAnnotationCreated = { createdModes += it }
+        }
+
+        touch(view, MotionEvent.ACTION_DOWN, 80f, 100f)
+        touch(view, MotionEvent.ACTION_UP, 82f, 102f)
+        assertTrue(createdModes.isEmpty())
+
+        touch(view, MotionEvent.ACTION_DOWN, 80f, 100f)
+        touch(view, MotionEvent.ACTION_UP, 300f, 320f)
+        assertEquals(listOf(AnnotationMode.DIMENSION), createdModes)
+    }
+
+    @Test
+    fun switchingToMoveAfterCreationCanPreserveNewDimensionSelection() {
+        if (Looper.myLooper() == null) Looper.prepare()
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val view = ImageAnnotationView(context).apply {
+            setBitmap(Bitmap.createBitmap(400, 400, Bitmap.Config.ARGB_8888))
+            measure(exactly(400), exactly(400))
+            layout(0, 0, 400, 400)
+        }
+        view.onAnnotationCreated = { view.setMode(AnnotationMode.MOVE, preserveSelection = true) }
+
+        touch(view, MotionEvent.ACTION_DOWN, 80f, 100f)
+        touch(view, MotionEvent.ACTION_UP, 300f, 320f)
+        touch(view, MotionEvent.ACTION_DOWN, 80f, 100f)
+        touch(view, MotionEvent.ACTION_MOVE, 120f, 140f)
+        touch(view, MotionEvent.ACTION_UP, 120f, 140f)
+
+        val adjusted = view.snapshotState().dimensions.single()
+        assertEquals(0.3f, adjusted.startX, 0.001f)
+        assertEquals(0.35f, adjusted.startY, 0.001f)
+    }
+
+    @Test
+    fun angleAndAreaCallbacksFireOnlyAfterTheirThirdPoint() {
+        if (Looper.myLooper() == null) Looper.prepare()
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val createdModes = mutableListOf<AnnotationMode>()
+        val view = ImageAnnotationView(context).apply {
+            setBitmap(Bitmap.createBitmap(400, 400, Bitmap.Config.ARGB_8888))
+            measure(exactly(400), exactly(400))
+            layout(0, 0, 400, 400)
+            onAnnotationCreated = { createdModes += it }
+            setMode(AnnotationMode.ANGLE)
+        }
+
+        tap(view, 80f, 100f)
+        tap(view, 180f, 180f)
+        assertTrue(createdModes.isEmpty())
+        tap(view, 300f, 100f)
+        assertEquals(listOf(AnnotationMode.ANGLE), createdModes)
+
+        view.setMode(AnnotationMode.AREA)
+        tap(view, 80f, 100f)
+        tap(view, 300f, 100f)
+        assertEquals(listOf(AnnotationMode.ANGLE), createdModes)
+        tap(view, 180f, 300f)
+        assertEquals(listOf(AnnotationMode.ANGLE, AnnotationMode.AREA), createdModes)
+    }
+
+    @Test
+    fun textCreationCallbackFiresAfterTextIsAdded() {
+        if (Looper.myLooper() == null) Looper.prepare()
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val createdModes = mutableListOf<AnnotationMode>()
+        val view = ImageAnnotationView(context).apply {
+            setBitmap(Bitmap.createBitmap(400, 400, Bitmap.Config.ARGB_8888))
+            measure(exactly(400), exactly(400))
+            layout(0, 0, 400, 400)
+            onAnnotationCreated = { createdModes += it }
+            setMode(AnnotationMode.TEXT)
+        }
+
+        tap(view, 180f, 180f)
+
+        assertEquals(listOf(AnnotationMode.TEXT), createdModes)
+        assertEquals(1, view.snapshotState().texts.size)
+    }
+
+    private fun tap(view: ImageAnnotationView, x: Float, y: Float) {
+        touch(view, MotionEvent.ACTION_DOWN, x, y)
+        touch(view, MotionEvent.ACTION_UP, x, y)
     }
 
     private fun touch(view: ImageAnnotationView, action: Int, x: Float, y: Float) {

@@ -114,6 +114,7 @@ class ImageAnnotationView @JvmOverloads constructor(
 
     var onMessage: ((String) -> Unit)? = null
     var onSelectionChanged: ((AnnotationSelection?) -> Unit)? = null
+    var onAnnotationCreated: ((AnnotationMode) -> Unit)? = null
     var onCanvasTouched: (() -> Unit)? = null
     var onManipulationStarted: (() -> Unit)? = null
     var defaultDimensionLabel: String = ""
@@ -214,14 +215,16 @@ class ImageAnnotationView @JvmOverloads constructor(
         return true
     }
 
-    fun setMode(value: AnnotationMode) {
+    fun setMode(value: AnnotationMode, preserveSelection: Boolean = false) {
         if (mode == value) return
         mode = value
-        selectedIndex = -1
-        selectedTextIndex = -1
-        selectedAngleIndex = -1
-        selectedAreaIndex = -1
-        selectedAreaPointIndex = -1
+        if (!preserveSelection) {
+            selectedIndex = -1
+            selectedTextIndex = -1
+            selectedAngleIndex = -1
+            selectedAreaIndex = -1
+            selectedAreaPointIndex = -1
+        }
         pendingAnglePoints.clear()
         pendingAreaPoints.clear()
         magnifierFocusX = null
@@ -389,10 +392,10 @@ class ImageAnnotationView @JvmOverloads constructor(
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        canvas.drawColor(Color.rgb(32, 34, 37))
+        canvas.drawColor(Color.WHITE)
         val source = bitmap
         if (source == null) {
-            textPaint.color = Color.LTGRAY
+            textPaint.color = Color.DKGRAY
             textPaint.textSize = TypedValue.applyDimension(
                 TypedValue.COMPLEX_UNIT_SP,
                 18f,
@@ -493,6 +496,7 @@ class ImageAnnotationView @JvmOverloads constructor(
                             "已添加尺寸线，默认使用最新测量值 $defaultDimensionLabel"
                         },
                     )
+                    onAnnotationCreated?.invoke(AnnotationMode.DIMENSION)
                 }
                 clearPreview()
                 invalidate()
@@ -1014,6 +1018,7 @@ class ImageAnnotationView @JvmOverloads constructor(
                 return true
             }
             MotionEvent.ACTION_UP -> {
+                var areaCreated = false
                 pendingAreaPoints += normalizedAreaPoint(event.x, event.y)
                 when (pendingAreaPoints.size) {
                     1 -> onMessage?.invoke("已放置第一个面积控制点，请继续点击")
@@ -1023,9 +1028,11 @@ class ImageAnnotationView @JvmOverloads constructor(
                         pendingAreaPoints.clear()
                         selectArea(areaMarks.lastIndex)
                         onMessage?.invoke(context.getString(R.string.annotation_area_created_hint))
+                        areaCreated = true
                     }
                 }
                 notifySelectionChanged()
+                if (areaCreated) onAnnotationCreated?.invoke(AnnotationMode.AREA)
                 invalidate()
                 return true
             }
@@ -1224,8 +1231,9 @@ class ImageAnnotationView @JvmOverloads constructor(
                 return true
             }
             MotionEvent.ACTION_UP -> {
-                addPendingAnglePoint(event.x, event.y)
+                val angleCreated = addPendingAnglePoint(event.x, event.y)
                 notifySelectionChanged()
+                if (angleCreated) onAnnotationCreated?.invoke(AnnotationMode.ANGLE)
                 invalidate()
                 return true
             }
@@ -1237,7 +1245,7 @@ class ImageAnnotationView @JvmOverloads constructor(
         return true
     }
 
-    private fun addPendingAnglePoint(x: Float, y: Float) {
+    private fun addPendingAnglePoint(x: Float, y: Float): Boolean {
         pendingAnglePoints +=
             ((x.coerceIn(imageRect.left, imageRect.right) - imageRect.left) / imageRect.width()) to
             ((y.coerceIn(imageRect.top, imageRect.bottom) - imageRect.top) / imageRect.height())
@@ -1266,8 +1274,10 @@ class ImageAnnotationView @JvmOverloads constructor(
                 selectedAreaIndex = -1
                 selectedAreaPointIndex = -1
                 onMessage?.invoke("角度标注已完成，请输入角度")
+                return true
             }
         }
+        return false
     }
 
     private fun drawPendingAngle(canvas: Canvas, rect: RectF, scale: Float) {
@@ -1362,6 +1372,7 @@ class ImageAnnotationView @JvmOverloads constructor(
                 return true
             }
             MotionEvent.ACTION_UP -> {
+                var textCreated = false
                 if (imageRect.contains(event.x, event.y)) {
                     textMarks += TextMark(
                         x = (event.x - imageRect.left) / imageRect.width(),
@@ -1370,8 +1381,10 @@ class ImageAnnotationView @JvmOverloads constructor(
                     )
                     selectText(textMarks.lastIndex)
                     onMessage?.invoke("已添加文字，请在下方输入内容")
+                    textCreated = true
                 }
                 notifySelectionChanged()
+                if (textCreated) onAnnotationCreated?.invoke(AnnotationMode.TEXT)
                 invalidate()
                 return true
             }
