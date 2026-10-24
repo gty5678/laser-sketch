@@ -24,3 +24,6 @@ dependencyResolutionManagement {
 
 rootProject.name = "LaserSketch"
 include(":app")
+include(":shared")
+
+include(":shared-ui")

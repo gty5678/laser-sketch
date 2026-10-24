@@ -47,11 +47,11 @@ class SketchViewColumnSelectionInstrumentedTest {
     }
 
     private fun findColumn(view: SketchView, x: Float, y: Float): SketchColumn? {
-        val method = SketchView::class.java.getDeclaredMethod(
-            "findColumn",
-            Float::class.javaPrimitiveType,
-            Float::class.javaPrimitiveType,
-        ).apply { isAccessible = true }
-        return method.invoke(view, x, y) as SketchColumn?
+        view.sendWorldPointer(android.view.MotionEvent.ACTION_DOWN, SketchPoint(x, y))
+        val selected = view.selectedColumn()
+        view.cancelGesture()
+        return selected
     }
+
+
 }

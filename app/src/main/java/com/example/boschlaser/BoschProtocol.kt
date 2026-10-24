@@ -1,7 +1,8 @@
 package com.example.boschlaser
 
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
+import com.example.boschlaser.shared.bosch.BoschProtocol as CoreProtocol
+import com.example.boschlaser.shared.bosch.MeasurementOperation
+import com.example.boschlaser.shared.bosch.MtFrameAssembler as CoreFrameAssembler
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -24,6 +25,7 @@ data class Measurement(
     val operation: String? = null,
     val accumulatedMeters: Float? = null,
     val raw: ByteArray,
+    val id: String = "legacy-$timestamp",
 ) {
     val millimeters: Float get() = meters * 1000f
     val timeText: String
@@ -31,8 +33,8 @@ data class Measurement(
 }
 
 object BoschProtocol {
-    const val SERVICE_UUID = "02a6c0d0-0451-4000-b000-fb3210111989"
-    const val CHARACTERISTIC_UUID = "02a6c0d1-0451-4000-b000-fb3210111989"
+    const val SERVICE_UUID = CoreProtocol.SERVICE_UUID
+    const val CHARACTERISTIC_UUID = CoreProtocol.CHARACTERISTIC_UUID
 
     val enableMeasurements = longRequest(85, byteArrayOf(1, 0))
     val greenMeasureKey = longRequest(86, byteArrayOf(0))
@@ -63,67 +65,28 @@ object BoschProtocol {
         ProtocolCommand("laser_status", "读取激光允许状态", 76, description = "读取激光允许引脚，不是实时开关状态"),
     )
 
-    fun crc8(data: ByteArray, endExclusive: Int = data.size): Int {
-        var value = 0xAA
-        for (index in 0 until endExclusive) {
-            val byte = data[index].toInt() and 0xFF
-            for (bit in 0 until 8) {
-                val feedback = (value ushr 7) xor ((byte ushr (7 - bit)) and 1)
-                value = (value shl 1) and 0xFF
-                if (feedback != 0) value = value xor 0xA6
-            }
-        }
-        return value
-    }
+    fun crc8(data: ByteArray, endExclusive: Int = data.size): Int = CoreProtocol.crc8(data, endExclusive)
 
-    fun longRequest(command: Int, data: ByteArray = byteArrayOf()): ByteArray {
-        require(command in 0..255 && data.size <= 254)
-        val result = ByteArray(data.size + 4)
-        result[0] = 0xC0.toByte()
-        result[1] = command.toByte()
-        result[2] = data.size.toByte()
-        data.copyInto(result, 3)
-        result[result.lastIndex] = crc8(result, result.lastIndex).toByte()
-        return result
-    }
+    fun longRequest(command: Int, data: ByteArray = byteArrayOf()): ByteArray = CoreProtocol.longRequest(command, data)
 
-    fun isCommand17(frame: ByteArray): Boolean =
-        frame.size == 4 && u(frame[0]) and 0xC0 == 0xC0 && u(frame[1]) == 17 &&
-            u(frame[2]) == 0 && crc8(frame, frame.lastIndex) == u(frame.last())
+    fun isCommand17(frame: ByteArray): Boolean = CoreProtocol.isCommand17(frame)
 
-    fun parseLaserState(frame: ByteArray): Boolean? {
-        if (frame.size < 6 || u(frame[0]) and 0xC0 != 0xC0 || u(frame[1]) != 85) return null
-        val length = u(frame[2])
-        if (length < 2 || frame.size != length + 4 || crc8(frame, frame.lastIndex) != u(frame.last())) return null
-        return u(frame[4]) and 1 != 0
-    }
+    fun parseLaserState(frame: ByteArray): Boolean? = CoreProtocol.parseLaserState(frame)
 
     fun parseMeasurement(frame: ByteArray): Measurement? {
-        if (frame.size < 12 || u(frame[0]) != 0xC0 || u(frame[1]) != 85 || u(frame[2]) != 16) return null
-        if (frame.size != 20 || crc8(frame, frame.lastIndex) != u(frame.last())) return null
-        val mode = u(frame[3]) ushr 2
-        val result = floatAt(frame, 7)
-        if (!result.isFinite()) return null
-        return when (mode) {
-            1 -> if (result in 0f..1000f) Measurement(System.currentTimeMillis(), result, raw = frame) else null
-            16, 17 -> {
-                val component2 = floatAt(frame, 15)
-                if (!component2.isFinite() || component2 !in 0f..1000f || result !in -1000f..1000f) null
-                else Measurement(
-                    System.currentTimeMillis(), component2,
-                    if (mode == 16) "距离加法" else "距离减法", result, frame,
-                )
-            }
-            else -> null
-        }
+        val parsed = CoreProtocol.parseMeasurement(frame) ?: return null
+        return Measurement(
+            System.currentTimeMillis(), (parsed.millimeters / 1000.0).toFloat(),
+            when (parsed.operation) {
+                MeasurementOperation.ADD -> "距离加法"
+                MeasurementOperation.SUBTRACT -> "距离减法"
+                null -> null
+            },
+            parsed.accumulatedMillimeters?.let { (it / 1000.0).toFloat() }, frame,
+        )
     }
 
-    fun parseContinuousMillimeters(frame: ByteArray): Float? {
-        if (frame.size != 7 || u(frame[0]) and 0x1F != 0 || u(frame[1]) != 4) return null
-        if (crc8(frame, frame.lastIndex) != u(frame.last())) return null
-        val raw = ByteBuffer.wrap(frame, 2, 4).order(ByteOrder.LITTLE_ENDIAN).int.toLong() and 0xFFFFFFFFL
-        return if (raw == 0L) null else raw * 0.05f
-    }
+    fun parseContinuousMillimeters(frame: ByteArray): Float? = CoreProtocol.parseContinuousMillimeters(frame)?.toFloat()
 
     fun describe(frame: ByteArray, command: ProtocolCommand? = null): String {
         if (frame.isEmpty()) return "空数据"
@@ -203,12 +166,12 @@ object BoschProtocol {
     }
 
     private fun floatAt(data: ByteArray, offset: Int): Float =
-        ByteBuffer.wrap(data, offset, 4).order(ByteOrder.LITTLE_ENDIAN).float
+        CoreProtocol.floatAt(data, offset)
 
     private fun littleU16(data: ByteArray, offset: Int): Int = u(data[offset]) or (u(data[offset + 1]) shl 8)
 
     private fun littleU32(data: ByteArray, offset: Int = 0): Long =
-        ByteBuffer.wrap(data, offset, 4).order(ByteOrder.LITTLE_ENDIAN).int.toLong() and 0xFFFFFFFFL
+        CoreProtocol.littleU32(data, offset)
 
     private fun deviceModeName(value: Int): String = mapOf(
         0 to "无操作", 1 to "单次距离", 2 to "连续距离", 4 to "面积", 7 to "体积",
@@ -223,34 +186,9 @@ object BoschProtocol {
 }
 
 class MtFrameAssembler {
-    private var buffer = byteArrayOf()
-    private var lastChunkAt = 0L
-
-    fun reset() {
-        buffer = byteArrayOf()
-        lastChunkAt = 0L
-    }
-
-    fun feed(chunk: ByteArray): List<ByteArray> {
-        val now = System.currentTimeMillis()
-        if (buffer.isNotEmpty() && now - lastChunkAt > 750) reset()
-        buffer += chunk
-        lastChunkAt = now
-        val frames = mutableListOf<ByteArray>()
-        while (buffer.isNotEmpty()) {
-            val kind = buffer[0].toInt() and 0xC0
-            val expected = when (kind) {
-                0x00 -> if (buffer.size >= 2) (buffer[1].toInt() and 0xFF) + 3 else null
-                0xC0 -> if (buffer.size >= 3) (buffer[2].toInt() and 0xFF) + 4 else null
-                else -> buffer.size
-            } ?: break
-            if (buffer.size < expected) break
-            frames += buffer.copyOfRange(0, expected)
-            buffer = buffer.copyOfRange(expected, buffer.size)
-        }
-        if (buffer.size > 1024) reset()
-        return frames
-    }
+    private val delegate = CoreFrameAssembler()
+    fun reset() = delegate.reset()
+    fun feed(chunk: ByteArray): List<ByteArray> = delegate.feed(chunk, System.nanoTime() / 1_000_000)
 }
 
 fun ByteArray.hex(): String = joinToString(" ") { "%02x".format(it.toInt() and 0xFF) }

@@ -4,10 +4,12 @@
 
 ## 项目概览
 
-LaserSketch 是一个单模块原生 Android 应用，使用 Kotlin 和传统 View/Canvas UI。它通过 BLE 连接 Bosch GLM 测距设备，并提供测量历史、平面草稿和图片标注功能。
+LaserSketch 的 Android 宿主使用 Kotlin、共享 Compose 项目列表、草图与照片标注 Canvas，共享核心位于 Kotlin Multiplatform `:shared` 模块。它通过 BLE 连接 Bosch GLM 测距设备，并提供测量历史、平面草稿和图片标注功能。当前迁移状态见 `docs/architecture.md`。 当前实施范围仅为 Android；共享层用于后续跨平台准备，本轮不编写或验收 iOS 宿主与适配。
 
 - Gradle 项目名：`LaserSketch`
 - 应用模块：`:app`
+- 共享核心：`:shared`（Android / JVM / iOS targets）
+- 共享界面：`:shared-ui`（Compose Multiplatform；Android / JVM / iOS targets）
 - 包名及 namespace：`com.example.boschlaser`
 - 最低 Android 版本：API 31（Android 12）
 - compileSdk / targetSdk：37
@@ -18,16 +20,22 @@ LaserSketch 是一个单模块原生 Android 应用，使用 Kotlin 和传统 Vi
 ## 重要文件与职责
 
 - `app/src/main/java/com/example/boschlaser/MainActivity.kt`：首页、权限、BLE 设备连接和测量记录入口。
-- `BoschBleManager.kt`：BLE 扫描、连接、GATT 通信与生命周期管理。
-- `BoschProtocol.kt`：Bosch 数据帧和测量结果解析；应尽量保持为可做 JVM 单元测试的纯逻辑。
-- `MeasurementStore.kt`：进程内最新测量值及监听。
-- `MeasurementHistoryStore.kt`：SQLite 测量历史。
-- `SketchActivity.kt` / `SketchView.kt`：平面草稿界面、Canvas 绘制、触控和几何编辑。
+- `BoschBleManager.kt`：Android 屏幕兼容控制器与生命周期协调；协议/设备业务在 shared，GATT/扫描/权限在 `platform/AndroidBleTransport.kt`。
+- `BoschProtocol.kt`：Android 兼容显示外观；Bosch 帧、CRC 与测量解析实现及其 JVM 回归位于共享 `bosch/`。
+- `shared/.../measurement/`：共享测量模型、仓库接口与业务服务。
+- `MeasurementServices.kt`：Android 应用持久化容器与 scope；不持有 Activity。
+- `platform/AndroidMeasurementRepository.kt`：SQLite 测量历史与版本 1→2 兼容升级。
+- `SketchActivity.kt` / `SketchView.kt`：Android 草图页面、Compose 画布宿主与触控适配；共享 `SketchCanvas` 负责场景与放大镜绘制，共享 Editor 负责几何编辑。
 - `WallJointGeometry.kt`：墙角几何计算；优先在这里放置可复用的纯几何逻辑。
-- `AnnotationActivity.kt` / `ImageAnnotationView.kt`：图片标注界面、绘制和交互。
+- `AnnotationActivity.kt` / `ImageAnnotationView.kt`：Android 图片标注页面、Compose 画布宿主、位图/字体和触控适配；共享 `AnnotationCanvas` 负责场景与放大镜绘制，集合为共享文档的只读投影。
+- `shared/.../annotation/`：独立照片标注文档、命令、差量历史与预览事务。
+- `docs/ANNOTATION_BEHAVIOR_SPEC.md`：照片标注行为契约与平台边界。
 - `SketchProjectStore.kt` / `AnnotationProjectStore.kt`：项目序列化及应用内部文件管理。
 - `docs/DRAWING_BEHAVIOR_SPEC.md`：平面绘图行为契约和验收场景。
 - `app/src/test/`：不依赖 Android 运行时的 JVM 单元测试。
+- `shared-ui/src/commonMain/`：共享 Compose 界面；仅依赖共享核心，平台图片、权限、文件和生命周期适配在 Android 宿主。
+- `shared/src/commonMain/`：平台无关语义模型、几何、编辑文档、命令与协议；不能依赖 Android、Java 或 Compose。
+- `shared/src/commonTest/`：共享核心测试，通过 `:shared:jvmTest` 在本机执行。
 - `app/src/androidTest/`：需要设备或模拟器的 Android 仪器测试。
 
 ## 修改原则
@@ -50,6 +58,8 @@ Windows PowerShell 使用仓库自带 Wrapper：
 ```powershell
 .\gradlew.bat :app:assembleDebug
 .\gradlew.bat :app:testDebugUnitTest
+.\gradlew.bat :shared:checkSharedBoundaries :shared:jvmTest
+.\gradlew.bat :shared-ui:checkSharedUiBoundaries :shared-ui:jvmTest
 .\gradlew.bat :app:connectedDebugAndroidTest
 ```
 

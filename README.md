@@ -36,6 +36,9 @@ LaserSketch 是一款面向 Android 的激光测距与空间记录工具。应�
 ### 平面草稿
 
 - 绘制墙体并编辑墙长、墙厚
+- 添加平行墙面的关联尺寸标注，选内墙面可标注房间净距；标注随工程保存并参与图片导出
+- 先选中标注关联的墙，再点击尺寸数字输入实测净距，移动选中墙、固定另一面墙，相连墙沿原方向调整；支持撤销和删除标注
+- 选中墙直接显示邻近平行墙面的临时净距，仅点击图上绿色净距数字弹出数值输入，推动选中墙；净距和尺寸标注不在底部显示编辑面板
 - 墙体可使用中心线、内侧线或外侧线作为定位线；切换时定位线保持不动，墙体移动到对应位置，连续绘墙会继承当前定位线
 - 添加矩形柱和圆柱
 - 方柱支持通过独立旋转手柄按 15°吸附旋转，也可在属性面板输入精确角度；旋转角度随草稿保存
@@ -61,6 +64,7 @@ LaserSketch 是一款面向 Android 的激光测距与空间记录工具。应�
 ## 技术栈
 
 - Kotlin
+- Kotlin Multiplatform `:shared` 核心（Android / JVM / iOS targets）
 - Android Gradle Plugin `9.3.2`
 - Gradle `9.5.0`
 - Android SDK：`compileSdk 37`，`targetSdk 37`
@@ -68,9 +72,11 @@ LaserSketch 是一款面向 Android 的激光测距与空间记录工具。应�
 - AndroidX Core KTX、AppCompat、Material Components
 - Bluetooth GATT / BLE
 - SQLite：保存测量历史
-- JSON + 应用内部文件：保存草稿和图片标注项目
+- 统一 `.lsk` 仓库：保存草图、照片和标注；保留旧工程原件
 
 ## 项目结构
+
+跨平台改造进度、依赖方向与尚未迁移的部分见 [架构说明](docs/architecture.md)，数据兼容规则见 [工程格式](docs/project-format.md)。Android UI 当前继续使用 View/Canvas。
 
 ```text
 .
@@ -85,11 +91,16 @@ LaserSketch 是一款面向 Android 的激光测距与空间记录工具。应�
 │       │   │   ├── SketchView.kt                # 平面草稿绘制和几何操作
 │       │   │   ├── AnnotationActivity.kt        # 图片标注编辑器
 │       │   │   ├── ImageAnnotationView.kt       # 图片标注绘制和交互
-│       │   │   ├── *ProjectStore.kt             # 项目保存、加载和管理
-│       │   │   └── MeasurementHistoryStore.kt   # 测量历史数据库
+│       │   │   ├── *ProjectStore.kt             # 旧工程格式兼容
+│       │   │   ├── ProjectServices.kt           # 统一项目仓库与应用级保存队列
+│       │   │   └── MeasurementServices.kt       # 共享测量服务的 Android 容器
 │       │   └── res/                             # 图标、主题和资源
 │       ├── test/                                # JVM 单元测试
 │       └── androidTest/                         # Android 仪器测试
+├── shared/
+│   └── src/
+│       ├── commonMain/kotlin/                  # 语义模型、纯几何、命令、协议
+│       └── commonTest/kotlin/                  # 平台无关核心回归测试
 ├── gradle/
 ├── build.gradle.kts
 ├── settings.gradle.kts
@@ -140,6 +151,7 @@ app/build/outputs/apk/debug/app-debug.apk
 
 ```powershell
 .\gradlew.bat :app:testDebugUnitTest
+.\gradlew.bat :shared:checkSharedBoundaries :shared:jvmTest
 ```
 
 运行连接设备上的 Android 仪器测试：
@@ -197,3 +209,7 @@ Android 12 及以上版本会在运行时请求“附近设备”权限。BLE �
 - Version：`1.0`（versionCode `1`）
 
 Application ID 暂时保留为 `com.example.boschlaser`，以避免更换包名后影响已安装应用的数据和现有测试。
+
+测量历史已接入共享仓库，SQLite 兼容升级与验证范围见 [测量仓库](docs/measurement-repository.md)。
+
+项目支持 `.lsk` 交换：在首页导入独立副本，在草图或照片项目菜单导出完整工程；系统文件选择器决定读取和保存位置。导入不会覆盖本机项目，格式与边界见 [项目格式](docs/project-format.md)。

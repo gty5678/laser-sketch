@@ -1,5 +1,8 @@
 package com.example.boschlaser
 
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.collect
+
 import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.ClipData
@@ -7,29 +10,50 @@ import android.content.ContentValues
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Color
-import android.graphics.ImageDecoder
-import android.graphics.drawable.GradientDrawable
+import com.example.boschlaser.platform.AndroidPhotoCodec
 import android.net.Uri
 import android.os.Bundle
 import android.provider.MediaStore
-import android.text.Editable
-import android.text.InputType
-import android.text.TextWatcher
-import android.view.Gravity
-import android.view.MotionEvent
 import android.view.inputmethod.InputMethodManager
-import android.widget.AdapterView
-import android.widget.ArrayAdapter
-import android.widget.Button
-import android.widget.CheckBox
-import android.widget.EditText
 import android.widget.FrameLayout
-import android.widget.ImageButton
-import android.widget.LinearLayout
-import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.res.dimensionResource
+import com.example.boschlaser.ui.AnnotationPropertySheet
+import com.example.boschlaser.ui.AnnotationPropertySheetStyle
+import com.example.boschlaser.ui.AnnotationScreen
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.colorResource
+import com.example.boschlaser.ui.AnnotationToolbar
+import com.example.boschlaser.ui.AnnotationToolItem
+import com.example.boschlaser.ui.PlacementOptions
+import com.example.boschlaser.ui.AnnotationActions
+import com.example.boschlaser.ui.RecentMeasurements
+import com.example.boschlaser.ui.AnnotationAreaPointAction
+import com.example.boschlaser.ui.AnnotationStyleProperties
+import com.example.boschlaser.ui.AnnotationStyleLabels
+import com.example.boschlaser.ui.ColorPalette
+import com.example.boschlaser.ui.ColorOption
+import com.example.boschlaser.ui.AnnotationLabelProperties
+import com.example.boschlaser.ui.AnnotationQuantityProperty
+import com.example.boschlaser.shared.measurement.MeasurementRecord
+import com.example.boschlaser.shared.measurement.isNewestMeasurementAdded
+import com.example.boschlaser.shared.annotation.AnnotationQuantityLabel
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
 import androidx.core.view.ViewCompat
@@ -39,13 +63,15 @@ import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import kotlin.math.ceil
 import kotlin.math.max
 
 class AnnotationActivity : AppCompatActivity() {
     companion object {
         const val EXTRA_MEASUREMENTS_MM = "measurements_mm"
         const val EXTRA_PROJECT_ID = "annotation_project_id"
+        const val EXTRA_PHOTO_ASSET_ID = "annotation_photo_asset_id"
+        private const val STATE_LOADING_IMAGE = "annotation_loading_image"
+        private const val STATE_PENDING_PROJECT = "annotation_pending_project"
         const val EXTRA_START_SOURCE = "start_source"
         const val SOURCE_CAMERA = "camera"
         const val SOURCE_GALLERY = "gallery"
@@ -57,66 +83,42 @@ class AnnotationActivity : AppCompatActivity() {
 
     private lateinit var annotationView: ImageAnnotationView
     private lateinit var hintText: TextView
-    private lateinit var selectionPanel: LinearLayout
-    private lateinit var distanceRow: LinearLayout
-    private lateinit var distanceInput: EditText
-    private lateinit var unitSpinner: Spinner
-    private lateinit var textRow: LinearLayout
-    private lateinit var textInput: EditText
-    private lateinit var angleRow: LinearLayout
-    private lateinit var angleInput: EditText
-    private lateinit var areaRow: LinearLayout
-    private lateinit var areaInput: EditText
-    private lateinit var areaUnitSpinner: Spinner
-    private lateinit var sizeRow: LinearLayout
-    private lateinit var smallTextButton: Button
-    private lateinit var mediumTextButton: Button
-    private lateinit var largeTextButton: Button
-    private lateinit var textBackgroundRow: LinearLayout
-    private lateinit var whiteBackgroundCheck: CheckBox
-    private lateinit var thicknessRow: LinearLayout
-    private lateinit var thinLineButton: Button
-    private lateinit var mediumLineButton: Button
-    private lateinit var thickLineButton: Button
-    private lateinit var moveModeButton: ImageButton
-    private lateinit var dimensionModeButton: ImageButton
-    private lateinit var textModeButton: ImageButton
-    private lateinit var angleModeButton: ImageButton
-    private lateinit var areaModeButton: ImageButton
-    private lateinit var placementModeRow: LinearLayout
-    private lateinit var singlePlacementButton: Button
-    private lateinit var continuousPlacementButton: Button
-    private lateinit var finishAnnotationButton: ImageButton
-    private lateinit var deleteSelectedButton: ImageButton
-    private lateinit var deleteAreaPointButton: ImageButton
-    private lateinit var recentOverlay: LinearLayout
-    private val recentButtons = mutableListOf<TextView>()
-    private val colorButtons = mutableListOf<Pair<Int, TextView>>()
-    private val markColors = listOf(
-        "红色" to Color.rgb(214, 32, 42),
-        "绿色" to Color.rgb(0, 112, 82),
-        "蓝色" to Color.rgb(21, 101, 192),
-        "橙色" to Color.rgb(239, 108, 0),
-        "黑色" to Color.rgb(34, 34, 34),
-    )
-    private var selectedMark: DimensionMark? = null
-    private var selectedTextMark: TextMark? = null
-    private var selectedAngleMark: AngleMark? = null
-    private var selectedAreaMark: AreaMark? = null
-    private var editorMode = AnnotationMode.DIMENSION
-    private var continuousPlacement = false
-    private var updatingEditor = false
-    private var latestMeasurements: List<Float> = emptyList()
-    private var observedMeasurementSnapshot: List<Float>? = null
+    private var propertyPanelVisible by mutableStateOf(false)
+    private var propertyPanelResetKey by mutableStateOf(0)
+    private var animatePropertyDismiss by mutableStateOf(false)
+    private var distanceProperty by mutableStateOf<TextFieldValue?>(null)
+    private var distanceUnit by mutableStateOf(0)
+    private var textProperty by mutableStateOf<TextFieldValue?>(null)
+    private var angleProperty by mutableStateOf<TextFieldValue?>(null)
+    private var dismissPropertyFocus by mutableStateOf(0)
+    private var areaProperty by mutableStateOf<TextFieldValue?>(null)
+    private var areaUnit by mutableStateOf(0)
+    private var hasAnnotationSelection by mutableStateOf(false)
+    private var hasSelectedAreaPoint by mutableStateOf(false)
+    private var recentMeasurementLabels by mutableStateOf<List<String>>(emptyList())
+    private var selectedMark by mutableStateOf<DimensionMark?>(null)
+    private var selectedTextMark by mutableStateOf<TextMark?>(null)
+    private var selectedAngleMark by mutableStateOf<AngleMark?>(null)
+    private var selectedAreaMark by mutableStateOf<AreaMark?>(null)
+    private var editorMode by mutableStateOf(AnnotationMode.DIMENSION)
+    private var continuousPlacement by mutableStateOf(false)
+    private var latestMeasurements: List<Double> = emptyList()
+    private var observedMeasurementIds: List<String>? = null
     private var cameraUri: Uri? = null
     private var currentImageUri: Uri? = null
     private var currentProjectId: String? = null
+    private var currentPhotoAssetId: String? = null
+    private var projectLoaded = false
+    private var loadingNewImage = false
+    private var pendingPhotoProjectId: String? = null
+    private var imageJob: Job? = null
+    private val projectServices by lazy { ProjectServices.get(this) }
     private val initialMeasurementValues by lazy {
-        intent.getFloatArrayExtra(EXTRA_MEASUREMENTS_MM)?.toList().orEmpty().asReversed()
+        intent.getFloatArrayExtra(EXTRA_MEASUREMENTS_MM)?.map { it.toDouble() }.orEmpty().asReversed()
     }
-    private val measurementListener: (List<Float>) -> Unit = { values ->
-        runOnUiThread { handleMeasurementSnapshot(values) }
-    }
+    private val measurementScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var measurementJob: Job? = null
+    private val measurementService by lazy { MeasurementServices.get(this).service }
 
     private val galleryLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val uri = result.data?.data
@@ -126,13 +128,13 @@ class AnnotationActivity : AppCompatActivity() {
             }
             loadImage(uri)
         } else {
-            hintText.text = "没有选择图片"
+            hintText.text = getString(R.string.annotation_no_image_selected)
         }
     }
 
     private val cameraLauncher = registerForActivityResult(ActivityResultContracts.TakePicture()) { success ->
         val uri = cameraUri
-        if (success && uri != null) loadImage(uri) else toast("没有拍摄照片")
+        if (success && uri != null) loadImage(uri) else toast(getString(R.string.annotation_no_photo_taken))
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -140,11 +142,18 @@ class AnnotationActivity : AppCompatActivity() {
         supportActionBar?.hide()
         buildInterface()
         continuousPlacement = savedInstanceState?.getBoolean(STATE_CONTINUOUS_PLACEMENT) ?: false
-        updatePlacementButtons()
-        currentProjectId = savedInstanceState?.getString(STATE_PROJECT_ID)
-            ?: intent.getStringExtra(EXTRA_PROJECT_ID)
+        currentProjectId = if (savedInstanceState?.getBoolean(STATE_LOADING_IMAGE) == true) null else
+            savedInstanceState?.getString(STATE_PROJECT_ID) ?: intent.getStringExtra(EXTRA_PROJECT_ID)
+        pendingPhotoProjectId = savedInstanceState?.getString(STATE_PENDING_PROJECT)
+        currentPhotoAssetId = savedInstanceState?.getString(EXTRA_PHOTO_ASSET_ID) ?: intent.getStringExtra(EXTRA_PHOTO_ASSET_ID)
+        measurementScope.launch {
+            projectServices.migrationNotices.collect { pending ->
+                if (pending) { toast(getString(R.string.project_migration_notice)); projectServices.acknowledgeMigrationNotice() }
+            }
+        }
         cameraUri = savedInstanceState?.getString(STATE_CAMERA_URI)?.let(Uri::parse)
         val restoredImageUri = savedInstanceState?.getString(STATE_IMAGE_URI)?.let(Uri::parse)
+        if (savedInstanceState?.getBoolean(STATE_LOADING_IMAGE) == true) currentImageUri = restoredImageUri
         when {
             currentProjectId != null -> loadProject(currentProjectId!!)
             restoredImageUri != null -> loadImage(restoredImageUri)
@@ -162,25 +171,35 @@ class AnnotationActivity : AppCompatActivity() {
     override fun onSaveInstanceState(outState: Bundle) {
         currentImageUri?.let { outState.putString(STATE_IMAGE_URI, it.toString()) }
         cameraUri?.let { outState.putString(STATE_CAMERA_URI, it.toString()) }
-        currentProjectId?.let { outState.putString(STATE_PROJECT_ID, it) }
+        if (!loadingNewImage) currentProjectId?.let { outState.putString(STATE_PROJECT_ID, it) }
+        currentPhotoAssetId?.let { outState.putString(EXTRA_PHOTO_ASSET_ID, it) }
+        outState.putBoolean(STATE_LOADING_IMAGE, loadingNewImage)
+        pendingPhotoProjectId?.let { outState.putString(STATE_PENDING_PROJECT, it) }
         outState.putBoolean(STATE_CONTINUOUS_PLACEMENT, continuousPlacement)
         super.onSaveInstanceState(outState)
     }
 
     override fun onPause() {
-        currentProjectId?.let { projectId ->
-            if (::annotationView.isInitialized && annotationView.hasImage()) {
-                val preview = annotationView.exportPreviewBitmap()
-                try {
-                    runCatching {
-                        AnnotationProjectStore.save(this, projectId, annotationView.snapshotState(), preview)
-                    }
-                } finally {
-                    preview?.recycle()
-                }
-            }
-        }
+        if (::annotationView.isInitialized) annotationView.cancelGesture()
+        saveProject()
         super.onPause()
+    }
+
+    private fun saveProject() {
+        if (!projectLoaded || !annotationView.hasImage()) return
+        val id = currentProjectId ?: return
+        val assetId = currentPhotoAssetId ?: return
+        val bitmap = annotationView.exportPreviewBitmap()
+        try {
+            val preview = bitmap?.let(AndroidPhotoCodec::png)
+            val pending = projectServices.saveAnnotation(id, assetId, annotationView.snapshotDocument(), preview)
+            measurementScope.launch {
+                try { pending.await() }
+                catch (failure: CancellationException) { throw failure }
+                catch (_: Exception) { projectServices.acknowledgeError(); toast(getString(R.string.project_storage_failed)) }
+            }
+        } catch (_: Exception) { toast(getString(R.string.project_storage_failed)) }
+        finally { bitmap?.recycle() }
     }
 
     override fun onSupportNavigateUp(): Boolean {
@@ -190,494 +209,270 @@ class AnnotationActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
-        MeasurementStore.addListener(measurementListener)
+        measurementJob = measurementScope.launch {
+            measurementService.records.collect {
+                handleMeasurementSnapshot(measurementService.newestFirst())
+            }
+        }
     }
 
     override fun onStop() {
-        MeasurementStore.removeListener(measurementListener)
+        measurementJob?.cancel()
+        measurementJob = null
         super.onStop()
     }
 
     private fun buildInterface() {
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(0, dp(8), 0, dp(10))
-            setBackgroundColor(Color.WHITE)
-        }
-        setContentView(root)
-        applyWindowInsets(root)
-
-        val imageActions = row().apply {
-            setPadding(dp(6), 0, dp(6), 0)
-        }
-        imageActions.addView(iconButton(R.drawable.ic_back, "返回") { finish() }.apply {
-            layoutParams = LinearLayout.LayoutParams(dp(38), dp(42)).apply { marginEnd = dp(2) }
-        })
-        moveModeButton = modeIconButton(R.drawable.ic_move, "移动标注") {
-            setEditorMode(AnnotationMode.MOVE)
-        }
-        dimensionModeButton = modeIconButton(R.drawable.ic_dimension, "尺寸标注") {
-            setEditorMode(AnnotationMode.DIMENSION)
-        }
-        textModeButton = modeIconButton(R.drawable.ic_text, "文字标注") {
-            setEditorMode(AnnotationMode.TEXT)
-        }
-        angleModeButton = modeIconButton(R.drawable.ic_angle, "角度标注") {
-            setEditorMode(AnnotationMode.ANGLE)
-        }
-        areaModeButton = modeIconButton(R.drawable.ic_area, "面积标注") {
-            setEditorMode(AnnotationMode.AREA)
-        }
-        imageActions.addView(moveModeButton)
-        imageActions.addView(dimensionModeButton)
-        imageActions.addView(textModeButton)
-        imageActions.addView(angleModeButton)
-        imageActions.addView(areaModeButton)
-        imageActions.addView(
-            android.view.View(this),
-            LinearLayout.LayoutParams(0, 1, 1f),
-        )
-        imageActions.addView(iconButton(R.drawable.ic_share, "分享到微信") { shareToWeChat() })
-        imageActions.addView(iconButton(R.drawable.ic_save, "保存到相册") { saveToGallery() })
-        root.addView(imageActions)
-
-        placementModeRow = row().apply {
-            setPadding(dp(10), dp(3), dp(10), dp(3))
-            addView(TextView(this@AnnotationActivity).apply {
-                text = getString(R.string.annotation_placement_mode)
-                textSize = 13f
-                setTextColor(Color.DKGRAY)
-            })
-            addView(android.view.View(this@AnnotationActivity), LinearLayout.LayoutParams(0, 1, 1f))
-        }
-        singlePlacementButton = modeButton(getString(R.string.annotation_placement_single)) {
-            setContinuousPlacement(false)
-        }
-        continuousPlacementButton = modeButton(getString(R.string.annotation_placement_continuous)) {
-            setContinuousPlacement(true)
-        }
-        placementModeRow.addView(singlePlacementButton)
-        placementModeRow.addView(continuousPlacementButton)
-        root.addView(placementModeRow)
-        updatePlacementButtons()
-        updateModeButtons(AnnotationMode.DIMENSION)
-
-        distanceRow = row()
-        distanceInput = EditText(this).apply {
-            hint = "选中尺寸后填写距离"
-            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
-            setSingleLine(true)
-            layoutParams = LinearLayout.LayoutParams(0, -2, 2f).apply { marginEnd = dp(6) }
-            addTextChangedListener(object : TextWatcher {
-                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
-                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
-                override fun afterTextChanged(s: Editable?) {
-                    updateSelectedLabelFromEditor()
-                }
-            })
-        }
-        unitSpinner = Spinner(this).apply {
-            adapter = ArrayAdapter(
-                this@AnnotationActivity,
-                android.R.layout.simple_spinner_dropdown_item,
-                listOf("mm", "m", "cm"),
-            )
-            layoutParams = LinearLayout.LayoutParams(0, -2, 0.8f)
-            onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-                override fun onItemSelected(parent: AdapterView<*>?, view: android.view.View?, position: Int, id: Long) {
-                    updateSelectedLabelFromEditor()
-                }
-                override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+        @Composable fun ImageToolbar() {
+            MaterialTheme(colorScheme = lightColorScheme(
+                primary = colorResource(R.color.annotation_tool_active),
+                onPrimary = colorResource(R.color.white),
+            )) {
+                AnnotationToolbar(
+                    selected = editorMode,
+                    tools = listOf(
+                        AnnotationToolItem(AnnotationMode.MOVE, getString(R.string.annotation_tool_move)),
+                        AnnotationToolItem(AnnotationMode.DIMENSION, getString(R.string.annotation_tool_dimension)),
+                        AnnotationToolItem(AnnotationMode.TEXT, getString(R.string.annotation_tool_text)),
+                        AnnotationToolItem(AnnotationMode.ANGLE, getString(R.string.annotation_tool_angle)),
+                        AnnotationToolItem(AnnotationMode.AREA, getString(R.string.annotation_tool_area)),
+                    ),
+                    backLabel = getString(R.string.annotation_back),
+                    shareLabel = getString(R.string.annotation_share),
+                    saveLabel = getString(R.string.annotation_save_gallery),
+                    onBack = { finish() }, onShare = ::shareToWeChat, onSave = ::saveToGallery,
+                    onTool = { setEditorMode(it) },
+                    backIcon = { Icon(painterResource(R.drawable.ic_back), null) },
+                    shareIcon = { Icon(painterResource(R.drawable.ic_share), null) },
+                    saveIcon = { Icon(painterResource(R.drawable.ic_save), null) },
+                    toolIcon = { mode -> Icon(painterResource(when (mode) {
+                        AnnotationMode.MOVE -> R.drawable.ic_move
+                        AnnotationMode.DIMENSION -> R.drawable.ic_dimension
+                        AnnotationMode.TEXT -> R.drawable.ic_text
+                        AnnotationMode.ANGLE -> R.drawable.ic_angle
+                        AnnotationMode.AREA -> R.drawable.ic_area
+                    }), null) },
+                )
             }
         }
-        distanceRow.addView(distanceInput)
-        distanceRow.addView(unitSpinner)
 
-        textRow = row()
-        textInput = EditText(this).apply {
-            hint = "输入单行文字"
-            inputType = InputType.TYPE_CLASS_TEXT
-            setSingleLine(true)
-            addTextChangedListener(object : TextWatcher {
-                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
-                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
-                override fun afterTextChanged(s: Editable?) {
-                    if (!updatingEditor && selectedTextMark != null) {
-                        annotationView.updateSelectedText(s?.toString().orEmpty())
-                    }
-                }
-            })
-        }
-        textRow.addView(textInput, LinearLayout.LayoutParams(-1, -2))
-
-        angleRow = row()
-        angleInput = EditText(this).apply {
-            hint = "输入角度"
-            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
-            setSingleLine(true)
-            addTextChangedListener(object : TextWatcher {
-                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
-                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
-                override fun afterTextChanged(s: Editable?) {
-                    if (!updatingEditor && selectedAngleMark != null) {
-                        annotationView.updateSelectedAngleLabel(s?.toString().orEmpty())
-                    }
-                }
-            })
-        }
-        angleRow.addView(angleInput, LinearLayout.LayoutParams(0, -2, 1f))
-        angleRow.addView(TextView(this).apply {
-            text = "°"
-            textSize = 22f
-            setPadding(dp(8), 0, dp(8), 0)
-        })
-
-        areaRow = row()
-        areaInput = EditText(this).apply {
-            hint = "输入面积数值"
-            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
-            setSingleLine(true)
-            layoutParams = LinearLayout.LayoutParams(0, -2, 2f).apply { marginEnd = dp(6) }
-            addTextChangedListener(object : TextWatcher {
-                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
-                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
-                override fun afterTextChanged(s: Editable?) {
-                    updateSelectedAreaLabelFromEditor()
-                }
-            })
-        }
-        areaUnitSpinner = Spinner(this).apply {
-            adapter = ArrayAdapter(
-                this@AnnotationActivity,
-                android.R.layout.simple_spinner_dropdown_item,
-                listOf("m²", "cm²", "mm²"),
-            )
-            layoutParams = LinearLayout.LayoutParams(0, -2, 0.9f)
-            onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-                override fun onItemSelected(parent: AdapterView<*>?, view: android.view.View?, position: Int, id: Long) {
-                    updateSelectedAreaLabelFromEditor()
-                }
-                override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+        @Composable fun PlacementModeOptions() {
+            MaterialTheme(colorScheme = lightColorScheme(
+                primary = colorResource(R.color.annotation_tool_active),
+                onPrimary = colorResource(R.color.white),
+            )) {
+                PlacementOptions(editorMode != AnnotationMode.MOVE, continuousPlacement,
+                    getString(R.string.annotation_placement_mode), getString(R.string.annotation_placement_single),
+                    getString(R.string.annotation_placement_continuous), { continuousPlacement = it })
             }
         }
-        areaRow.addView(areaInput)
-        areaRow.addView(areaUnitSpinner)
 
-        sizeRow = row().apply {
-            setPadding(dp(6), dp(4), dp(6), dp(4))
-            addView(TextView(this@AnnotationActivity).apply {
-                text = "字号"
-                textSize = 14f
-                setTextColor(Color.DKGRAY)
-                setPadding(0, 0, dp(8), 0)
-            })
-        }
-        smallTextButton = modeButton("小") { selectTextSize(0) }
-        mediumTextButton = modeButton("中") { selectTextSize(1) }
-        largeTextButton = modeButton("大") { selectTextSize(2) }
-        sizeRow.addView(smallTextButton)
-        sizeRow.addView(mediumTextButton)
-        sizeRow.addView(largeTextButton)
-
-        textBackgroundRow = row().apply {
-            setPadding(dp(6), dp(2), dp(6), dp(2))
-        }
-        whiteBackgroundCheck = CheckBox(this).apply {
-            text = "白色文字底色"
-            isChecked = true
-            setOnCheckedChangeListener { _, checked ->
-                if (!updatingEditor && selectedTextMark != null) {
-                    annotationView.updateSelectedTextBackground(checked)
-                    selectedTextMark = selectedTextMark?.copy(whiteBackground = checked)
-                }
+        @Composable fun LabelProperties() {
+            MaterialTheme {
+                AnnotationLabelProperties(textProperty, angleProperty,
+                    getString(R.string.annotation_text_input), getString(R.string.annotation_angle_input),
+                    getString(R.string.annotation_degree), dismissPropertyFocus,
+                    onText = { value ->
+                        if (textProperty?.text == value.text || annotationView.updateSelectedText(value.text)) {
+                            textProperty = value
+                            selectedTextMark = selectedTextMark?.copy(text = value.text)
+                        }
+                    }, onAngle = { value ->
+                        if (angleProperty?.text == value.text || annotationView.updateSelectedAngleLabel(value.text)) {
+                            angleProperty = value
+                            selectedAngleMark = selectedAngleMark?.copy(label = value.text.trim())
+                        }
+                    })
             }
         }
-        textBackgroundRow.addView(whiteBackgroundCheck)
 
-        thicknessRow = row().apply {
-            setPadding(dp(6), dp(4), dp(6), dp(4))
-            addView(TextView(this@AnnotationActivity).apply {
-                text = "线宽"
-                textSize = 14f
-                setTextColor(Color.DKGRAY)
-                setPadding(0, 0, dp(8), 0)
-            })
-        }
-        thinLineButton = modeButton("细") { selectLineThickness(0) }
-        mediumLineButton = modeButton("中") { selectLineThickness(1) }
-        thickLineButton = modeButton("粗") { selectLineThickness(2) }
-        thicknessRow.addView(thinLineButton)
-        thicknessRow.addView(mediumLineButton)
-        thicknessRow.addView(thickLineButton)
-
-        deleteSelectedButton = ImageButton(this).apply {
-            setImageResource(R.drawable.ic_delete)
-            contentDescription = getString(R.string.annotation_delete_selected)
-            setColorFilter(Color.WHITE)
-            setPadding(dp(12), dp(12), dp(12), dp(12))
-            elevation = dp(6).toFloat()
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(Color.rgb(190, 35, 45))
-            }
-            translationY = dp(64).toFloat()
-            visibility = android.view.View.GONE
-        }.apply {
-            setOnClickListener {
-                if (!annotationView.deleteSelected()) toast("请先选择一条标注")
+        @Composable fun StyleProperties() {
+            MaterialTheme(colorScheme = lightColorScheme(
+                primary = colorResource(R.color.annotation_tool_active), onPrimary = colorResource(R.color.white),
+            )) {
+                AnnotationStyleProperties(selectedTextMark?.textSize, selectedTextMark?.whiteBackground ?: true,
+                    selectedMark?.thickness,
+                    AnnotationStyleLabels(getString(R.string.annotation_style_size),
+                        resources.getStringArray(R.array.annotation_style_sizes).toList(),
+                        getString(R.string.annotation_style_background), getString(R.string.annotation_style_thickness),
+                        resources.getStringArray(R.array.annotation_style_thicknesses).toList()),
+                    onTextSize = ::selectTextSize,
+                    onBackground = { checked ->
+                        if (annotationView.updateSelectedTextBackground(checked)) {
+                            selectedTextMark = selectedTextMark?.copy(whiteBackground = checked)
+                        }
+                    }, onThickness = ::selectLineThickness)
             }
         }
-        deleteAreaPointButton = iconButton(R.drawable.ic_delete_point, "删除面积控制点") {
-            if (!annotationView.deleteSelectedAreaPoint()) {
-                toast("请先选择控制点；面积至少保留三个点")
+
+        @Composable fun DeleteAreaPoint() {
+            MaterialTheme {
+                AnnotationAreaPointAction(hasSelectedAreaPoint, getString(R.string.annotation_delete_area_point),
+                    onDelete = {
+                        if (!annotationView.deleteSelectedAreaPoint()) {
+                            toast(getString(R.string.annotation_area_point_delete_failed))
+                        }
+                    }, icon = { Icon(painterResource(R.drawable.ic_delete_point), null,
+                        tint = colorResource(R.color.annotation_area_point_delete)) })
             }
-        }.apply { setColorFilter(Color.rgb(230, 110, 0)) }
+        }
 
         hintText = TextView(this).apply {
-            text = "先画空尺寸线；点按尺寸线可选中，再填写或选择测量记录"
+            text = getString(R.string.annotation_initial_hint)
             textSize = 13f
             setPadding(dp(10), dp(5), dp(10), dp(7))
         }
 
         annotationView = ImageAnnotationView(this).apply {
-            onMessage = { message ->
-                hintText.text = message
-                if (message.startsWith("已放置") || message.startsWith("角度标注已完成")) {
-                    toast(message)
-                }
+            onMessage = { notice ->
+                hintText.text = notice.text
+                if (notice.showToast) toast(notice.text)
             }
             onSelectionChanged = { selection -> showSelection(selection) }
             onAnnotationCreated = { mode -> handleAnnotationCreated(mode) }
             onCanvasTouched = { finishDistanceEditing() }
             onManipulationStarted = { dismissSelectionPanel() }
         }
-        val imageContainer = FrameLayout(this).apply {
+        @Composable fun ImageActionsOverlay() {
+            MaterialTheme(colorScheme = lightColorScheme(
+                primary = colorResource(R.color.annotation_tool_active),
+                error = colorResource(R.color.annotation_action_delete),
+                onPrimary = colorResource(R.color.white), onError = colorResource(R.color.white),
+            )) {
+                AnnotationActions(editorMode != AnnotationMode.MOVE,
+                    editorMode == AnnotationMode.MOVE && hasAnnotationSelection,
+                    getString(R.string.annotation_finish), getString(R.string.annotation_delete_selected),
+                    onFinish = { setEditorMode(AnnotationMode.MOVE) },
+                    onDelete = { if (!annotationView.deleteSelected()) toast(getString(R.string.annotation_selection_required)) },
+                    finishIcon = { Icon(painterResource(R.drawable.ic_confirm), null) },
+                    deleteIcon = { Icon(painterResource(R.drawable.ic_delete), null) })
+            }
+        }
+        @Composable fun RecentValues() {
+            MaterialTheme(colorScheme = lightColorScheme(primary = colorResource(R.color.annotation_tool_active),
+                onPrimary = colorResource(R.color.white))) {
+                RecentMeasurements(recentMeasurementLabels, selectedMark != null, ::applyRecentMeasurement)
+            }
+        }
+
+        @Composable fun Colors() {
+            MaterialTheme(colorScheme = lightColorScheme(secondary = colorResource(R.color.annotation_color_selected))) {
+                ColorPalette(selectedMark?.color ?: selectedTextMark?.color ?: selectedAngleMark?.color ?: selectedAreaMark?.color,
+                    getString(R.string.annotation_style_color), listOf(
+                        ColorOption(resources.getColor(R.color.annotation_color_red, theme), getString(R.string.annotation_color_red)),
+                        ColorOption(resources.getColor(R.color.annotation_tool_active, theme), getString(R.string.annotation_color_green)),
+                        ColorOption(resources.getColor(R.color.annotation_color_blue, theme), getString(R.string.annotation_color_blue)),
+                        ColorOption(resources.getColor(R.color.annotation_color_orange, theme), getString(R.string.annotation_color_orange)),
+                        ColorOption(resources.getColor(R.color.annotation_color_black, theme), getString(R.string.annotation_color_black)),
+                    ), ::selectMarkColor)
+            }
+        }
+
+        val root = FrameLayout(this).apply {
+            setPadding(0, dp(8), 0, dp(10))
             setBackgroundColor(Color.WHITE)
         }
-        imageContainer.addView(annotationView, FrameLayout.LayoutParams(-1, -1))
-        finishAnnotationButton = ImageButton(this).apply {
-            setImageResource(R.drawable.ic_confirm)
-            contentDescription = getString(R.string.annotation_finish)
-            setColorFilter(Color.WHITE)
-            setPadding(dp(12), dp(12), dp(12), dp(12))
-            elevation = dp(6).toFloat()
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(Color.rgb(0, 112, 82))
-            }
-            setOnClickListener { setEditorMode(AnnotationMode.MOVE) }
-        }
-        imageContainer.addView(
-            finishAnnotationButton,
-            FrameLayout.LayoutParams(dp(52), dp(52), Gravity.CENTER_VERTICAL or Gravity.END).apply {
-                marginEnd = dp(12)
-            },
-        )
-        imageContainer.addView(
-            deleteSelectedButton,
-            FrameLayout.LayoutParams(dp(52), dp(52), Gravity.CENTER_VERTICAL or Gravity.END).apply {
-                marginEnd = dp(12)
-            },
-        )
-        updateFinishAnnotationButton()
-        recentOverlay = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-            setPadding(dp(6), dp(5), dp(6), dp(5))
-            visibility = android.view.View.GONE
-        }
-        repeat(3) { index ->
-            val recentButton = TextView(this).apply {
-                textSize = 14f
-                setTextColor(Color.WHITE)
-                gravity = Gravity.CENTER
-                setPadding(dp(10), dp(9), dp(10), dp(9))
-                background = GradientDrawable().apply {
-                    setColor(Color.rgb(0, 112, 82))
-                    cornerRadius = dp(8).toFloat()
-                }
-                setOnClickListener { applyRecentMeasurement(index) }
-            }
-            recentButtons += recentButton
-            recentOverlay.addView(
-                recentButton,
-                LinearLayout.LayoutParams(0, -2, 1f).apply {
-                    if (index < 2) marginEnd = dp(5)
-                },
-            )
-        }
-
-        val colorRow = row().apply {
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(6), dp(4), dp(6), dp(4))
-            addView(TextView(this@AnnotationActivity).apply {
-                text = "颜色"
-                textSize = 14f
-                setTextColor(Color.DKGRAY)
-                setPadding(0, 0, dp(8), 0)
-            })
-            markColors.forEach { (name, color) ->
-                val swatch = TextView(this@AnnotationActivity).apply {
-                    contentDescription = name
-                    setOnClickListener { selectMarkColor(color) }
-                    layoutParams = LinearLayout.LayoutParams(dp(34), dp(34)).apply {
-                        marginEnd = dp(9)
-                    }
-                }
-                colorButtons += color to swatch
-                addView(swatch)
-            }
-        }
-
-        selectionPanel = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            elevation = dp(10).toFloat()
-            setPadding(dp(12), dp(10), dp(12), dp(10))
-            background = GradientDrawable().apply {
-                setColor(Color.argb(245, 255, 255, 255))
-                cornerRadius = dp(14).toFloat()
-            }
-            visibility = android.view.View.GONE
-            val handleArea = FrameLayout(this@AnnotationActivity).apply {
-                contentDescription = "向下滑动收起属性"
-                addView(
-                    android.view.View(this@AnnotationActivity).apply {
-                        background = GradientDrawable().apply {
-                            setColor(Color.rgb(170, 174, 178))
-                            cornerRadius = dp(2).toFloat()
+        root.addView(ComposeView(this).apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+            setContent {
+                AnnotationScreen(colorResource(R.color.white),
+                    dimensionResource(R.dimen.annotation_actions_end_margin),
+                    dimensionResource(R.dimen.annotation_properties_margin),
+                    toolbar = { ImageToolbar() }, placementOptions = { PlacementModeOptions() },
+                    canvas = { AndroidView(factory = { annotationView }, modifier = Modifier.fillMaxSize()) },
+                    actions = { ImageActionsOverlay() },
+                    properties = {
+                        AnnotationPropertySheet(propertyPanelVisible, propertyPanelResetKey, animatePropertyDismiss,
+                            getString(R.string.annotation_properties_dismiss), propertySheetStyle(), ::dismissSelectionPanel) {
+                            QuantityProperties(false)
+                            LabelProperties()
+                            QuantityProperties(true)
+                            RecentValues()
+                            Colors()
+                            StyleProperties()
+                            DeleteAreaPoint()
                         }
-                    },
-                    FrameLayout.LayoutParams(dp(42), dp(4), Gravity.CENTER),
-                )
+                    })
             }
-            addView(handleArea, LinearLayout.LayoutParams(-1, dp(24)))
-            enablePanelSwipeDismiss(handleArea)
-            addView(distanceRow, LinearLayout.LayoutParams(-1, -2))
-            addView(textRow, LinearLayout.LayoutParams(-1, -2))
-            addView(angleRow, LinearLayout.LayoutParams(-1, -2))
-            addView(areaRow, LinearLayout.LayoutParams(-1, -2))
-            addView(recentOverlay, LinearLayout.LayoutParams(-1, -2))
-            addView(colorRow, LinearLayout.LayoutParams(-1, -2))
-            addView(sizeRow, LinearLayout.LayoutParams(-1, -2))
-            addView(textBackgroundRow, LinearLayout.LayoutParams(-1, -2))
-            addView(thicknessRow, LinearLayout.LayoutParams(-1, -2))
-            addView(row().apply {
-                gravity = Gravity.END
-                addView(deleteAreaPointButton, LinearLayout.LayoutParams(dp(52), dp(52)))
-            }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4) })
-        }
-        imageContainer.addView(
-            selectionPanel,
-            FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
-                setMargins(dp(10), dp(10), dp(10), dp(10))
-            },
-        )
-        root.addView(imageContainer, LinearLayout.LayoutParams(-1, 0, 1f))
+        }, FrameLayout.LayoutParams(-1, -1))
+        setContentView(root)
+        applyWindowInsets(root)
         updateRecentMeasurements(availableMeasurements())
     }
 
+    @Composable
+    private fun propertySheetStyle() = AnnotationPropertySheetStyle(
+        colorResource(R.color.annotation_properties_background), colorResource(R.color.annotation_properties_handle),
+        dimensionResource(R.dimen.annotation_properties_horizontal_padding), dimensionResource(R.dimen.annotation_properties_vertical_padding),
+        dimensionResource(R.dimen.annotation_properties_elevation), dimensionResource(R.dimen.annotation_properties_corner_radius),
+        dimensionResource(R.dimen.annotation_properties_handle_area_height), dimensionResource(R.dimen.annotation_properties_handle_width),
+        dimensionResource(R.dimen.annotation_properties_handle_height), dimensionResource(R.dimen.annotation_properties_handle_corner_radius),
+        dimensionResource(R.dimen.annotation_properties_dismiss_threshold), dimensionResource(R.dimen.annotation_properties_exit_extra_distance),
+    )
+
     private fun showSelection(selection: AnnotationSelection?) {
+        hasAnnotationSelection = selection != null
         selectedMark = (selection as? AnnotationSelection.Dimension)?.mark
         selectedTextMark = (selection as? AnnotationSelection.Text)?.mark
         selectedAngleMark = (selection as? AnnotationSelection.Angle)?.mark
         selectedAreaMark = (selection as? AnnotationSelection.Area)?.mark
-        updateDeleteSelectedButton()
-        selectionPanel.animate().cancel()
-        selectionPanel.translationY = 0f
-        selectionPanel.alpha = 1f
-        selectionPanel.visibility = if (selection != null) android.view.View.VISIBLE else android.view.View.GONE
-        distanceRow.visibility = if (selectedMark != null) android.view.View.VISIBLE else android.view.View.GONE
-        textRow.visibility = if (selectedTextMark != null) android.view.View.VISIBLE else android.view.View.GONE
-        angleRow.visibility = if (selectedAngleMark != null) android.view.View.VISIBLE else android.view.View.GONE
-        areaRow.visibility = if (selectedAreaMark != null) android.view.View.VISIBLE else android.view.View.GONE
-        sizeRow.visibility = if (selectedTextMark != null) android.view.View.VISIBLE else android.view.View.GONE
-        textBackgroundRow.visibility = if (selectedTextMark != null) android.view.View.VISIBLE else android.view.View.GONE
-        thicknessRow.visibility = if (selectedMark != null) android.view.View.VISIBLE else android.view.View.GONE
-        deleteAreaPointButton.visibility = if (
-            (selection as? AnnotationSelection.Area)?.selectedPointIndex?.let { it >= 0 } == true
-        ) android.view.View.VISIBLE else android.view.View.GONE
+        propertyPanelResetKey++
+        animatePropertyDismiss = false
+        propertyPanelVisible = selection != null
+        textProperty = selectedTextMark?.text?.let { TextFieldValue(it, TextRange(it.length)) }
+        angleProperty = selectedAngleMark?.label?.let { TextFieldValue(it, TextRange(it.length)) }
+        hasSelectedAreaPoint = (selection as? AnnotationSelection.Area)?.selectedPointIndex?.let { it >= 0 } == true
         updateRecentMeasurements(availableMeasurements())
-        updatingEditor = true
-        try {
-            if (selection == null) {
-                distanceInput.setText("")
-                textInput.setText("")
-                angleInput.setText("")
-                areaInput.setText("")
-                return
-            }
-            when (selection) {
-                is AnnotationSelection.Dimension -> {
-                    val mark = selection.mark
-                    val parts = mark.label.trim().split(" ")
-                    distanceInput.setText(parts.firstOrNull().orEmpty())
-                    distanceInput.setSelection(distanceInput.text.length)
-                    unitSpinner.setSelection(when (parts.getOrNull(1)) {
-                        "m" -> 1
-                        "cm" -> 2
-                        else -> 0
-                    })
-                    updateColorButtons(mark.color)
-                    updateThicknessButtons(mark.thickness)
-                }
-                is AnnotationSelection.Text -> {
-                    val mark = selection.mark
-                    textInput.setText(mark.text)
-                    textInput.setSelection(textInput.text.length)
-                    updateColorButtons(mark.color)
-                    updateSizeButtons(mark.textSize)
-                    whiteBackgroundCheck.isChecked = mark.whiteBackground
-                }
-                is AnnotationSelection.Angle -> {
-                    val mark = selection.mark
-                    angleInput.setText(mark.label)
-                    angleInput.setSelection(angleInput.text.length)
-                    updateColorButtons(mark.color)
-                }
-                is AnnotationSelection.Area -> {
-                    val mark = selection.mark
-                    val parts = mark.label.trim().split(" ")
-                    areaInput.setText(parts.firstOrNull().orEmpty())
-                    areaInput.setSelection(areaInput.text.length)
-                    areaUnitSpinner.setSelection(when (parts.getOrNull(1)) {
-                        "cm²" -> 1
-                        "mm²" -> 2
-                        else -> 0
-                    })
-                    updateColorButtons(mark.color)
-                }
-            }
-        } finally {
-            updatingEditor = false
+        val distance = selectedMark?.label?.let { AnnotationQuantityLabel.parse(it, quantityUnits(false)) }
+        distanceProperty = distance?.text?.let { TextFieldValue(it, TextRange(it.length)) }
+        distanceUnit = distance?.unit ?: 0
+        val area = selectedAreaMark?.label?.let { AnnotationQuantityLabel.parse(it, quantityUnits(true)) }
+        areaProperty = area?.text?.let { TextFieldValue(it, TextRange(it.length)) }
+        areaUnit = area?.unit ?: 0
+    }
+
+    private fun quantityUnits(area: Boolean) = resources.getStringArray(
+        if (area) R.array.annotation_area_units else R.array.annotation_distance_units).toList()
+
+    @Composable
+    private fun QuantityProperties(area: Boolean) {
+        MaterialTheme {
+            AnnotationQuantityProperty(if (area) areaProperty else distanceProperty,
+                if (area) areaUnit else distanceUnit, quantityUnits(area),
+                getString(if (area) R.string.annotation_area_input else R.string.annotation_distance_input),
+                getString(if (area) R.string.annotation_area_unit else R.string.annotation_distance_unit), dismissPropertyFocus,
+                onValue = { value ->
+                    val previous = if (area) areaProperty else distanceProperty
+                    if (previous?.text == value.text || updateQuantity(area, value.text, if (area) areaUnit else distanceUnit)) {
+                        if (area) areaProperty = value else distanceProperty = value
+                    }
+                }, onUnit = { unit ->
+                    val value = if (area) areaProperty else distanceProperty
+                    val previousUnit = if (area) areaUnit else distanceUnit
+                    if (value != null && unit != previousUnit && updateQuantity(area, value.text, unit)) {
+                        if (area) areaUnit = unit else distanceUnit = unit
+                    }
+                })
         }
     }
 
-    private fun updateSelectedLabelFromEditor() {
-        if (updatingEditor || selectedMark == null || !::annotationView.isInitialized) return
-        val value = distanceInput.text.toString().trim()
-        val label = if (value.isEmpty()) "" else "$value ${unitSpinner.selectedItem}"
-        annotationView.updateSelectedLabel(label)
-    }
-
-    private fun updateSelectedAreaLabelFromEditor() {
-        if (updatingEditor || selectedAreaMark == null || !::annotationView.isInitialized) return
-        val value = areaInput.text.toString().trim()
-        val label = if (value.isEmpty()) "" else "$value ${areaUnitSpinner.selectedItem}"
-        annotationView.updateSelectedAreaLabel(label)
-        selectedAreaMark = selectedAreaMark?.copy(label = label)
+    private fun updateQuantity(area: Boolean, text: String, unit: Int): Boolean {
+        val label = AnnotationQuantityLabel.format(text, unit, quantityUnits(area))
+        val accepted = if (area) annotationView.updateSelectedAreaLabel(label) else annotationView.updateSelectedLabel(label)
+        if (accepted) {
+            if (area) selectedAreaMark = selectedAreaMark?.copy(label = label)
+            else selectedMark = selectedMark?.copy(label = label)
+        }
+        return accepted
     }
 
     private fun setEditorMode(mode: AnnotationMode, preserveSelection: Boolean = false) {
         editorMode = mode
         annotationView.setMode(mode, preserveSelection)
-        updateModeButtons(mode)
-        updatePlacementButtons()
-        updateFinishAnnotationButton()
-        updateDeleteSelectedButton()
         hintText.text = when (mode) {
             AnnotationMode.MOVE -> getString(R.string.annotation_move_mode_hint)
-            AnnotationMode.DIMENSION -> "尺寸模式：在图片上拖动添加尺寸线"
-            AnnotationMode.TEXT -> "文字模式：点按图片位置添加单行文字"
+            AnnotationMode.DIMENSION -> getString(R.string.annotation_dimension_mode_hint)
+            AnnotationMode.TEXT -> getString(R.string.annotation_text_mode_hint)
             AnnotationMode.ANGLE -> getString(R.string.annotation_angle_mode_hint)
             AnnotationMode.AREA -> getString(R.string.annotation_area_mode_hint)
         }
@@ -689,189 +484,54 @@ class AnnotationActivity : AppCompatActivity() {
         hintText.text = getString(R.string.annotation_single_placement_completed_hint)
     }
 
-    private fun setContinuousPlacement(enabled: Boolean) {
-        continuousPlacement = enabled
-        updatePlacementButtons()
-    }
-
-    private fun updatePlacementButtons() {
-        if (!::placementModeRow.isInitialized || !::singlePlacementButton.isInitialized ||
-            !::continuousPlacementButton.isInitialized
-        ) return
-        placementModeRow.visibility = if (editorMode == AnnotationMode.MOVE) {
-            android.view.View.INVISIBLE
-        } else {
-            android.view.View.VISIBLE
-        }
-        styleChoiceButton(singlePlacementButton, !continuousPlacement)
-        styleChoiceButton(continuousPlacementButton, continuousPlacement)
-    }
-
-    private fun updateFinishAnnotationButton() {
-        if (::finishAnnotationButton.isInitialized) {
-            finishAnnotationButton.visibility = if (editorMode == AnnotationMode.MOVE) {
-                android.view.View.GONE
-            } else {
-                android.view.View.VISIBLE
-            }
-        }
-    }
-
-    private fun updateDeleteSelectedButton() {
-        if (::deleteSelectedButton.isInitialized) {
-            val hasSelection = selectedMark != null || selectedTextMark != null ||
-                selectedAngleMark != null || selectedAreaMark != null
-            deleteSelectedButton.visibility = if (editorMode == AnnotationMode.MOVE && hasSelection) {
-                android.view.View.VISIBLE
-            } else {
-                android.view.View.GONE
-            }
-        }
-    }
-
-    private fun updateModeButtons(mode: AnnotationMode) {
-        styleModeButton(moveModeButton, mode == AnnotationMode.MOVE)
-        styleModeButton(dimensionModeButton, mode == AnnotationMode.DIMENSION)
-        styleModeButton(textModeButton, mode == AnnotationMode.TEXT)
-        styleModeButton(angleModeButton, mode == AnnotationMode.ANGLE)
-        styleModeButton(areaModeButton, mode == AnnotationMode.AREA)
-    }
-
     private fun selectMarkColor(color: Int) {
         if (!annotationView.updateSelectedColor(color)) return
         selectedMark = selectedMark?.copy(color = color)
         selectedTextMark = selectedTextMark?.copy(color = color)
         selectedAngleMark = selectedAngleMark?.copy(color = color)
         selectedAreaMark = selectedAreaMark?.copy(color = color)
-        updateColorButtons(color)
-        hintText.text = "已更改选中标注的颜色"
+        hintText.text = getString(R.string.annotation_color_changed)
     }
 
     private fun selectTextSize(textSize: Int) {
         if (!annotationView.updateSelectedTextSize(textSize)) return
         selectedTextMark = selectedTextMark?.copy(textSize = textSize)
-        updateSizeButtons(textSize)
-    }
-
-    private fun updateSizeButtons(textSize: Int) {
-        styleChoiceButton(smallTextButton, textSize == 0)
-        styleChoiceButton(mediumTextButton, textSize == 1)
-        styleChoiceButton(largeTextButton, textSize == 2)
     }
 
     private fun selectLineThickness(thickness: Int) {
         if (!annotationView.updateSelectedLineThickness(thickness)) return
         selectedMark = selectedMark?.copy(thickness = thickness)
-        updateThicknessButtons(thickness)
-    }
-
-    private fun updateThicknessButtons(thickness: Int) {
-        styleChoiceButton(thinLineButton, thickness == 0)
-        styleChoiceButton(mediumLineButton, thickness == 1)
-        styleChoiceButton(thickLineButton, thickness == 2)
-    }
-
-    private fun updateColorButtons(selectedColor: Int) {
-        colorButtons.forEach { (color, button) ->
-            button.background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(color)
-                if (color == selectedColor) {
-                    setStroke(dp(3), Color.rgb(0, 188, 212))
-                } else {
-                    setStroke(dp(2), Color.WHITE)
-                }
-            }
-        }
-    }
-
-    private fun enablePanelSwipeDismiss(handle: android.view.View) {
-        var touchStartY = 0f
-        handle.setOnTouchListener { _, event ->
-            when (event.actionMasked) {
-                MotionEvent.ACTION_DOWN -> {
-                    touchStartY = event.rawY
-                    selectionPanel.animate().cancel()
-                    true
-                }
-                MotionEvent.ACTION_MOVE -> {
-                    val distance = (event.rawY - touchStartY).coerceAtLeast(0f)
-                    selectionPanel.translationY = distance
-                    selectionPanel.alpha = (1f - distance / selectionPanel.height.coerceAtLeast(1) * 0.55f)
-                        .coerceIn(0.45f, 1f)
-                    true
-                }
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    if (selectionPanel.translationY >= dp(56)) {
-                        dismissSelectionPanel()
-                    } else {
-                        selectionPanel.animate()
-                            .translationY(0f)
-                            .alpha(1f)
-                            .setDuration(140)
-                            .start()
-                    }
-                    true
-                }
-                else -> false
-            }
-        }
     }
 
     private fun dismissSelectionPanel() {
-        if (!::selectionPanel.isInitialized || selectionPanel.visibility != android.view.View.VISIBLE) return
+        if (!propertyPanelVisible) return
         finishDistanceEditing()
-        selectionPanel.animate().cancel()
-        selectionPanel.animate()
-            .translationY(selectionPanel.height.toFloat() + dp(20))
-            .alpha(0f)
-            .setDuration(180)
-            .withEndAction {
-                selectionPanel.visibility = android.view.View.GONE
-                selectionPanel.translationY = 0f
-                selectionPanel.alpha = 1f
-            }
-            .start()
+        animatePropertyDismiss = true
+        propertyPanelVisible = false
     }
 
     private fun finishDistanceEditing() {
-        distanceInput.clearFocus()
-        textInput.clearFocus()
-        angleInput.clearFocus()
-        areaInput.clearFocus()
+        dismissPropertyFocus++
         (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager)
-            .hideSoftInputFromWindow(selectionPanel.windowToken, 0)
+            .hideSoftInputFromWindow(window.decorView.windowToken, 0)
     }
 
-    private fun updateRecentMeasurements(values: List<Float>) {
+    private fun updateRecentMeasurements(values: List<Double>) {
         latestMeasurements = values.take(3)
         if (::annotationView.isInitialized) {
             annotationView.defaultDimensionLabel = latestMeasurements.firstOrNull()?.let {
-                "${formatMillimeters(it)} mm"
+                "${formatAnnotationMillimeters(it)} mm"
             }.orEmpty()
         }
-        recentOverlay.visibility = if (selectedMark != null && latestMeasurements.isNotEmpty()) {
-            android.view.View.VISIBLE
-        } else {
-            android.view.View.GONE
-        }
-        recentButtons.forEachIndexed { index, button ->
-            val value = latestMeasurements.getOrNull(index)
-            button.visibility = if (value == null) android.view.View.GONE else android.view.View.VISIBLE
-            if (value != null) button.text = "${formatMillimeters(value)} mm"
-        }
+        recentMeasurementLabels = latestMeasurements.map { "${formatAnnotationMillimeters(it)} mm" }
     }
 
-    private fun handleMeasurementSnapshot(values: List<Float>) {
-        val previous = observedMeasurementSnapshot
-        observedMeasurementSnapshot = values
+    private fun handleMeasurementSnapshot(records: List<MeasurementRecord>) {
+        val ids = records.map { it.measurement.id }
+        val receivedNewValue = isNewestMeasurementAdded(observedMeasurementIds, ids)
+        observedMeasurementIds = ids
+        val values = records.map { it.measurement.valueMm }
         updateRecentMeasurements(values)
-
-        val receivedNewValue = previous != null && values.isNotEmpty() && when {
-            values.size == previous.size + 1 -> values.drop(1) == previous
-            values.size == previous.size -> values.drop(1) == previous.dropLast(1)
-            else -> false
-        }
         if (receivedNewValue && selectedMark != null) {
             applyMeasurementToSelected(values.first(), automatic = true)
         }
@@ -880,38 +540,40 @@ class AnnotationActivity : AppCompatActivity() {
     private fun applyRecentMeasurement(index: Int) {
         val value = latestMeasurements.getOrNull(index) ?: return
         if (selectedMark == null) {
-            toast("请先点按选择一条尺寸线")
+            toast(getString(R.string.annotation_dimension_selection_required))
             return
         }
         applyMeasurementToSelected(value, automatic = false)
     }
 
-    private fun applyMeasurementToSelected(value: Float, automatic: Boolean) {
-        val text = formatMillimeters(value)
-        updatingEditor = true
-        distanceInput.setText(text)
-        distanceInput.setSelection(distanceInput.text.length)
-        unitSpinner.setSelection(0)
-        updatingEditor = false
+    private fun applyMeasurementToSelected(value: Double, automatic: Boolean) {
+        val text = formatAnnotationMillimeters(value)
+        distanceProperty = TextFieldValue(text, TextRange(text.length))
+        distanceUnit = 0
         annotationView.updateSelectedLabel("$text mm")
         selectedMark = selectedMark?.copy(label = "$text mm")
         if (automatic) {
-            hintText.text = "已将最新测量值 $text mm 更新到选中的尺寸线"
-            toast("尺寸已更新为 $text mm")
+            hintText.text = getString(R.string.annotation_latest_measurement_applied, text)
+            toast(getString(R.string.annotation_dimension_updated, text))
         } else {
-            hintText.text = "已将 $text mm 填入选中的尺寸线"
+            hintText.text = getString(R.string.annotation_measurement_applied, text)
         }
     }
 
-    private fun availableMeasurements(): List<Float> =
-        MeasurementStore.newestFirst().ifEmpty { initialMeasurementValues }
+    override fun onDestroy() {
+        measurementScope.cancel()
+        super.onDestroy()
+    }
+
+    private fun availableMeasurements(): List<Double> =
+        measurementService.newestFirst().map { it.measurement.valueMm }.ifEmpty { initialMeasurementValues }
 
     private fun shareToWeChat() {
         val result = annotationView.exportBitmap() ?: run {
-            toast("请先拍照或选择图片")
+            toast(getString(R.string.annotation_photo_required))
             return
         }
-        hintText.text = "正在准备分享…"
+        hintText.text = getString(R.string.annotation_share_preparing)
         Thread {
             val sharedUri = runCatching {
                 val directory = File(cacheDir, "shared").apply { mkdirs() }
@@ -927,20 +589,20 @@ class AnnotationActivity : AppCompatActivity() {
                     val shareIntent = Intent(Intent.ACTION_SEND).apply {
                         type = "image/png"
                         putExtra(Intent.EXTRA_STREAM, uri)
-                        clipData = ClipData.newRawUri("标注图片", uri)
+                        clipData = ClipData.newRawUri(getString(R.string.annotation_share_clip_label), uri)
                         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                         setPackage("com.tencent.mm")
                     }
                     try {
                         startActivity(shareIntent)
-                        hintText.text = "请选择微信联系人分享"
+                        hintText.text = getString(R.string.annotation_share_select_wechat)
                     } catch (_: ActivityNotFoundException) {
-                        hintText.text = "未找到微信"
-                        toast("请先安装微信")
+                        hintText.text = getString(R.string.annotation_share_wechat_missing)
+                        toast(getString(R.string.annotation_share_install_wechat))
                     }
                 }.onFailure {
-                    hintText.text = "分享图片生成失败：${it.message}"
-                    toast("无法生成分享图片")
+                    hintText.text = getString(R.string.annotation_share_generation_error, it.message)
+                    toast(getString(R.string.annotation_share_generation_failed))
                 }
             }
         }.start()
@@ -948,10 +610,10 @@ class AnnotationActivity : AppCompatActivity() {
 
     private fun saveToGallery() {
         val result = annotationView.exportBitmap() ?: run {
-            toast("请先拍照或选择图片")
+            toast(getString(R.string.annotation_photo_required))
             return
         }
-        hintText.text = "正在保存到相册…"
+        hintText.text = getString(R.string.annotation_gallery_saving)
         Thread {
             var imageUri: Uri? = null
             val saved = runCatching {
@@ -962,10 +624,10 @@ class AnnotationActivity : AppCompatActivity() {
                     put(MediaStore.Images.Media.IS_PENDING, 1)
                 }
                 imageUri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
-                    ?: error("无法创建相册图片")
+                    ?: error(getString(R.string.annotation_gallery_create_failed))
                 contentResolver.openOutputStream(imageUri!!)?.use { stream ->
                     check(result.compress(Bitmap.CompressFormat.PNG, 100, stream))
-                } ?: error("无法写入相册图片")
+                } ?: error(getString(R.string.annotation_gallery_write_failed))
                 values.clear()
                 values.put(MediaStore.Images.Media.IS_PENDING, 0)
                 contentResolver.update(imageUri!!, values, null, null)
@@ -974,11 +636,11 @@ class AnnotationActivity : AppCompatActivity() {
             if (saved.isFailure) imageUri?.let { contentResolver.delete(it, null, null) }
             runOnUiThread {
                 saved.onSuccess {
-                    hintText.text = "标注图片已保存到相册"
-                    toast("已保存到相册")
+                    hintText.text = getString(R.string.annotation_gallery_saved_hint)
+                    toast(getString(R.string.annotation_gallery_saved))
                 }.onFailure {
-                    hintText.text = "保存失败：${it.message}"
-                    toast("保存到相册失败")
+                    hintText.text = getString(R.string.annotation_gallery_error, it.message)
+                    toast(getString(R.string.annotation_gallery_failed))
                 }
             }
         }.start()
@@ -992,7 +654,7 @@ class AnnotationActivity : AppCompatActivity() {
     }
 
     private fun openGallery() {
-        hintText.text = "请选择一张图片…"
+        hintText.text = getString(R.string.annotation_choose_photo_hint)
         galleryLauncher.launch(
             Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                 addCategory(Intent.CATEGORY_OPENABLE)
@@ -1003,119 +665,91 @@ class AnnotationActivity : AppCompatActivity() {
     }
 
     private fun loadImage(uri: Uri) {
+        annotationView.cancelGesture()
+        saveProject()
+        imageJob?.cancel()
+        val reservedId = if (currentImageUri == uri) pendingPhotoProjectId else null
+        pendingPhotoProjectId = reservedId ?: java.util.UUID.randomUUID().toString()
+        val newProjectId = requireNotNull(pendingPhotoProjectId)
         currentImageUri = uri
-        hintText.text = "正在读取图片…"
-        Thread {
-            val prepared = runCatching {
-                val source = ImageDecoder.createSource(contentResolver, uri)
-                val bitmap = ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
-                    val longest = max(info.size.width, info.size.height)
-                    decoder.setTargetSampleSize(max(1, ceil(longest / 3000.0).toInt()))
-                    decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+        loadingNewImage = true
+        projectLoaded = false
+        annotationView.isEnabled = false
+        showSelection(null)
+        hintText.text = getString(R.string.project_photo_loading)
+        imageJob = measurementScope.launch {
+            var bitmap: Bitmap? = null
+            var transferred = false
+            try {
+                val jpeg = withContext(Dispatchers.IO) {
+                    val decoded = AndroidPhotoCodec.read(contentResolver, uri)
+                    bitmap = decoded
+                    AndroidPhotoCodec.jpeg(decoded)
                 }
-                val projectId = currentProjectId ?: AnnotationProjectStore.create(this, bitmap)
-                projectId to bitmap
-            }
-            runOnUiThread {
-                prepared.onSuccess { (projectId, bitmap) ->
-                    currentProjectId = projectId
-                    annotationView.setBitmap(bitmap)
-                    hintText.text = "图片已载入并创建标注文件"
-                }.onFailure {
-                    if (currentImageUri == uri) currentImageUri = null
-                    hintText.text = "图片读取失败：${it.message}"
-                    toast("无法读取这张图片")
+                val image = requireNotNull(bitmap)
+                val date = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date())
+                val project = projectServices.createAnnotation(getString(R.string.project_photo_default_name, date), jpeg, image.width, image.height, newProjectId).await()
+                val photo = projectServices.loadAnnotation(project.manifest.projectId).await() ?: throw NoSuchElementException()
+                val storedImage = withContext(Dispatchers.IO) {
+                    val stored = AndroidPhotoCodec.decode(photo.bytes) ?: throw IllegalArgumentException()
+                    bitmap?.recycle()
+                    bitmap = stored
+                    stored
                 }
-            }
-        }.start()
-    }
-
-    private fun loadProject(projectId: String) {
-        hintText.text = "正在打开标注文件…"
-        Thread {
-            val loaded = runCatching {
-                AnnotationProjectStore.load(this, projectId) ?: error("标注文件不存在或已损坏")
-            }
-            runOnUiThread {
-                loaded.onSuccess { project ->
-                    if (currentProjectId != projectId) {
-                        project.bitmap.recycle()
-                        return@onSuccess
-                    }
-                    annotationView.setBitmap(project.bitmap)
-                    annotationView.restoreState(project.state)
-                    hintText.text = "已打开 ${project.summary.name}"
-                }.onFailure {
-                    toast("无法打开标注文件：${it.message}")
-                    finish()
-                }
-            }
-        }.start()
-    }
-
-    private fun formatMillimeters(value: Float): String =
-        if (value % 1f < 0.05f) value.toInt().toString() else "%.1f".format(Locale.US, value)
-
-    private fun row() = LinearLayout(this).apply {
-        orientation = LinearLayout.HORIZONTAL
-        gravity = Gravity.CENTER_VERTICAL
-    }
-
-    private fun button(text: String, action: () -> Unit) = Button(this).apply {
-        this.text = text
-        isAllCaps = false
-        setOnClickListener { action() }
-        layoutParams = LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = dp(6) }
-    }
-
-    private fun iconButton(icon: Int, description: String, action: () -> Unit) = ImageButton(this).apply {
-        setImageResource(icon)
-        contentDescription = description
-        setColorFilter(Color.rgb(0, 112, 82))
-        setPadding(dp(9), dp(9), dp(9), dp(9))
-        setBackgroundColor(Color.TRANSPARENT)
-        setOnClickListener { action() }
-        layoutParams = LinearLayout.LayoutParams(dp(40), dp(44)).apply { marginStart = dp(1) }
-    }
-
-    private fun modeButton(text: String, action: () -> Unit) = Button(this).apply {
-        this.text = text
-        textSize = 13f
-        isAllCaps = false
-        minWidth = 0
-        minimumWidth = 0
-        setPadding(dp(13), 0, dp(13), 0)
-        setOnClickListener { action() }
-        layoutParams = LinearLayout.LayoutParams(-2, dp(42)).apply { marginEnd = dp(6) }
-    }
-
-    private fun modeIconButton(icon: Int, description: String, action: () -> Unit) = ImageButton(this).apply {
-        setImageResource(icon)
-        contentDescription = description
-        setPadding(dp(7), dp(9), dp(7), dp(9))
-        setOnClickListener { action() }
-        layoutParams = LinearLayout.LayoutParams(dp(36), dp(42)).apply { marginEnd = dp(1) }
-    }
-
-    private fun styleModeButton(button: ImageButton, selected: Boolean) {
-        button.setColorFilter(if (selected) Color.WHITE else Color.rgb(55, 55, 55))
-        button.background = GradientDrawable().apply {
-            cornerRadius = dp(9).toFloat()
-            setColor(if (selected) Color.rgb(0, 112, 82) else Color.rgb(232, 234, 236))
+                val document = photo.project.annotations.getValue(photo.assetId)
+                pendingPhotoProjectId = null
+                currentProjectId = project.manifest.projectId
+                currentPhotoAssetId = document.photoAssetId
+                annotationView.setBitmap(storedImage)
+                annotationView.restoreDocument(document)
+                transferred = true
+                projectLoaded = true
+                loadingNewImage = false
+                annotationView.isEnabled = true
+                hintText.text = getString(R.string.project_photo_created)
+            } catch (failure: CancellationException) { throw failure }
+            catch (_: Exception) {
+                loadingNewImage = false
+                pendingPhotoProjectId = null
+                projectLoaded = currentProjectId != null && currentPhotoAssetId != null && annotationView.hasImage()
+                annotationView.isEnabled = true
+                currentImageUri = null
+                projectServices.acknowledgeError()
+                hintText.text = getString(R.string.project_photo_read_failed)
+                toast(getString(R.string.project_photo_read_failed))
+            } finally { if (!transferred) bitmap?.recycle() }
         }
     }
 
-    private fun styleChoiceButton(button: Button, selected: Boolean) {
-        button.setTextColor(if (selected) Color.WHITE else Color.rgb(55, 55, 55))
-        button.background = GradientDrawable().apply {
-            cornerRadius = dp(9).toFloat()
-            setColor(if (selected) Color.rgb(0, 112, 82) else Color.rgb(232, 234, 236))
+    private fun loadProject(projectId: String) {
+        imageJob?.cancel()
+        loadingNewImage = false
+        projectLoaded = false
+        annotationView.isEnabled = false
+        hintText.text = getString(R.string.project_photo_opening)
+        imageJob = measurementScope.launch {
+            var bitmap: Bitmap? = null
+            var transferred = false
+            try {
+                val photo = projectServices.loadAnnotation(projectId, currentPhotoAssetId).await() ?: throw NoSuchElementException()
+                withContext(Dispatchers.IO) { bitmap = AndroidPhotoCodec.decode(photo.bytes) ?: throw IllegalArgumentException() }
+                currentProjectId = photo.project.manifest.projectId
+                currentPhotoAssetId = photo.assetId
+                annotationView.setBitmap(requireNotNull(bitmap))
+                annotationView.restoreDocument(photo.project.annotations.getValue(photo.assetId))
+                transferred = true
+                projectLoaded = true
+                annotationView.isEnabled = true
+                hintText.text = getString(R.string.project_photo_opened, photo.project.manifest.name)
+            } catch (failure: CancellationException) { throw failure }
+            catch (_: Exception) { projectServices.acknowledgeError(); toast(getString(R.string.project_open_failed)); finish() }
+            finally { if (!transferred) bitmap?.recycle() }
         }
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
-    private fun applyWindowInsets(root: LinearLayout) {
+    private fun applyWindowInsets(root: android.view.View) {
         ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
             // AppCompat already accounts for the ActionBar height.

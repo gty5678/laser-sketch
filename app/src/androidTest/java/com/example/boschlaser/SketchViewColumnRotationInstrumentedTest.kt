@@ -1,5 +1,7 @@
 package com.example.boschlaser
 
+import com.example.boschlaser.shared.editor.Selection
+
 import android.os.Looper
 import android.view.MotionEvent
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -19,7 +21,7 @@ class SketchViewColumnRotationInstrumentedTest {
         val view = newView()
         val column = rectangle()
         view.restoreState(SketchState(columns = listOf(column)))
-        privateField("selectedColumnId").set(view, column.id)
+        view.selectEntity(Selection.Column(column.id))
         val handle = rotationHandle(view, column)
         val radians = Math.toRadians(-53.0)
         val pointer = SketchPoint(
@@ -29,7 +31,7 @@ class SketchViewColumnRotationInstrumentedTest {
 
         touch(view, MotionEvent.ACTION_DOWN, handle.x, handle.y)
         touch(view, MotionEvent.ACTION_MOVE, pointer.x, pointer.y)
-        assertNull(privateField("magnifierTarget").get(view))
+        assertNull(view.editorState().magnifierTarget)
         touch(view, MotionEvent.ACTION_UP, pointer.x, pointer.y)
 
         assertEquals(30f, view.snapshotState().columns.single().rotationDegrees, .001f)
@@ -84,12 +86,12 @@ class SketchViewColumnRotationInstrumentedTest {
             Float::class.javaPrimitiveType,
         ).apply { isAccessible = true }.invoke(view, column, 1f, 0f, 0f) as SketchPoint
 
-    private fun findColumn(view: SketchView, x: Float, y: Float): SketchColumn? =
-        SketchView::class.java.getDeclaredMethod(
-            "findColumn",
-            Float::class.javaPrimitiveType,
-            Float::class.javaPrimitiveType,
-        ).apply { isAccessible = true }.invoke(view, x, y) as SketchColumn?
+    private fun findColumn(view: SketchView, x: Float, y: Float): SketchColumn? {
+        view.sendWorldPointer(android.view.MotionEvent.ACTION_DOWN, SketchPoint(x, y))
+        val selected = view.selectedColumn()
+        view.cancelGesture()
+        return selected
+    }
 
     private fun touch(view: SketchView, action: Int, x: Float, y: Float) {
         val event = MotionEvent.obtain(0L, 0L, action, x, y, 0)

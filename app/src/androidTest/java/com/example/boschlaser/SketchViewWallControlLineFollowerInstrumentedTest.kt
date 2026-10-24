@@ -1,5 +1,7 @@
 package com.example.boschlaser
 
+import com.example.boschlaser.shared.editor.Selection
+
 import android.os.Looper
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -81,19 +83,15 @@ class SketchViewWallControlLineFollowerInstrumentedTest {
     }
 
     private fun moveSelectedWall(view: SketchView, dx: Float, dy: Float) {
-        SketchView::class.java.getDeclaredMethod(
-            "moveSelection",
-            Float::class.javaPrimitiveType,
-            Float::class.javaPrimitiveType,
-            SketchPoint::class.java,
-        ).apply { isAccessible = true }.invoke(view, dx, dy, SketchPoint(0f, 0f))
+        val wall = view.selectedWall()!!
+        // Avoid other walls' endpoint controls while selecting the host body.
+        val start = SketchPoint(wall.start.x + (wall.end.x - wall.start.x) * .75f,
+            wall.start.y + (wall.end.y - wall.start.y) * .75f)
+        view.previewWorldDrag(start, SketchPoint(start.x + dx, start.y + dy))
     }
 
     private fun selectWall(view: SketchView, wallId: String) {
-        SketchView::class.java.getDeclaredField("selectedWallId").apply {
-            isAccessible = true
-            set(view, wallId)
-        }
+        view.selectEntity(Selection.Wall(wallId))
     }
 
     private fun newView(): SketchView {

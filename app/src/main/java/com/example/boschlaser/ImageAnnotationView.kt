@@ -1,21 +1,44 @@
 package com.example.boschlaser
 
+import com.example.boschlaser.shared.annotation.*
+import com.example.boschlaser.shared.annotation.Annotation as CoreAnnotation
+import java.util.UUID
+import com.example.boschlaser.platform.AndroidCanvasDrawing
+import com.example.boschlaser.platform.AndroidAnnotationTextPainter
+import com.example.boschlaser.ui.PhotoMagnifierStyle
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
+import com.example.boschlaser.ui.AnnotationSceneState
+import com.example.boschlaser.ui.AnnotationSceneStyle
+import com.example.boschlaser.ui.AnnotationSceneLabels
+import com.example.boschlaser.ui.drawAnnotationScene
+import com.example.boschlaser.shared.geometry.Vec2
+import com.example.boschlaser.ui.AnnotationControlStyle
+import com.example.boschlaser.ui.PhotoDrawingViewport
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.input.pointer.pointerInteropFilter
+import androidx.compose.ui.platform.AbstractComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.compose.ui.platform.testTag
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableIntStateOf
+import com.example.boschlaser.ui.AnnotationCanvas
+import com.example.boschlaser.ui.AnnotationCanvasSnapshot
+import com.example.boschlaser.ui.fitPhotoViewport
+
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
-import android.graphics.Path
 import android.graphics.RectF
 import android.util.AttributeSet
-import android.util.TypedValue
 import android.view.MotionEvent
-import android.view.View
-import kotlin.math.atan2
-import kotlin.math.cos
-import kotlin.math.hypot
-import kotlin.math.max
-import kotlin.math.sin
 
 data class DimensionMark(
     val startX: Float,
@@ -55,7 +78,7 @@ data class AreaMark(
     val color: Int = Color.rgb(214, 32, 42),
 )
 
-enum class AnnotationMode { MOVE, DIMENSION, TEXT, ANGLE, AREA }
+typealias AnnotationMode = com.example.boschlaser.shared.annotation.AnnotationMode
 
 sealed class AnnotationSelection {
     data class Dimension(val mark: DimensionMark) : AnnotationSelection()
@@ -64,55 +87,46 @@ sealed class AnnotationSelection {
     data class Area(val mark: AreaMark, val selectedPointIndex: Int) : AnnotationSelection()
 }
 
+/** Presentation metadata is explicit; the host never infers behavior from translated text. */
+data class AnnotationNotice(val text: String, val showToast: Boolean = false)
+
 class ImageAnnotationView @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null,
-) : View(context, attrs) {
+) : AbstractComposeView(context, attrs) {
+    private val renderGeneration = mutableIntStateOf(0)
+
+    init {
+        setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+    }
+
     private var bitmap: Bitmap? = null
-    private val marks = mutableListOf<DimensionMark>()
-    private val textMarks = mutableListOf<TextMark>()
-    private val angleMarks = mutableListOf<AngleMark>()
-    private val areaMarks = mutableListOf<AreaMark>()
+    private val editor = AnnotationEditor()
+    private var projectedDocument: AnnotationDocument? = null
+    private var projectedState = AnnotationState()
+    private fun renderState(): AnnotationState {
+        if (projectedDocument !== editor.renderDocument) {
+            projectedDocument = editor.renderDocument
+            projectedState = editor.renderDocument.toAnnotationState()
+        }
+        return projectedState
+    }
+    private val marks get() = renderState().dimensions
+    private val textMarks get() = renderState().texts
+    private val angleMarks get() = renderState().angles
+    private val areaMarks get() = renderState().areas
     private val imageRect = RectF()
-    private var dragStartX: Float? = null
-    private var dragStartY: Float? = null
-    private var dragEndX: Float? = null
-    private var dragEndY: Float? = null
-    private var selectedIndex = -1
-    private var selectedTextIndex = -1
-    private var selectedAngleIndex = -1
+    private val selectedIndex get() = selectedAnnotationIndex(AnnotationKind.DIMENSION)
+    private val selectedTextIndex get() = selectedAnnotationIndex(AnnotationKind.TEXT)
+    private val selectedAngleIndex get() = selectedAnnotationIndex(AnnotationKind.ANGLE)
     private var magnifierFocusX: Float? = null
     private var magnifierFocusY: Float? = null
-    private val pendingAnglePoints = mutableListOf<Pair<Float, Float>>()
-    private val pendingAreaPoints = mutableListOf<AreaPoint>()
-    private var selectedAreaIndex = -1
-    private var selectedAreaPointIndex = -1
-    private var lastAreaEdgeTapAt = 0L
-    private var lastAreaEdgeTapArea = -1
-    private var lastAreaEdgeTapIndex = -1
-    private var mode = AnnotationMode.DIMENSION
-    private enum class MoveKind {
-        NONE,
-        DIMENSION,
-        TEXT,
-        ANGLE,
-        AREA,
-        DIMENSION_ENDPOINT,
-        ANGLE_POINT,
-        AREA_POINT,
-    }
-    private var moveKind = MoveKind.NONE
-    private var moveIndex = -1
-    private var moveControlPointIndex = -1
-    private var moveTouchStartX = 0f
-    private var moveTouchStartY = 0f
-    private var moveStarted = false
-    private var moveDimensionOriginal: DimensionMark? = null
-    private var moveTextOriginal: TextMark? = null
-    private var moveAngleOriginal: AngleMark? = null
-    private var moveAreaOriginal: AreaMark? = null
-
-    var onMessage: ((String) -> Unit)? = null
+    private val selectedAreaIndex get() = selectedAnnotationIndex(AnnotationKind.AREA)
+    private val selectedAreaPointIndex get() = editor.state.selection?.takeIf {
+        editor.renderDocument.annotations[it.annotationId]?.kind == AnnotationKind.AREA
+    }?.pointIndex ?: -1
+    private val mode get() = editor.state.mode
+    var onMessage: ((AnnotationNotice) -> Unit)? = null
     var onSelectionChanged: ((AnnotationSelection?) -> Unit)? = null
     var onAnnotationCreated: ((AnnotationMode) -> Unit)? = null
     var onCanvasTouched: (() -> Unit)? = null
@@ -120,21 +134,8 @@ class ImageAnnotationView @JvmOverloads constructor(
     var defaultDimensionLabel: String = ""
 
     private val imagePaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
-    private val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.rgb(214, 32, 42)
-        style = Paint.Style.STROKE
-        strokeCap = Paint.Cap.ROUND
-    }
-    private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.rgb(180, 0, 12)
-        textAlign = Paint.Align.CENTER
-        typeface = android.graphics.Typeface.DEFAULT_BOLD
-    }
-    private val textBackgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.argb(225, 255, 255, 255)
-        style = Paint.Style.FILL
-    }
-    private val areaFillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+    private val textPainter = AndroidAnnotationTextPainter()
+    private val sharedDrawing = AndroidCanvasDrawing()
     private val selectionPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.rgb(0, 188, 212)
         style = Paint.Style.FILL
@@ -143,210 +144,156 @@ class ImageAnnotationView @JvmOverloads constructor(
         color = Color.WHITE
         style = Paint.Style.FILL
     }
-    private val magnifierBackgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.rgb(32, 34, 37)
-        style = Paint.Style.FILL
-    }
-    private val magnifierBorderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.WHITE
-        style = Paint.Style.STROKE
-    }
-    private val magnifierCrosshairPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.rgb(0, 188, 212)
-        style = Paint.Style.STROKE
-        strokeWidth = 2f * resources.displayMetrics.density
-    }
-
     fun setBitmap(value: Bitmap) {
         bitmap = value
-        marks.clear()
-        textMarks.clear()
-        angleMarks.clear()
-        areaMarks.clear()
-        selectedIndex = -1
-        selectedTextIndex = -1
-        selectedAngleIndex = -1
-        selectedAreaIndex = -1
-        selectedAreaPointIndex = -1
-        pendingAnglePoints.clear()
-        pendingAreaPoints.clear()
-        magnifierFocusX = null
-        magnifierFocusY = null
-        resetMoveTarget()
+        editor.restore(AnnotationDocument())
+        clearSelection()
+        resetMagnifier()
         clearPreview()
         notifySelectionChanged()
         requestLayout()
-        invalidate()
+        requestRender()
     }
 
-    fun snapshotState(): AnnotationState = AnnotationState(
-        dimensions = marks.toList(),
-        texts = textMarks.toList(),
-        angles = angleMarks.toList(),
-        areas = areaMarks.map { it.copy(points = it.points.toList()) },
-    )
+    fun snapshotState(): AnnotationState = renderState()
+    fun snapshotDocument() = editor.document
+    internal fun photoToScreen(point: PhotoPoint): SketchPoint {
+        bitmap?.let(::calculateImageRect)
+        return SketchPoint(imageRect.left + point.x.toFloat() * imageRect.width(), imageRect.top + point.y.toFloat() * imageRect.height())
+    }
 
-    fun restoreState(state: AnnotationState) {
-        marks.clear()
-        marks += state.dimensions
-        textMarks.clear()
-        textMarks += state.texts
-        angleMarks.clear()
-        angleMarks += state.angles
-        areaMarks.clear()
-        areaMarks += state.areas.filter { it.points.size >= 3 }
-        selectedIndex = -1
-        selectedTextIndex = -1
-        selectedAngleIndex = -1
-        selectedAreaIndex = -1
-        selectedAreaPointIndex = -1
-        pendingAnglePoints.clear()
-        pendingAreaPoints.clear()
-        resetMoveTarget()
+    fun cancelGesture() {
+        editor.cancelEdit()
+        resetMagnifier()
         clearPreview()
         notifySelectionChanged()
-        invalidate()
+        requestRender()
+    }
+
+    fun restoreState(state: AnnotationState) = restoreDocument(state.toAnnotationDocument())
+
+    fun restoreDocument(document: AnnotationDocument) {
+        editor.restore(document)
+        clearSelection()
+        resetMagnifier()
+        clearPreview()
+        notifySelectionChanged()
+        requestRender()
     }
 
     fun updateSelectedLabel(label: String): Boolean {
         if (selectedIndex !in marks.indices) return false
-        marks[selectedIndex] = marks[selectedIndex].copy(label = label.trim())
-        invalidate()
+        replaceDimension(selectedIndex, marks[selectedIndex].copy(label = label.trim()))
+        requestRender()
         return true
     }
 
     fun setMode(value: AnnotationMode, preserveSelection: Boolean = false) {
         if (mode == value) return
-        mode = value
-        if (!preserveSelection) {
-            selectedIndex = -1
-            selectedTextIndex = -1
-            selectedAngleIndex = -1
-            selectedAreaIndex = -1
-            selectedAreaPointIndex = -1
-        }
-        pendingAnglePoints.clear()
-        pendingAreaPoints.clear()
-        magnifierFocusX = null
-        magnifierFocusY = null
-        resetMoveTarget()
+        editor.setMode(value, preserveSelection)
+        resetMagnifier()
         clearPreview()
         notifySelectionChanged()
-        invalidate()
+        requestRender()
     }
 
     fun updateSelectedText(text: String): Boolean {
         if (selectedTextIndex !in textMarks.indices) return false
-        textMarks[selectedTextIndex] = textMarks[selectedTextIndex].copy(text = text)
-        invalidate()
+        replaceText(selectedTextIndex, textMarks[selectedTextIndex].copy(text = text))
+        requestRender()
         return true
     }
 
     fun updateSelectedAngleLabel(label: String): Boolean {
         if (selectedAngleIndex !in angleMarks.indices) return false
-        angleMarks[selectedAngleIndex] = angleMarks[selectedAngleIndex].copy(label = label.trim())
-        invalidate()
+        replaceAngle(selectedAngleIndex, angleMarks[selectedAngleIndex].copy(label = label.trim()))
+        requestRender()
         return true
     }
 
     fun updateSelectedAreaLabel(label: String): Boolean {
         if (selectedAreaIndex !in areaMarks.indices) return false
-        areaMarks[selectedAreaIndex] = areaMarks[selectedAreaIndex].copy(label = label.trim())
-        invalidate()
+        replaceArea(selectedAreaIndex, areaMarks[selectedAreaIndex].copy(label = label.trim()))
+        requestRender()
         return true
     }
 
     fun updateSelectedTextSize(textSize: Int): Boolean {
         if (selectedTextIndex !in textMarks.indices) return false
-        textMarks[selectedTextIndex] = textMarks[selectedTextIndex].copy(textSize = textSize.coerceIn(0, 2))
-        invalidate()
+        replaceText(selectedTextIndex, textMarks[selectedTextIndex].copy(textSize = textSize.coerceIn(0, 2)))
+        requestRender()
         return true
     }
 
     fun updateSelectedTextBackground(enabled: Boolean): Boolean {
         if (selectedTextIndex !in textMarks.indices) return false
-        textMarks[selectedTextIndex] = textMarks[selectedTextIndex].copy(whiteBackground = enabled)
-        invalidate()
+        replaceText(selectedTextIndex, textMarks[selectedTextIndex].copy(whiteBackground = enabled))
+        requestRender()
         return true
     }
 
     fun updateSelectedLineThickness(thickness: Int): Boolean {
         if (selectedIndex !in marks.indices) return false
-        marks[selectedIndex] = marks[selectedIndex].copy(thickness = thickness.coerceIn(0, 2))
-        invalidate()
+        replaceDimension(selectedIndex, marks[selectedIndex].copy(thickness = thickness.coerceIn(0, 2)))
+        requestRender()
         return true
     }
 
     fun updateSelectedColor(color: Int): Boolean {
         when {
-            selectedIndex in marks.indices -> marks[selectedIndex] = marks[selectedIndex].copy(color = color)
-            selectedTextIndex in textMarks.indices -> textMarks[selectedTextIndex] =
-                textMarks[selectedTextIndex].copy(color = color)
-            selectedAngleIndex in angleMarks.indices -> angleMarks[selectedAngleIndex] =
-                angleMarks[selectedAngleIndex].copy(color = color)
-            selectedAreaIndex in areaMarks.indices -> areaMarks[selectedAreaIndex] =
-                areaMarks[selectedAreaIndex].copy(color = color)
+            selectedIndex in marks.indices -> replaceDimension(selectedIndex, marks[selectedIndex].copy(color = color))
+            selectedTextIndex in textMarks.indices -> replaceText(selectedTextIndex, textMarks[selectedTextIndex].copy(color = color))
+            selectedAngleIndex in angleMarks.indices -> replaceAngle(selectedAngleIndex, angleMarks[selectedAngleIndex].copy(color = color))
+            selectedAreaIndex in areaMarks.indices -> replaceArea(selectedAreaIndex, areaMarks[selectedAreaIndex].copy(color = color))
             else -> return false
         }
-        invalidate()
+        requestRender()
         return true
     }
 
     fun undo(): Boolean {
-        if (marks.isEmpty()) return false
-        marks.removeAt(marks.lastIndex)
-        selectedIndex = marks.lastIndex
-        notifySelectionChanged()
-        invalidate()
+        if (!editor.undo()) return false
+        clearSelection()
+        requestRender()
         return true
     }
 
     fun deleteSelected(): Boolean {
         when {
-            selectedIndex in marks.indices -> marks.removeAt(selectedIndex)
-            selectedTextIndex in textMarks.indices -> textMarks.removeAt(selectedTextIndex)
-            selectedAngleIndex in angleMarks.indices -> angleMarks.removeAt(selectedAngleIndex)
-            selectedAreaIndex in areaMarks.indices -> areaMarks.removeAt(selectedAreaIndex)
+            selectedIndex in marks.indices -> deleteMark(AnnotationKind.DIMENSION, selectedIndex)
+            selectedTextIndex in textMarks.indices -> deleteMark(AnnotationKind.TEXT, selectedTextIndex)
+            selectedAngleIndex in angleMarks.indices -> deleteMark(AnnotationKind.ANGLE, selectedAngleIndex)
+            selectedAreaIndex in areaMarks.indices -> deleteMark(AnnotationKind.AREA, selectedAreaIndex)
             else -> return false
         }
-        selectedIndex = -1
-        selectedTextIndex = -1
-        selectedAngleIndex = -1
-        selectedAreaIndex = -1
-        selectedAreaPointIndex = -1
+        clearSelection()
         clearPreview()
         notifySelectionChanged()
-        onMessage?.invoke("已删除选中的标注")
-        invalidate()
+        notifyMessage(context.getString(R.string.annotation_deleted_hint))
+        requestRender()
         return true
     }
 
     fun deleteSelectedAreaPoint(): Boolean {
         val mark = areaMarks.getOrNull(selectedAreaIndex) ?: return false
         if (selectedAreaPointIndex !in mark.points.indices || mark.points.size <= 3) return false
-        val updatedPoints = mark.points.toMutableList().apply { removeAt(selectedAreaPointIndex) }
-        selectedAreaPointIndex = selectedAreaPointIndex.coerceAtMost(updatedPoints.lastIndex)
-        areaMarks[selectedAreaIndex] = mark.copy(points = updatedPoints)
+        val target = annotation(AnnotationKind.AREA, selectedAreaIndex) ?: return false
+        val pointIndex = selectedAreaPointIndex
+        if (!edit(DeleteAreaPointCommand(target.id, pointIndex))) return false
+        selectArea(selectedAreaIndex, pointIndex.coerceAtMost(areaMarks[selectedAreaIndex].points.lastIndex))
         notifySelectionChanged()
-        onMessage?.invoke("已删除面积控制点")
-        invalidate()
+        notifyMessage(context.getString(R.string.annotation_area_point_deleted_hint))
+        requestRender()
         return true
     }
 
     fun clearMarks() {
-        marks.clear()
-        textMarks.clear()
-        angleMarks.clear()
-        areaMarks.clear()
-        selectedIndex = -1
-        selectedTextIndex = -1
-        selectedAngleIndex = -1
-        selectedAreaIndex = -1
-        selectedAreaPointIndex = -1
-        pendingAreaPoints.clear()
+        editor.execute(ClearAnnotationsCommand())
+        editor.clearPendingArea()
+        clearSelection()
         clearPreview()
         notifySelectionChanged()
-        invalidate()
+        requestRender()
     }
 
     fun hasImage(): Boolean = bitmap != null
@@ -376,74 +323,53 @@ class ImageAnnotationView @JvmOverloads constructor(
     }
 
     private fun drawAnnotationsForExport(canvas: Canvas, rect: RectF, scale: Float) {
-        areaMarks.forEach { drawAreaMark(canvas, it, rect, scale, false) }
-        marks.forEach { drawMark(canvas, it, rect, scale) }
-        textMarks.forEach { drawTextMark(canvas, it, rect, scale) }
-        angleMarks.forEach { drawAngleMark(canvas, it, rect, scale, false) }
+        drawScene(canvas, rect, scale, AnnotationSceneState(), showControls = false, showPreviews = false)
     }
 
-    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        val minimumHeight = (360 * resources.displayMetrics.density).toInt()
-        setMeasuredDimension(
-            MeasureSpec.getSize(widthMeasureSpec),
-            resolveSize(minimumHeight, heightMeasureSpec),
-        )
+    private fun requestRender() {
+        renderGeneration.intValue++
+        invalidate()
     }
 
-    override fun onDraw(canvas: Canvas) {
-        super.onDraw(canvas)
-        canvas.drawColor(Color.WHITE)
-        val source = bitmap
-        if (source == null) {
-            textPaint.color = Color.DKGRAY
-            textPaint.textSize = TypedValue.applyDimension(
-                TypedValue.COMPLEX_UNIT_SP,
-                18f,
-                resources.displayMetrics,
-            )
-            canvas.drawText("请先拍照或从图库选择图片", width / 2f, height / 2f, textPaint)
-            textPaint.color = Color.rgb(180, 0, 12)
-            return
-        }
-        calculateImageRect(source)
-        canvas.drawBitmap(source, null, imageRect, imagePaint)
-        val displayScale = max(1f, imageRect.width() / 500f)
-        areaMarks.forEachIndexed { index, mark ->
-            drawAreaMark(
-                canvas,
-                mark,
-                imageRect,
-                displayScale,
-                index == selectedAreaIndex,
-            )
-        }
-        marks.forEachIndexed { index, mark ->
-            drawMark(canvas, mark, imageRect, displayScale)
-            if (index == selectedIndex) {
-                drawSelectionHandles(canvas, mark, imageRect, displayScale)
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        bitmap?.let(::calculateImageRect)
+        requestRender()
+    }
+
+    @OptIn(ExperimentalComposeUiApi::class)
+    @Composable
+    override fun Content() {
+        AnnotationCanvas(snapshot = { sizePx ->
+            renderGeneration.intValue // Observe edits during drawing without rebuilding the host tree.
+            val viewport = bitmap?.let { source ->
+                fitPhotoViewport(sizePx, Vec2(source.width.toDouble(), source.height.toDouble())).also {
+                    imageRect.set(it.left.toFloat(), it.top.toFloat(), (it.left + it.width).toFloat(), (it.top + it.height).toFloat())
+                }
             }
-        }
-        textMarks.forEach { mark ->
-            drawTextMark(canvas, mark, imageRect, displayScale)
-        }
-        angleMarks.forEachIndexed { index, mark ->
-            drawAngleMark(
-                canvas,
-                mark,
-                imageRect,
-                displayScale,
-                index == selectedAngleIndex,
-            )
-        }
-        drawPendingAngle(canvas, imageRect, displayScale)
-        drawPendingArea(canvas, imageRect, displayScale)
-        drawDimensionPreview(canvas, displayScale)
-        drawMagnifier(canvas, source, displayScale)
+            AnnotationCanvasSnapshot(editor.renderDocument, viewport, drawingSceneState(), annotationSceneStyle(),
+                annotationSceneLabels(), androidx.compose.ui.graphics.Color(context.getColor(R.color.white)),
+                context.getString(R.string.annotation_photo_empty_hint),
+                resources.getDimension(R.dimen.annotation_empty_hint_text_size).toDouble(),
+                context.getColor(R.color.annotation_empty_hint_text), photoMagnifierStyle(),
+                magnifierFocusX?.let { x -> magnifierFocusY?.let { y -> Vec2(x.toDouble(), y.toDouble()) } })
+        }, painter = textPainter, drawPhoto = { viewport ->
+            bitmap?.let { source ->
+                drawIntoCanvas { canvas ->
+                    canvas.nativeCanvas.drawBitmap(source, null, RectF(viewport.left.toFloat(), viewport.top.toFloat(),
+                        (viewport.left + viewport.width).toFloat(), (viewport.top + viewport.height).toFloat()), imagePaint)
+                }
+            }
+        }, modifier = Modifier.fillMaxWidth()
+            .height((resources.getDimension(R.dimen.annotation_canvas_preferred_height) / resources.displayMetrics.density).dp)
+            .testTag("annotation-canvas").pointerInteropFilter { onTouchEvent(it) })
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (!isEnabled) return false
         if (bitmap == null) return false
         calculateImageRect(bitmap!!)
+        if (imageRect.width() <= 0f || imageRect.height() <= 0f) return false
         if (mode == AnnotationMode.MOVE) return handleMoveTouch(event)
         if (mode == AnnotationMode.AREA) return handleAreaTouch(event)
         if (mode == AnnotationMode.TEXT) return handleTextTouch(event)
@@ -452,54 +378,40 @@ class ImageAnnotationView @JvmOverloads constructor(
             MotionEvent.ACTION_DOWN -> {
                 if (!imageRect.contains(event.x, event.y)) return false
                 onCanvasTouched?.invoke()
-                dragStartX = event.x.coerceIn(imageRect.left, imageRect.right)
-                dragStartY = event.y.coerceIn(imageRect.top, imageRect.bottom)
-                dragEndX = dragStartX
-                dragEndY = dragStartY
+                if (!editor.beginDimension(normalizedPhotoPoint(event.x, event.y))) return false
                 onManipulationStarted?.invoke()
                 parent?.requestDisallowInterceptTouchEvent(true)
-                invalidate()
+                requestRender()
                 return true
             }
             MotionEvent.ACTION_MOVE -> {
-                if (dragStartX == null) return false
-                dragEndX = event.x.coerceIn(imageRect.left, imageRect.right)
-                dragEndY = event.y.coerceIn(imageRect.top, imageRect.bottom)
-                magnifierFocusX = dragEndX
-                magnifierFocusY = dragEndY
-                invalidate()
+                if (!editor.updateDimension(normalizedPhotoPoint(event.x, event.y))) return false
+                magnifierFocusX = event.x.coerceIn(imageRect.left, imageRect.right)
+                magnifierFocusY = event.y.coerceIn(imageRect.top, imageRect.bottom)
+                requestRender()
                 return true
             }
             MotionEvent.ACTION_UP -> {
-                val sx = dragStartX ?: return false
-                val sy = dragStartY ?: return false
-                val ex = event.x.coerceIn(imageRect.left, imageRect.right)
-                val ey = event.y.coerceIn(imageRect.top, imageRect.bottom)
+                if (editor.state.creation.dimension == null) return false
                 magnifierFocusX = null
                 magnifierFocusY = null
                 parent?.requestDisallowInterceptTouchEvent(false)
-                val dx = ex - sx
-                val dy = ey - sy
                 val dragThreshold = 12f * resources.displayMetrics.density
-                if (dx * dx + dy * dy > dragThreshold * dragThreshold) {
-                    marks += normalizedMark(sx, sy, ex, ey, defaultDimensionLabel)
-                    selectedIndex = marks.lastIndex
-                    selectedTextIndex = -1
-                    selectedAngleIndex = -1
-                    selectedAreaIndex = -1
-                    selectedAreaPointIndex = -1
+                if (editor.finishDimension(normalizedPhotoPoint(event.x, event.y),
+                        Vec2(imageRect.width().toDouble(), imageRect.height().toDouble()), dragThreshold.toDouble(),
+                        UUID.randomUUID().toString(), defaultDimensionLabel, context.getColor(R.color.annotation_color_red))) {
                     notifySelectionChanged()
-                    onMessage?.invoke(
+                    notifyMessage(
                         if (defaultDimensionLabel.isBlank()) {
-                            "已添加空尺寸线；可填写距离或选择测量记录"
+                            context.getString(R.string.annotation_dimension_empty_created_hint)
                         } else {
-                            "已添加尺寸线，默认使用最新测量值 $defaultDimensionLabel"
+                            context.getString(R.string.annotation_dimension_default_created_hint, defaultDimensionLabel)
                         },
                     )
                     onAnnotationCreated?.invoke(AnnotationMode.DIMENSION)
                 }
                 clearPreview()
-                invalidate()
+                requestRender()
                 return true
             }
             MotionEvent.ACTION_CANCEL -> {
@@ -507,19 +419,15 @@ class ImageAnnotationView @JvmOverloads constructor(
                 magnifierFocusY = null
                 parent?.requestDisallowInterceptTouchEvent(false)
                 clearPreview()
-                invalidate()
+                requestRender()
                 return true
             }
         }
         return super.onTouchEvent(event)
     }
 
-    private fun drawDimensionPreview(canvas: Canvas, displayScale: Float) {
-        val startX = dragStartX ?: return
-        val startY = dragStartY ?: return
-        val endX = dragEndX ?: return
-        val endY = dragEndY ?: return
-        drawMark(canvas, normalizedMark(startX, startY, endX, endY, ""), imageRect, displayScale)
+    private fun dimensionPreview(): DimensionAnnotation? = editor.state.creation.dimension?.let {
+        DimensionAnnotation("preview", it.start, it.end, "", context.getColor(R.color.annotation_color_red))
     }
 
     private fun handleMoveTouch(event: MotionEvent): Boolean {
@@ -527,42 +435,35 @@ class ImageAnnotationView @JvmOverloads constructor(
             MotionEvent.ACTION_DOWN -> {
                 if (!imageRect.contains(event.x, event.y)) return false
                 onCanvasTouched?.invoke()
-                moveTouchStartX = event.x
-                moveTouchStartY = event.y
-                moveStarted = false
                 startMoveTarget(event.x, event.y)
-                if (moveKind != MoveKind.NONE) parent?.requestDisallowInterceptTouchEvent(true)
+                if (editor.state.drag != null) parent?.requestDisallowInterceptTouchEvent(true)
                 return true
             }
             MotionEvent.ACTION_MOVE -> {
-                if (moveKind == MoveKind.NONE) return true
-                val dx = event.x - moveTouchStartX
-                val dy = event.y - moveTouchStartY
-                val threshold = 4f * resources.displayMetrics.density
-                if (moveStarted || dx * dx + dy * dy > threshold * threshold) {
-                    if (!moveStarted) onManipulationStarted?.invoke()
-                    moveStarted = true
-                    moveTarget(event.x, event.y)
-                }
+                moveTarget(event.x, event.y)
                 return true
             }
             MotionEvent.ACTION_UP -> {
-                if (moveKind != MoveKind.NONE && moveStarted) {
+                val drag = editor.state.drag
+                if (drag?.started == true) {
                     moveTarget(event.x, event.y)
-                    onMessage?.invoke(moveCompletionMessage())
-                } else if (moveKind == MoveKind.AREA && selectedAreaIndex in areaMarks.indices) {
-                    addAreaPointOnDoubleTap(event.x, event.y)
+                    notifyMessage(moveCompletionMessage(drag))
+                } else if (drag?.kind == AnnotationKind.AREA && drag.target.pointIndex == null && selectedAreaIndex in areaMarks.indices) {
+                    addAreaPointOnDoubleTap(event.x, event.y, event.eventTime)
                 }
-                resetMoveTarget()
+                editor.commitEdit()
+                resetMagnifier()
                 parent?.requestDisallowInterceptTouchEvent(false)
                 notifySelectionChanged()
-                invalidate()
+                requestRender()
                 return true
             }
             MotionEvent.ACTION_CANCEL -> {
-                resetMoveTarget()
+                editor.cancelEdit()
+                resetMagnifier()
+                notifySelectionChanged()
                 parent?.requestDisallowInterceptTouchEvent(false)
-                invalidate()
+                requestRender()
                 return true
             }
         }
@@ -570,445 +471,94 @@ class ImageAnnotationView @JvmOverloads constructor(
     }
 
     private fun startMoveTarget(x: Float, y: Float) {
-        resetMoveTarget()
-        val selectedAreaPoint = findAreaPointAt(x, y)
-        when {
-            selectedIndex in marks.indices && endpointAt(x, y) >= 0 -> {
-                moveKind = MoveKind.DIMENSION_ENDPOINT
-                moveIndex = selectedIndex
-                moveControlPointIndex = endpointAt(x, y)
-            }
-            selectedAngleIndex in angleMarks.indices && anglePointAt(x, y) >= 0 -> {
-                moveKind = MoveKind.ANGLE_POINT
-                moveIndex = selectedAngleIndex
-                moveControlPointIndex = anglePointAt(x, y)
-            }
-            selectedAreaPoint != null -> {
-                selectedAreaIndex = selectedAreaPoint.first
-                selectedAreaPointIndex = selectedAreaPoint.second
-                clearOtherSelectionsForArea()
-                moveKind = MoveKind.AREA_POINT
-                moveIndex = selectedAreaPoint.first
-                moveControlPointIndex = selectedAreaPoint.second
-            }
-            else -> startWholeMarkMove(x, y)
-        }
-        if (moveKind == MoveKind.DIMENSION_ENDPOINT || moveKind == MoveKind.ANGLE_POINT || moveKind == MoveKind.AREA_POINT) {
+        editor.cancelEdit()
+        resetMagnifier()
+        val target = annotationHitTest().pick(unclampedPhotoPoint(x, y), editor.state.selection)
+        if (target == null) clearSelection()
+        else editor.beginDrag(target, unclampedPhotoPoint(x, y))
+        if (editor.state.drag?.target?.pointIndex != null) {
             magnifierFocusX = x
             magnifierFocusY = y
         }
         notifySelectionChanged()
-        invalidate()
-    }
-
-    private fun startWholeMarkMove(x: Float, y: Float) {
-        val textIndex = textMarkAt(x, y)
-        val dimensionIndex = dimensionMarkAt(x, y)
-        val angleIndex = angleMarkAt(x, y)
-        val areaIndex = areaMarkAt(x, y)
-        when {
-            textIndex >= 0 -> {
-                selectText(textIndex)
-                moveKind = MoveKind.TEXT
-                moveIndex = textIndex
-                moveTextOriginal = textMarks[textIndex]
-            }
-            dimensionIndex >= 0 -> {
-                selectDimension(dimensionIndex)
-                moveKind = MoveKind.DIMENSION
-                moveIndex = dimensionIndex
-                moveDimensionOriginal = marks[dimensionIndex]
-            }
-            angleIndex >= 0 -> {
-                selectAngle(angleIndex)
-                moveKind = MoveKind.ANGLE
-                moveIndex = angleIndex
-                moveAngleOriginal = angleMarks[angleIndex]
-            }
-            areaIndex >= 0 -> {
-                selectArea(areaIndex)
-                moveKind = MoveKind.AREA
-                moveIndex = areaIndex
-                moveAreaOriginal = areaMarks[areaIndex]
-            }
-            else -> clearSelection()
-        }
+        requestRender()
     }
 
     private fun moveTarget(x: Float, y: Float) {
-        when (moveKind) {
-            MoveKind.DIMENSION_ENDPOINT -> {
-                magnifierFocusX = x.coerceIn(imageRect.left, imageRect.right)
-                magnifierFocusY = y.coerceIn(imageRect.top, imageRect.bottom)
-                moveSelectedEndpoint(moveControlPointIndex, x, y)
-            }
-            MoveKind.ANGLE_POINT -> {
-                magnifierFocusX = x.coerceIn(imageRect.left, imageRect.right)
-                magnifierFocusY = y.coerceIn(imageRect.top, imageRect.bottom)
-                moveAnglePoint(moveControlPointIndex, x, y)
-            }
-            MoveKind.AREA_POINT -> {
-                magnifierFocusX = x.coerceIn(imageRect.left, imageRect.right)
-                magnifierFocusY = y.coerceIn(imageRect.top, imageRect.bottom)
-                moveAreaPoint(moveControlPointIndex, x, y)
-            }
-            else -> moveWholeTarget(x, y)
+        val drag = editor.state.drag ?: return
+        val threshold = resources.getDimension(R.dimen.annotation_move_threshold).toDouble()
+        if (!editor.dragTo(unclampedPhotoPoint(x, y), Vec2(imageRect.width().toDouble(), imageRect.height().toDouble()), threshold)) return
+        if (!drag.started) onManipulationStarted?.invoke()
+        if (drag.target.pointIndex != null) {
+            magnifierFocusX = x.coerceIn(imageRect.left, imageRect.right)
+            magnifierFocusY = y.coerceIn(imageRect.top, imageRect.bottom)
         }
+        requestRender()
     }
 
-    private fun moveCompletionMessage() = when (moveKind) {
-        MoveKind.DIMENSION -> "尺寸标注位置已调整"
-        MoveKind.TEXT -> "文字位置已调整"
-        MoveKind.ANGLE -> "角度标注位置已调整"
-        MoveKind.AREA -> "面积标注位置已调整"
-        MoveKind.DIMENSION_ENDPOINT -> "尺寸线端点已调整"
-        MoveKind.ANGLE_POINT -> "角度控制点已调整"
-        MoveKind.AREA_POINT -> "面积控制点已调整"
-        MoveKind.NONE -> ""
-    }
-
-    private fun moveWholeTarget(x: Float, y: Float) {
-        val rawDx = (x - moveTouchStartX) / imageRect.width()
-        val rawDy = (y - moveTouchStartY) / imageRect.height()
-        when (moveKind) {
-            MoveKind.DIMENSION -> moveDimensionOriginal?.let { original ->
-                val dx = rawDx.coerceIn(-minOf(original.startX, original.endX), 1f - maxOf(original.startX, original.endX))
-                val dy = rawDy.coerceIn(-minOf(original.startY, original.endY), 1f - maxOf(original.startY, original.endY))
-                if (moveIndex in marks.indices) {
-                    marks[moveIndex] = original.copy(
-                        startX = original.startX + dx,
-                        startY = original.startY + dy,
-                        endX = original.endX + dx,
-                        endY = original.endY + dy,
-                    )
-                }
-            }
-            MoveKind.TEXT -> moveTextOriginal?.let { original ->
-                if (moveIndex in textMarks.indices) {
-                    textMarks[moveIndex] = original.copy(
-                        x = (original.x + rawDx).coerceIn(0f, 1f),
-                        y = (original.y + rawDy).coerceIn(0f, 1f),
-                    )
-                }
-            }
-            MoveKind.ANGLE -> moveAngleOriginal?.let { original ->
-                val minX = minOf(original.vertexX, original.firstX, original.secondX)
-                val maxX = maxOf(original.vertexX, original.firstX, original.secondX)
-                val minY = minOf(original.vertexY, original.firstY, original.secondY)
-                val maxY = maxOf(original.vertexY, original.firstY, original.secondY)
-                val dx = rawDx.coerceIn(-minX, 1f - maxX)
-                val dy = rawDy.coerceIn(-minY, 1f - maxY)
-                if (moveIndex in angleMarks.indices) {
-                    angleMarks[moveIndex] = original.copy(
-                        vertexX = original.vertexX + dx,
-                        vertexY = original.vertexY + dy,
-                        firstX = original.firstX + dx,
-                        firstY = original.firstY + dy,
-                        secondX = original.secondX + dx,
-                        secondY = original.secondY + dy,
-                    )
-                }
-            }
-            MoveKind.AREA -> moveAreaOriginal?.let { original ->
-                val minX = original.points.minOf { it.x }
-                val maxX = original.points.maxOf { it.x }
-                val minY = original.points.minOf { it.y }
-                val maxY = original.points.maxOf { it.y }
-                val dx = rawDx.coerceIn(-minX, 1f - maxX)
-                val dy = rawDy.coerceIn(-minY, 1f - maxY)
-                if (moveIndex in areaMarks.indices) {
-                    areaMarks[moveIndex] = original.copy(
-                        points = original.points.map { AreaPoint(it.x + dx, it.y + dy) },
-                    )
-                }
-            }
-            MoveKind.DIMENSION_ENDPOINT,
-            MoveKind.ANGLE_POINT,
-            MoveKind.AREA_POINT,
-            MoveKind.NONE,
-            -> Unit
+    private fun moveCompletionMessage(drag: AnnotationDrag): String {
+        val resource = if (drag.target.pointIndex == null) when (drag.kind) {
+            AnnotationKind.DIMENSION -> R.string.annotation_move_dimension
+            AnnotationKind.TEXT -> R.string.annotation_move_text
+            AnnotationKind.ANGLE -> R.string.annotation_move_angle
+            AnnotationKind.AREA -> R.string.annotation_move_area
+        } else when (drag.kind) {
+            AnnotationKind.DIMENSION -> R.string.annotation_move_dimension_endpoint
+            AnnotationKind.ANGLE -> R.string.annotation_move_angle_point
+            AnnotationKind.AREA -> R.string.annotation_move_area_point
+            AnnotationKind.TEXT -> R.string.annotation_move_text
         }
-        invalidate()
+        return context.getString(resource)
     }
 
-    private fun resetMoveTarget() {
-        moveKind = MoveKind.NONE
-        moveIndex = -1
-        moveControlPointIndex = -1
-        moveStarted = false
-        moveDimensionOriginal = null
-        moveTextOriginal = null
-        moveAngleOriginal = null
-        moveAreaOriginal = null
+    private fun notifyMessage(text: String, showToast: Boolean = false) {
+        onMessage?.invoke(AnnotationNotice(text, showToast))
+    }
+
+    private fun resetMagnifier() {
         magnifierFocusX = null
         magnifierFocusY = null
     }
 
-    private fun normalizedMark(sx: Float, sy: Float, ex: Float, ey: Float, label: String) = DimensionMark(
-        (sx - imageRect.left) / imageRect.width(),
-        (sy - imageRect.top) / imageRect.height(),
-        (ex - imageRect.left) / imageRect.width(),
-        (ey - imageRect.top) / imageRect.height(),
-        label,
-    )
+    private fun annotation(kind: AnnotationKind, index: Int): CoreAnnotation? =
+        editor.renderDocument.annotations.values.filter { it.kind == kind }.getOrNull(index)
+    private fun edit(command: AnnotationCommand): Boolean =
+        if (editor.hasPreview) editor.preview(command) else editor.execute(command)
+    private fun deleteMark(kind: AnnotationKind, index: Int): Boolean =
+        annotation(kind, index)?.let { edit(DeleteAnnotationCommand(it.id)) } ?: false
+    private fun replaceDimension(index: Int, mark: DimensionMark): Boolean =
+        (annotation(AnnotationKind.DIMENSION, index) as? DimensionAnnotation)?.let {
+            edit(UpdateAnnotationCommand(it.copy(label = mark.label, colorArgb = mark.color, thicknessPreset = mark.thickness)))
+        } ?: false
+    private fun replaceText(index: Int, mark: TextMark): Boolean =
+        (annotation(AnnotationKind.TEXT, index) as? TextAnnotation)?.let {
+            edit(UpdateAnnotationCommand(it.copy(text = mark.text, colorArgb = mark.color, sizePreset = mark.textSize, whiteBackground = mark.whiteBackground)))
+        } ?: false
+    private fun replaceAngle(index: Int, mark: AngleMark): Boolean =
+        (annotation(AnnotationKind.ANGLE, index) as? AngleAnnotation)?.let {
+            edit(UpdateAnnotationCommand(it.copy(label = mark.label, colorArgb = mark.color)))
+        } ?: false
+    private fun replaceArea(index: Int, mark: AreaMark): Boolean =
+        (annotation(AnnotationKind.AREA, index) as? AreaAnnotation)?.let {
+            edit(UpdateAnnotationCommand(it.copy(label = mark.label, colorArgb = mark.color)))
+        } ?: false
+    private fun normalizedPhotoPoint(x: Float, y: Float) =
+        imageRect.photoViewport().photo(Vec2(x.toDouble(), y.toDouble()), clampToPhoto = true)
+
+    private fun unclampedPhotoPoint(x: Float, y: Float) =
+        imageRect.photoViewport().photo(Vec2(x.toDouble(), y.toDouble()))
 
     private fun calculateImageRect(source: Bitmap) {
-        val scale = minOf(width / source.width.toFloat(), height / source.height.toFloat())
-        val drawWidth = source.width * scale
-        val drawHeight = source.height * scale
-        val left = (width - drawWidth) / 2f
-        val top = 0f
-        imageRect.set(left, top, left + drawWidth, top + drawHeight)
+        val viewport = fitPhotoViewport(Vec2(width.toDouble(), height.toDouble()), Vec2(source.width.toDouble(), source.height.toDouble()))
+        imageRect.set(viewport.left.toFloat(), viewport.top.toFloat(), (viewport.left + viewport.width).toFloat(),
+            (viewport.top + viewport.height).toFloat())
     }
 
-    private fun drawMark(canvas: Canvas, mark: DimensionMark, rect: RectF, scale: Float) {
-        val x1 = rect.left + mark.startX * rect.width()
-        val y1 = rect.top + mark.startY * rect.height()
-        val x2 = rect.left + mark.endX * rect.width()
-        val y2 = rect.top + mark.endY * rect.height()
-        linePaint.color = mark.color
-        textPaint.color = mark.color
-        linePaint.strokeWidth = when (mark.thickness) {
-            0 -> max(2f, 1.4f * scale)
-            2 -> max(5f, 4f * scale)
-            else -> max(3f, 2.4f * scale)
-        }
-        canvas.drawLine(x1, y1, x2, y2, linePaint)
-
-        val angle = atan2(y2 - y1, x2 - x1)
-        drawPerpendicularEndLine(canvas, x1, y1, angle, scale, linePaint)
-        drawPerpendicularEndLine(canvas, x2, y2, angle, scale, linePaint)
-        drawArchitecturalTick(canvas, x1, y1, angle, scale, linePaint)
-        drawArchitecturalTick(canvas, x2, y2, angle, scale, linePaint)
-
-        if (mark.label.isNotBlank()) {
-            val midX = (x1 + x2) / 2f
-            val midY = (y1 + y2) / 2f
-            textPaint.textSize = max(24f, 18f * scale)
-            val padding = max(8f, 6f * scale)
-            val textWidth = textPaint.measureText(mark.label)
-            val metrics = textPaint.fontMetrics
-            val textOffset = max(13f, 10f * scale)
-            var rotation = Math.toDegrees(angle.toDouble()).toFloat()
-            if (rotation > 90f || rotation < -90f) rotation += 180f
-            val baseline = -textOffset - metrics.descent
-            val background = RectF(
-                -textWidth / 2f - padding,
-                baseline + metrics.ascent - padding / 2f,
-                textWidth / 2f + padding,
-                baseline + metrics.descent + padding / 2f,
-            )
-            val saveCount = canvas.save()
-            canvas.translate(midX, midY)
-            canvas.rotate(rotation)
-            canvas.drawRoundRect(background, padding, padding, textBackgroundPaint)
-            canvas.drawText(mark.label, 0f, baseline, textPaint)
-            canvas.restoreToCount(saveCount)
-        }
-    }
-
-    private fun drawTextMark(canvas: Canvas, mark: TextMark, rect: RectF, scale: Float) {
-        val x = rect.left + mark.x * rect.width()
-        val y = rect.top + mark.y * rect.height()
-        textPaint.color = mark.color
-        textPaint.textSize = when (mark.textSize) {
-            0 -> max(18f, 17f * scale)
-            2 -> max(28f, 28f * scale)
-            else -> max(22f, 22f * scale)
-        }
-        val shownText = mark.text.ifBlank { "文字" }
-        val padding = max(8f, 6f * scale)
-        val metrics = textPaint.fontMetrics
-        val textWidth = textPaint.measureText(shownText)
-        val bounds = RectF(
-            x - textWidth / 2f - padding,
-            y + metrics.ascent - padding,
-            x + textWidth / 2f + padding,
-            y + metrics.descent + padding,
-        )
-        if (mark.whiteBackground) canvas.drawRoundRect(bounds, padding, padding, textBackgroundPaint)
-        canvas.drawText(shownText, x, y, textPaint)
-    }
-
-    private fun drawMagnifier(canvas: Canvas, source: Bitmap, displayScale: Float) {
-        val focusX = magnifierFocusX ?: return
-        val focusY = magnifierFocusY ?: return
-        val density = resources.displayMetrics.density
-        val margin = 12f * density
-        val lensSize = minOf(128f * density, width - margin * 2f, height - margin * 2f)
-        if (lensSize <= 0f) return
-        val lens = RectF(
-            width - margin - lensSize,
-            margin,
-            width - margin,
-            margin + lensSize,
-        )
-        val centerX = lens.centerX()
-        val centerY = lens.centerY()
-        val radius = lensSize / 2f
-        canvas.drawCircle(centerX, centerY, radius, magnifierBackgroundPaint)
-
-        val clipPath = Path().apply { addCircle(centerX, centerY, radius, Path.Direction.CW) }
-        val saveCount = canvas.save()
-        canvas.clipPath(clipPath)
-        canvas.translate(centerX, centerY)
-        canvas.scale(2.35f, 2.35f)
-        canvas.translate(-focusX, -focusY)
-        canvas.drawBitmap(source, null, imageRect, imagePaint)
-        areaMarks.forEach { drawAreaMark(canvas, it, imageRect, displayScale, false) }
-        marks.forEach { mark ->
-            drawMark(canvas, mark, imageRect, displayScale)
-        }
-        drawDimensionPreview(canvas, displayScale)
-        textMarks.forEach { drawTextMark(canvas, it, imageRect, displayScale) }
-        angleMarks.forEach { drawAngleMark(canvas, it, imageRect, displayScale, false) }
-        canvas.restoreToCount(saveCount)
-
-        magnifierBorderPaint.strokeWidth = 3f * density
-        canvas.drawCircle(centerX, centerY, radius, magnifierBorderPaint)
-        val crosshairSize = 9f * density
-        canvas.drawLine(centerX - crosshairSize, centerY, centerX + crosshairSize, centerY, magnifierCrosshairPaint)
-        canvas.drawLine(centerX, centerY - crosshairSize, centerX, centerY + crosshairSize, magnifierCrosshairPaint)
-    }
-
-    private fun drawAngleMark(
-        canvas: Canvas,
-        mark: AngleMark,
-        rect: RectF,
-        scale: Float,
-        selected: Boolean,
-    ) {
-        val vx = rect.left + mark.vertexX * rect.width()
-        val vy = rect.top + mark.vertexY * rect.height()
-        val x1 = rect.left + mark.firstX * rect.width()
-        val y1 = rect.top + mark.firstY * rect.height()
-        val x2 = rect.left + mark.secondX * rect.width()
-        val y2 = rect.top + mark.secondY * rect.height()
-        linePaint.color = mark.color
-        textPaint.color = mark.color
-        linePaint.strokeWidth = max(3f, 2.4f * scale)
-        canvas.drawLine(vx, vy, x1, y1, linePaint)
-        canvas.drawLine(vx, vy, x2, y2, linePaint)
-
-        var startAngle = Math.toDegrees(atan2(y1 - vy, x1 - vx).toDouble()).toFloat()
-        val endAngle = Math.toDegrees(atan2(y2 - vy, x2 - vx).toDouble()).toFloat()
-        var sweep = (endAngle - startAngle + 360f) % 360f
-        if (sweep > 180f) {
-            startAngle = endAngle
-            sweep = 360f - sweep
-        }
-        val firstLength = hypot(x1 - vx, y1 - vy)
-        val secondLength = hypot(x2 - vx, y2 - vy)
-        val radius = (minOf(firstLength, secondLength) * 0.32f).coerceAtLeast(max(22f, 16f * scale))
-        val arcRect = RectF(vx - radius, vy - radius, vx + radius, vy + radius)
-        canvas.drawArc(arcRect, startAngle, sweep, false, linePaint)
-
-        if (mark.label.isNotBlank()) {
-            val middleAngle = Math.toRadians((startAngle + sweep / 2f).toDouble())
-            val labelRadius = radius + max(20f, 14f * scale)
-            val labelX = vx + cos(middleAngle).toFloat() * labelRadius
-            val labelY = vy + sin(middleAngle).toFloat() * labelRadius
-            val label = "${mark.label}°"
-            textPaint.textSize = max(22f, 18f * scale)
-            val padding = max(7f, 5f * scale)
-            val metrics = textPaint.fontMetrics
-            val textWidth = textPaint.measureText(label)
-            val background = RectF(
-                labelX - textWidth / 2f - padding,
-                labelY + metrics.ascent - padding,
-                labelX + textWidth / 2f + padding,
-                labelY + metrics.descent + padding,
-            )
-            canvas.drawRoundRect(background, padding, padding, textBackgroundPaint)
-            canvas.drawText(label, labelX, labelY, textPaint)
-        }
-
-        if (selected) drawAngleHandles(canvas, vx, vy, x1, y1, x2, y2, scale)
-    }
-
-    private fun drawAngleHandles(
-        canvas: Canvas,
-        vx: Float,
-        vy: Float,
-        x1: Float,
-        y1: Float,
-        x2: Float,
-        y2: Float,
-        scale: Float,
-    ) {
-        val radius = max(9f, 7f * scale)
-        arrayOf(vx to vy, x1 to y1, x2 to y2).forEach { (x, y) ->
-            canvas.drawCircle(x, y, radius + max(3f, 2f * scale), selectionHaloPaint)
-            canvas.drawCircle(x, y, radius, selectionPaint)
-        }
-    }
-
-    private fun drawAreaMark(canvas: Canvas, mark: AreaMark, rect: RectF, scale: Float, selected: Boolean) {
-        if (mark.points.size < 3) return
-        val path = Path().apply {
-            val first = mark.points.first()
-            moveTo(rect.left + first.x * rect.width(), rect.top + first.y * rect.height())
-            mark.points.drop(1).forEach { point ->
-                lineTo(rect.left + point.x * rect.width(), rect.top + point.y * rect.height())
-            }
-            close()
-        }
-        areaFillPaint.color = Color.argb(48, Color.red(mark.color), Color.green(mark.color), Color.blue(mark.color))
-        canvas.drawPath(path, areaFillPaint)
-        linePaint.color = mark.color
-        linePaint.strokeWidth = max(3f, 2.4f * scale)
-        canvas.drawPath(path, linePaint)
-        if (mark.label.isNotBlank()) {
-            val centerX = mark.points.sumOf { it.x.toDouble() }.toFloat() / mark.points.size
-            val centerY = mark.points.sumOf { it.y.toDouble() }.toFloat() / mark.points.size
-            val labelX = rect.left + centerX * rect.width()
-            val labelY = rect.top + centerY * rect.height()
-            textPaint.color = mark.color
-            textPaint.textSize = max(24f, 18f * scale)
-            val padding = max(8f, 6f * scale)
-            val metrics = textPaint.fontMetrics
-            val textWidth = textPaint.measureText(mark.label)
-            val background = RectF(
-                labelX - textWidth / 2f - padding,
-                labelY + metrics.ascent - padding / 2f,
-                labelX + textWidth / 2f + padding,
-                labelY + metrics.descent + padding / 2f,
-            )
-            canvas.drawRoundRect(background, padding, padding, textBackgroundPaint)
-            canvas.drawText(mark.label, labelX, labelY, textPaint)
-        }
-        if (selected) {
-            val radius = max(9f, 7f * scale)
-            mark.points.forEachIndexed { index, point ->
-                val x = rect.left + point.x * rect.width()
-                val y = rect.top + point.y * rect.height()
-                canvas.drawCircle(x, y, radius + max(3f, 2f * scale), selectionHaloPaint)
-                selectionPaint.color = if (index == selectedAreaPointIndex) Color.rgb(255, 152, 0) else Color.rgb(0, 188, 212)
-                canvas.drawCircle(x, y, radius, selectionPaint)
-            }
-            selectionPaint.color = Color.rgb(0, 188, 212)
-        }
-    }
-
-    private fun drawPendingArea(canvas: Canvas, rect: RectF, scale: Float) {
-        if (pendingAreaPoints.isEmpty()) return
-        linePaint.color = Color.rgb(214, 32, 42)
-        linePaint.strokeWidth = max(3f, 2.4f * scale)
-        val path = Path()
-        pendingAreaPoints.forEachIndexed { index, point ->
-            val x = rect.left + point.x * rect.width()
-            val y = rect.top + point.y * rect.height()
-            if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
-        }
-        canvas.drawPath(path, linePaint)
-        val radius = max(9f, 7f * scale)
-        pendingAreaPoints.forEach { point ->
-            val x = rect.left + point.x * rect.width()
-            val y = rect.top + point.y * rect.height()
-            canvas.drawCircle(x, y, radius + max(3f, 2f * scale), selectionHaloPaint)
-            canvas.drawCircle(x, y, radius, selectionPaint)
-        }
-    }
+    private fun photoMagnifierStyle() = PhotoMagnifierStyle(
+        androidx.compose.ui.graphics.Color(context.getColor(R.color.annotation_magnifier_background)),
+        androidx.compose.ui.graphics.Color(context.getColor(R.color.white)), androidx.compose.ui.graphics.Color(selectionPaint.color),
+        resources.getDimension(R.dimen.annotation_magnifier_border_width), resources.getDimension(R.dimen.annotation_magnifier_crosshair_width),
+        resources.getDimension(R.dimen.annotation_magnifier_crosshair_half_length))
 
     private fun handleAreaTouch(event: MotionEvent): Boolean {
         when (event.actionMasked) {
@@ -1018,208 +568,48 @@ class ImageAnnotationView @JvmOverloads constructor(
                 return true
             }
             MotionEvent.ACTION_UP -> {
-                var areaCreated = false
-                pendingAreaPoints += normalizedAreaPoint(event.x, event.y)
-                when (pendingAreaPoints.size) {
-                    1 -> onMessage?.invoke("已放置第一个面积控制点，请继续点击")
-                    2 -> onMessage?.invoke("继续点击第三个点，放置后会自动闭合")
-                    3 -> {
-                        areaMarks += AreaMark(pendingAreaPoints.toList())
-                        pendingAreaPoints.clear()
-                        selectArea(areaMarks.lastIndex)
-                        onMessage?.invoke(context.getString(R.string.annotation_area_created_hint))
-                        areaCreated = true
-                    }
+                val result = editor.placeAreaPoint(normalizedPhotoPoint(event.x, event.y),
+                    UUID.randomUUID().toString(), context.getColor(R.color.annotation_color_red))
+                when (result) {
+                    is AnnotationPlacementResult.Pending -> notifyMessage(if (result.pointCount == 1)
+                        context.getString(R.string.annotation_area_first_point_hint) else context.getString(R.string.annotation_area_second_point_hint), showToast = result.pointCount == 1)
+                    is AnnotationPlacementResult.Created -> notifyMessage(context.getString(R.string.annotation_area_created_hint))
+                    AnnotationPlacementResult.Rejected -> Unit
                 }
                 notifySelectionChanged()
-                if (areaCreated) onAnnotationCreated?.invoke(AnnotationMode.AREA)
-                invalidate()
+                if (result is AnnotationPlacementResult.Created) onAnnotationCreated?.invoke(AnnotationMode.AREA)
+                requestRender()
                 return true
             }
             MotionEvent.ACTION_CANCEL -> {
-                invalidate()
+                requestRender()
                 return true
             }
         }
         return true
     }
 
-    private fun normalizedAreaPoint(x: Float, y: Float) = AreaPoint(
-        (x.coerceIn(imageRect.left, imageRect.right) - imageRect.left) / imageRect.width(),
-        (y.coerceIn(imageRect.top, imageRect.bottom) - imageRect.top) / imageRect.height(),
-    )
-
-    private fun clearOtherSelectionsForArea() {
-        selectedIndex = -1
-        selectedTextIndex = -1
-        selectedAngleIndex = -1
+    private fun selectedAnnotationIndex(kind: AnnotationKind): Int {
+        val id = editor.state.selection?.annotationId ?: return -1
+        return editor.renderDocument.annotations.values.filter { it.kind == kind }.indexOfFirst { it.id == id }
     }
 
-    private fun selectDimension(index: Int) {
-        selectedIndex = index
-        selectedTextIndex = -1
-        selectedAngleIndex = -1
-        selectedAreaIndex = -1
-        selectedAreaPointIndex = -1
+    private fun selectAnnotation(kind: AnnotationKind, index: Int, pointIndex: Int? = null) {
+        editor.select(annotation(kind, index)?.let { AnnotationSelectionTarget(it.id, pointIndex) })
     }
 
-    private fun selectText(index: Int) {
-        selectedIndex = -1
-        selectedTextIndex = index
-        selectedAngleIndex = -1
-        selectedAreaIndex = -1
-        selectedAreaPointIndex = -1
-    }
+    private fun selectArea(index: Int, pointIndex: Int? = null) = selectAnnotation(AnnotationKind.AREA, index, pointIndex)
+    private fun clearSelection() = editor.select(null)
+    internal fun editorState() = editor.state
 
-    private fun selectAngle(index: Int) {
-        selectedIndex = -1
-        selectedTextIndex = -1
-        selectedAngleIndex = index
-        selectedAreaIndex = -1
-        selectedAreaPointIndex = -1
-    }
-
-    private fun selectArea(index: Int) {
-        selectedIndex = -1
-        selectedTextIndex = -1
-        selectedAngleIndex = -1
-        selectedAreaIndex = index
-        selectedAreaPointIndex = -1
-    }
-
-    private fun clearSelection() {
-        selectedIndex = -1
-        selectedTextIndex = -1
-        selectedAngleIndex = -1
-        selectedAreaIndex = -1
-        selectedAreaPointIndex = -1
-    }
-
-    private fun areaPointAt(x: Float, y: Float): Int {
-        val mark = areaMarks.getOrNull(selectedAreaIndex) ?: return -1
-        val tolerance = 44f * resources.displayMetrics.density
-        return mark.points.indices.minByOrNull { index ->
-            val point = mark.points[index]
-            val pointX = imageRect.left + point.x * imageRect.width()
-            val pointY = imageRect.top + point.y * imageRect.height()
-            (x - pointX) * (x - pointX) + (y - pointY) * (y - pointY)
-        }?.takeIf { index ->
-            val point = mark.points[index]
-            val pointX = imageRect.left + point.x * imageRect.width()
-            val pointY = imageRect.top + point.y * imageRect.height()
-            (x - pointX) * (x - pointX) + (y - pointY) * (y - pointY) <= tolerance * tolerance
-        } ?: -1
-    }
-
-    private fun findAreaPointAt(x: Float, y: Float): Pair<Int, Int>? {
-        if (selectedAreaIndex in areaMarks.indices) {
-            val pointIndex = areaPointAt(x, y)
-            if (pointIndex >= 0) return selectedAreaIndex to pointIndex
-        }
-        for (areaIndex in areaMarks.indices.reversed()) {
-            if (areaIndex == selectedAreaIndex) continue
-            val mark = areaMarks[areaIndex]
-            val tolerance = 44f * resources.displayMetrics.density
-            val pointIndex = mark.points.indices.minByOrNull { index ->
-                val point = mark.points[index]
-                val pointX = imageRect.left + point.x * imageRect.width()
-                val pointY = imageRect.top + point.y * imageRect.height()
-                (x - pointX) * (x - pointX) + (y - pointY) * (y - pointY)
-            } ?: continue
-            val point = mark.points[pointIndex]
-            val pointX = imageRect.left + point.x * imageRect.width()
-            val pointY = imageRect.top + point.y * imageRect.height()
-            if ((x - pointX) * (x - pointX) + (y - pointY) * (y - pointY) <= tolerance * tolerance) {
-                return areaIndex to pointIndex
-            }
-        }
-        return null
-    }
-
-    private fun moveAreaPoint(pointIndex: Int, x: Float, y: Float) {
-        val mark = areaMarks.getOrNull(selectedAreaIndex) ?: return
-        if (pointIndex !in mark.points.indices) return
-        val points = mark.points.toMutableList()
-        points[pointIndex] = normalizedAreaPoint(x, y)
-        areaMarks[selectedAreaIndex] = mark.copy(points = points)
-        invalidate()
-    }
-
-    private fun areaMarkAt(x: Float, y: Float): Int {
-        for (index in areaMarks.indices.reversed()) {
-            val mark = areaMarks[index]
-            if (areaEdgeAt(index, x, y) >= 0 || isPointInsideArea(mark, x, y)) return index
-        }
-        return -1
-    }
-
-    private fun areaEdgeAt(areaIndex: Int, x: Float, y: Float): Int {
-        val mark = areaMarks.getOrNull(areaIndex) ?: return -1
-        val tolerance = 28f * resources.displayMetrics.density
-        var bestEdge = -1
-        var bestDistance = Float.MAX_VALUE
-        mark.points.indices.forEach { index ->
-            val first = mark.points[index]
-            val second = mark.points[(index + 1) % mark.points.size]
-            val distance = pointToSegmentDistanceSquared(
-                x,
-                y,
-                imageRect.left + first.x * imageRect.width(),
-                imageRect.top + first.y * imageRect.height(),
-                imageRect.left + second.x * imageRect.width(),
-                imageRect.top + second.y * imageRect.height(),
-            )
-            if (distance < bestDistance) {
-                bestDistance = distance
-                bestEdge = index
-            }
-        }
-        return if (bestDistance <= tolerance * tolerance) bestEdge else -1
-    }
-
-    private fun isPointInsideArea(mark: AreaMark, x: Float, y: Float): Boolean {
-        var inside = false
-        var previous = mark.points.lastIndex
-        mark.points.indices.forEach { current ->
-            val currentX = imageRect.left + mark.points[current].x * imageRect.width()
-            val currentY = imageRect.top + mark.points[current].y * imageRect.height()
-            val previousX = imageRect.left + mark.points[previous].x * imageRect.width()
-            val previousY = imageRect.top + mark.points[previous].y * imageRect.height()
-            if ((currentY > y) != (previousY > y) &&
-                x < (previousX - currentX) * (y - currentY) / (previousY - currentY) + currentX
-            ) inside = !inside
-            previous = current
-        }
-        return inside
-    }
-
-    private fun insertAreaPointAtEdge(areaIndex: Int, edgeIndex: Int) {
-        val mark = areaMarks.getOrNull(areaIndex) ?: return
-        val first = mark.points[edgeIndex]
-        val second = mark.points[(edgeIndex + 1) % mark.points.size]
-        val points = mark.points.toMutableList()
-        val insertionIndex = edgeIndex + 1
-        points.add(insertionIndex, AreaPoint((first.x + second.x) / 2f, (first.y + second.y) / 2f))
-        areaMarks[areaIndex] = mark.copy(points = points)
-        selectedAreaPointIndex = insertionIndex
-    }
-
-    private fun addAreaPointOnDoubleTap(x: Float, y: Float) {
-        val edgeIndex = areaEdgeAt(selectedAreaIndex, x, y)
-        if (edgeIndex < 0) return
-        val now = System.currentTimeMillis()
-        if (
-            selectedAreaIndex == lastAreaEdgeTapArea && edgeIndex == lastAreaEdgeTapIndex &&
-            now - lastAreaEdgeTapAt <= 450L
-        ) {
-            insertAreaPointAtEdge(selectedAreaIndex, edgeIndex)
-            lastAreaEdgeTapAt = 0L
-            onMessage?.invoke(context.getString(R.string.annotation_area_point_added))
-        } else {
-            lastAreaEdgeTapAt = now
-            lastAreaEdgeTapArea = selectedAreaIndex
-            lastAreaEdgeTapIndex = edgeIndex
-            onMessage?.invoke(context.getString(R.string.annotation_area_point_add_again))
+    private fun addAreaPointOnDoubleTap(x: Float, y: Float, atMillis: Long) {
+        val areaId = editor.state.selection?.annotationId ?: return
+        val edgeIndex = annotationHitTest().areaEdgeAt(areaId, unclampedPhotoPoint(x, y)) ?: return
+        when (editor.tapAreaEdge(areaId, edgeIndex, atMillis,
+            resources.getInteger(R.integer.annotation_area_edge_double_tap_window_ms).toLong())) {
+            AreaEdgeTapResult.INSERTED -> notifyMessage(context.getString(R.string.annotation_area_point_added))
+            AreaEdgeTapResult.PENDING -> notifyMessage(context.getString(R.string.annotation_area_point_add_again))
+            AreaEdgeTapResult.REJECTED -> Unit
         }
     }
 
@@ -1234,11 +624,11 @@ class ImageAnnotationView @JvmOverloads constructor(
                 val angleCreated = addPendingAnglePoint(event.x, event.y)
                 notifySelectionChanged()
                 if (angleCreated) onAnnotationCreated?.invoke(AnnotationMode.ANGLE)
-                invalidate()
+                requestRender()
                 return true
             }
             MotionEvent.ACTION_CANCEL -> {
-                invalidate()
+                requestRender()
                 return true
             }
         }
@@ -1246,122 +636,15 @@ class ImageAnnotationView @JvmOverloads constructor(
     }
 
     private fun addPendingAnglePoint(x: Float, y: Float): Boolean {
-        pendingAnglePoints +=
-            ((x.coerceIn(imageRect.left, imageRect.right) - imageRect.left) / imageRect.width()) to
-            ((y.coerceIn(imageRect.top, imageRect.bottom) - imageRect.top) / imageRect.height())
-        selectedIndex = -1
-        selectedTextIndex = -1
-        selectedAngleIndex = -1
-        selectedAreaIndex = -1
-        selectedAreaPointIndex = -1
-        when (pendingAnglePoints.size) {
-            1 -> onMessage?.invoke("已放置第一个端点，请放置角度中心点")
-            2 -> onMessage?.invoke("已放置中心点，请放置另一个端点")
-            3 -> {
-                val first = pendingAnglePoints[0]
-                val vertex = pendingAnglePoints[1]
-                val second = pendingAnglePoints[2]
-                angleMarks += AngleMark(
-                    vertexX = vertex.first,
-                    vertexY = vertex.second,
-                    firstX = first.first,
-                    firstY = first.second,
-                    secondX = second.first,
-                    secondY = second.second,
-                )
-                pendingAnglePoints.clear()
-                selectedAngleIndex = angleMarks.lastIndex
-                selectedAreaIndex = -1
-                selectedAreaPointIndex = -1
-                onMessage?.invoke("角度标注已完成，请输入角度")
-                return true
-            }
+        val result = editor.placeAnglePoint(normalizedPhotoPoint(x, y), UUID.randomUUID().toString(),
+            context.getColor(R.color.annotation_color_red))
+        when (result) {
+            is AnnotationPlacementResult.Pending -> notifyMessage(if (result.pointCount == 1)
+                context.getString(R.string.annotation_angle_first_point_hint) else context.getString(R.string.annotation_angle_vertex_hint), showToast = true)
+            is AnnotationPlacementResult.Created -> notifyMessage(context.getString(R.string.annotation_angle_created_hint), showToast = true)
+            AnnotationPlacementResult.Rejected -> Unit
         }
-        return false
-    }
-
-    private fun drawPendingAngle(canvas: Canvas, rect: RectF, scale: Float) {
-        if (pendingAnglePoints.isEmpty()) return
-        val points = pendingAnglePoints.map { point ->
-            rect.left + point.first * rect.width() to rect.top + point.second * rect.height()
-        }
-        linePaint.color = Color.rgb(214, 32, 42)
-        linePaint.strokeWidth = max(3f, 2.4f * scale)
-        if (points.size >= 2) {
-            val first = points[0]
-            val vertex = points[1]
-            canvas.drawLine(first.first, first.second, vertex.first, vertex.second, linePaint)
-        }
-        val radius = max(9f, 7f * scale)
-        points.forEach { (pointX, pointY) ->
-            canvas.drawCircle(pointX, pointY, radius + max(3f, 2f * scale), selectionHaloPaint)
-            canvas.drawCircle(pointX, pointY, radius, selectionPaint)
-        }
-    }
-
-    private fun selectNearestAngle(x: Float, y: Float): Boolean {
-        val bestIndex = angleMarkAt(x, y)
-        if (bestIndex < 0) return false
-        selectedAngleIndex = bestIndex
-        selectedIndex = -1
-        selectedTextIndex = -1
-        selectedAreaIndex = -1
-        selectedAreaPointIndex = -1
-        onMessage?.invoke("已选中角度标注")
-        return true
-    }
-
-    private fun angleMarkAt(x: Float, y: Float): Int {
-        var bestIndex = -1
-        var bestDistance = Float.MAX_VALUE
-        angleMarks.forEachIndexed { index, mark ->
-            val vx = imageRect.left + mark.vertexX * imageRect.width()
-            val vy = imageRect.top + mark.vertexY * imageRect.height()
-            val x1 = imageRect.left + mark.firstX * imageRect.width()
-            val y1 = imageRect.top + mark.firstY * imageRect.height()
-            val x2 = imageRect.left + mark.secondX * imageRect.width()
-            val y2 = imageRect.top + mark.secondY * imageRect.height()
-            val distance = minOf(
-                pointToSegmentDistanceSquared(x, y, vx, vy, x1, y1),
-                pointToSegmentDistanceSquared(x, y, vx, vy, x2, y2),
-            )
-            if (distance < bestDistance) {
-                bestDistance = distance
-                bestIndex = index
-            }
-        }
-        val tolerance = 32f * resources.displayMetrics.density
-        return if (bestDistance <= tolerance * tolerance) bestIndex else -1
-    }
-
-    private fun anglePointAt(x: Float, y: Float): Int {
-        val mark = angleMarks.getOrNull(selectedAngleIndex) ?: return -1
-        val points = arrayOf(
-            imageRect.left + mark.vertexX * imageRect.width() to imageRect.top + mark.vertexY * imageRect.height(),
-            imageRect.left + mark.firstX * imageRect.width() to imageRect.top + mark.firstY * imageRect.height(),
-            imageRect.left + mark.secondX * imageRect.width() to imageRect.top + mark.secondY * imageRect.height(),
-        )
-        val tolerance = 28f * resources.displayMetrics.density
-        val toleranceSquared = tolerance * tolerance
-        return points.indices.minByOrNull { index ->
-            val (pointX, pointY) = points[index]
-            (x - pointX) * (x - pointX) + (y - pointY) * (y - pointY)
-        }?.takeIf { index ->
-            val (pointX, pointY) = points[index]
-            (x - pointX) * (x - pointX) + (y - pointY) * (y - pointY) <= toleranceSquared
-        } ?: -1
-    }
-
-    private fun moveAnglePoint(point: Int, x: Float, y: Float) {
-        val mark = angleMarks.getOrNull(selectedAngleIndex) ?: return
-        val normalizedX = (x.coerceIn(imageRect.left, imageRect.right) - imageRect.left) / imageRect.width()
-        val normalizedY = (y.coerceIn(imageRect.top, imageRect.bottom) - imageRect.top) / imageRect.height()
-        angleMarks[selectedAngleIndex] = when (point) {
-            0 -> mark.copy(vertexX = normalizedX, vertexY = normalizedY)
-            1 -> mark.copy(firstX = normalizedX, firstY = normalizedY)
-            else -> mark.copy(secondX = normalizedX, secondY = normalizedY)
-        }
-        invalidate()
+        return result is AnnotationPlacementResult.Created
     }
 
     private fun handleTextTouch(event: MotionEvent): Boolean {
@@ -1374,18 +657,13 @@ class ImageAnnotationView @JvmOverloads constructor(
             MotionEvent.ACTION_UP -> {
                 var textCreated = false
                 if (imageRect.contains(event.x, event.y)) {
-                    textMarks += TextMark(
-                        x = (event.x - imageRect.left) / imageRect.width(),
-                        y = (event.y - imageRect.top) / imageRect.height(),
-                        text = "文字",
-                    )
-                    selectText(textMarks.lastIndex)
-                    onMessage?.invoke("已添加文字，请在下方输入内容")
-                    textCreated = true
+                    textCreated = editor.placeText(normalizedPhotoPoint(event.x, event.y), UUID.randomUUID().toString(),
+                        context.getString(R.string.annotation_text_placeholder), context.getColor(R.color.annotation_color_red))
+                    if (textCreated) notifyMessage(context.getString(R.string.annotation_text_created_hint))
                 }
                 notifySelectionChanged()
                 if (textCreated) onAnnotationCreated?.invoke(AnnotationMode.TEXT)
-                invalidate()
+                requestRender()
                 return true
             }
             MotionEvent.ACTION_CANCEL -> {
@@ -1395,154 +673,45 @@ class ImageAnnotationView @JvmOverloads constructor(
         return true
     }
 
-    private fun moveTextMark(index: Int, x: Float, y: Float) {
-        val mark = textMarks.getOrNull(index) ?: return
-        textMarks[index] = mark.copy(
-            x = (x.coerceIn(imageRect.left, imageRect.right) - imageRect.left) / imageRect.width(),
-            y = (y.coerceIn(imageRect.top, imageRect.bottom) - imageRect.top) / imageRect.height(),
-        )
-        invalidate()
-    }
+    private fun annotationHitTest() = AnnotationHitTest(editor.renderDocument,
+        Vec2(imageRect.width().toDouble(), imageRect.height().toDouble()), AnnotationHitTolerances(
+            resources.getDimension(R.dimen.annotation_hit_line).toDouble(),
+            resources.getDimension(R.dimen.annotation_hit_text).toDouble(),
+            resources.getDimension(R.dimen.annotation_hit_control).toDouble(),
+            resources.getDimension(R.dimen.annotation_hit_area_vertex).toDouble(),
+            resources.getDimension(R.dimen.annotation_hit_area_edge).toDouble()))
 
-    private fun textMarkAt(x: Float, y: Float): Int {
-        val tolerance = 44f * resources.displayMetrics.density
-        var bestIndex = -1
-        var bestDistance = Float.MAX_VALUE
-        textMarks.forEachIndexed { index, mark ->
-            val markX = imageRect.left + mark.x * imageRect.width()
-            val markY = imageRect.top + mark.y * imageRect.height()
-            val distance = (x - markX) * (x - markX) + (y - markY) * (y - markY)
-            if (distance < bestDistance) {
-                bestDistance = distance
-                bestIndex = index
-            }
-        }
-        return if (bestDistance <= tolerance * tolerance) bestIndex else -1
-    }
+    private fun drawingSceneState() = AnnotationSceneState(
+        selectedIds = setOfNotNull(editor.state.selection?.annotationId),
+        selectedAreaPoint = selectedAreaPointIndex,
+        dimensionPreview = dimensionPreview(),
+        pendingAngle = editor.state.creation.anglePoints,
+        pendingArea = editor.state.creation.areaPoints,
+    )
 
-    private fun drawArchitecturalTick(
-        canvas: Canvas,
-        x: Float,
-        y: Float,
-        lineAngle: Float,
-        scale: Float,
-        paint: Paint,
-    ) {
-        // Architectural dimensions use a short 45-degree oblique stroke.
-        val halfLength = max(12f, 9f * scale)
-        val tickAngle = lineAngle - Math.PI.toFloat() / 4f
-        val dx = cos(tickAngle) * halfLength
-        val dy = sin(tickAngle) * halfLength
-        canvas.drawLine(x - dx, y - dy, x + dx, y + dy, paint)
-    }
-
-    private fun drawPerpendicularEndLine(
-        canvas: Canvas,
-        x: Float,
-        y: Float,
-        lineAngle: Float,
-        scale: Float,
-        paint: Paint,
-    ) {
-        val halfLength = max(21f, 16f * scale)
-        val perpendicular = lineAngle + Math.PI.toFloat() / 2f
-        val dx = cos(perpendicular) * halfLength
-        val dy = sin(perpendicular) * halfLength
-        canvas.drawLine(x - dx, y - dy, x + dx, y + dy, paint)
-    }
-
-    private fun selectNearestMark(x: Float, y: Float) {
-        selectedIndex = dimensionMarkAt(x, y)
-        selectedTextIndex = -1
-        selectedAngleIndex = -1
-        selectedAreaIndex = -1
-        selectedAreaPointIndex = -1
-        notifySelectionChanged()
-        onMessage?.invoke(
-            if (selectedIndex >= 0) "已选中尺寸线，可填写距离或选择测量记录"
-            else "未选中尺寸线；请点按尺寸线附近",
-        )
-    }
-
-    private fun dimensionMarkAt(x: Float, y: Float): Int {
-        var bestIndex = -1
-        var bestDistance = Float.MAX_VALUE
-        marks.forEachIndexed { index, mark ->
-            val x1 = imageRect.left + mark.startX * imageRect.width()
-            val y1 = imageRect.top + mark.startY * imageRect.height()
-            val x2 = imageRect.left + mark.endX * imageRect.width()
-            val y2 = imageRect.top + mark.endY * imageRect.height()
-            val distance = pointToSegmentDistanceSquared(x, y, x1, y1, x2, y2)
-            if (distance < bestDistance) {
-                bestDistance = distance
-                bestIndex = index
-            }
-        }
-        val tolerance = 32f * resources.displayMetrics.density
-        return if (bestDistance <= tolerance * tolerance) bestIndex else -1
-    }
-
-    private fun endpointAt(x: Float, y: Float): Int {
-        val mark = marks.getOrNull(selectedIndex) ?: return -1
-        val startX = imageRect.left + mark.startX * imageRect.width()
-        val startY = imageRect.top + mark.startY * imageRect.height()
-        val endX = imageRect.left + mark.endX * imageRect.width()
-        val endY = imageRect.top + mark.endY * imageRect.height()
-        val tolerance = 28f * resources.displayMetrics.density
-        val toleranceSquared = tolerance * tolerance
-        val startDistance = (x - startX) * (x - startX) + (y - startY) * (y - startY)
-        val endDistance = (x - endX) * (x - endX) + (y - endY) * (y - endY)
-        return when {
-            startDistance <= toleranceSquared && startDistance <= endDistance -> 0
-            endDistance <= toleranceSquared -> 1
-            else -> -1
+    private fun drawScene(canvas: Canvas, rect: RectF, scale: Float, state: AnnotationSceneState,
+        showControls: Boolean = true, showPreviews: Boolean = true, dimensionPreviewBeforeText: Boolean = false) {
+        val style = annotationSceneStyle()
+        val labels = annotationSceneLabels()
+        sharedDrawing.draw(canvas, drawingDensity()) {
+            drawAnnotationScene(editor.renderDocument, rect.photoViewport(), scale.toDouble(), state, style, textPainter, labels,
+                showControls, showPreviews, dimensionPreviewBeforeText)
         }
     }
 
-    private fun moveSelectedEndpoint(endpoint: Int, x: Float, y: Float) {
-        val mark = marks.getOrNull(selectedIndex) ?: return
-        val normalizedX = ((x.coerceIn(imageRect.left, imageRect.right) - imageRect.left) / imageRect.width())
-        val normalizedY = ((y.coerceIn(imageRect.top, imageRect.bottom) - imageRect.top) / imageRect.height())
-        marks[selectedIndex] = if (endpoint == 0) {
-            mark.copy(startX = normalizedX, startY = normalizedY)
-        } else {
-            mark.copy(endX = normalizedX, endY = normalizedY)
-        }
-        invalidate()
+    private fun annotationSceneStyle() = AnnotationSceneStyle(annotationControlStyle(),
+        androidx.compose.ui.graphics.Color(context.getColor(R.color.annotation_label_background)),
+        androidx.compose.ui.graphics.Color(context.getColor(R.color.annotation_color_red)))
+    private fun annotationSceneLabels() = AnnotationSceneLabels(context.getString(R.string.annotation_text_placeholder)) {
+        context.getString(R.string.annotation_angle_label, it)
     }
 
-    private fun pointToSegmentDistanceSquared(
-        px: Float, py: Float, x1: Float, y1: Float, x2: Float, y2: Float,
-    ): Float {
-        val dx = x2 - x1
-        val dy = y2 - y1
-        val lengthSquared = dx * dx + dy * dy
-        val t = if (lengthSquared == 0f) 0f else (((px - x1) * dx + (py - y1) * dy) / lengthSquared).coerceIn(0f, 1f)
-        val nearestX = x1 + t * dx
-        val nearestY = y1 + t * dy
-        val offsetX = px - nearestX
-        val offsetY = py - nearestY
-        return offsetX * offsetX + offsetY * offsetY
-    }
+    private fun RectF.photoViewport() = PhotoDrawingViewport(left.toDouble(), top.toDouble(), width().toDouble(), height().toDouble())
+    private fun drawingDensity() = Density(resources.displayMetrics.density, resources.configuration.fontScale)
+    private fun annotationControlStyle() = AnnotationControlStyle(androidx.compose.ui.graphics.Color(selectionPaint.color),
+        androidx.compose.ui.graphics.Color(selectionHaloPaint.color), androidx.compose.ui.graphics.Color(context.getColor(R.color.annotation_selected_vertex)))
 
-    private fun drawSelectionHandles(canvas: Canvas, mark: DimensionMark, rect: RectF, scale: Float) {
-        val radius = max(9f, 7f * scale)
-        val points = arrayOf(
-            rect.left + mark.startX * rect.width() to rect.top + mark.startY * rect.height(),
-            rect.left + mark.endX * rect.width() to rect.top + mark.endY * rect.height(),
-        )
-        points.forEach { (x, y) ->
-            canvas.drawCircle(x, y, radius + max(3f, 2f * scale), selectionHaloPaint)
-            canvas.drawCircle(x, y, radius, selectionPaint)
-        }
-    }
-
-    private fun clearPreview() {
-        dragStartX = null
-        dragStartY = null
-        dragEndX = null
-        dragEndY = null
-    }
+    private fun clearPreview() = editor.cancelDimension()
 
     private fun notifySelectionChanged() {
         val selection = when {

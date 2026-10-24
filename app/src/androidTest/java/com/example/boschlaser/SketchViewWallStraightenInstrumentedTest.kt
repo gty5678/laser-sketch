@@ -1,5 +1,7 @@
 package com.example.boschlaser
 
+import com.example.boschlaser.shared.editor.Selection
+
 import android.os.Looper
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -17,9 +19,6 @@ class SketchViewWallStraightenInstrumentedTest {
         if (Looper.myLooper() == null) Looper.prepare()
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val view = SketchView(context)
-        val selectedWallId = SketchView::class.java.getDeclaredField("selectedWallId").apply {
-            isAccessible = true
-        }
 
         val horizontal = SketchWall(
             id = "horizontal",
@@ -32,7 +31,7 @@ class SketchViewWallStraightenInstrumentedTest {
             end = SketchPoint(160f, 80f),
         )
         view.restoreState(SketchState(walls = listOf(horizontal, connected)))
-        selectedWallId.set(view, horizontal.id)
+        view.selectEntity(Selection.Wall(horizontal.id))
 
         assertTrue(view.straightenSelectedWall(moveStart = false))
         val horizontalResult = view.snapshotState().walls.associateBy { it.id }
@@ -47,7 +46,7 @@ class SketchViewWallStraightenInstrumentedTest {
             end = SketchPoint(0f, 100f),
         )
         view.restoreState(SketchState(walls = listOf(vertical)))
-        selectedWallId.set(view, vertical.id)
+        view.selectEntity(Selection.Wall(vertical.id))
 
         assertTrue(view.straightenSelectedWall(moveStart = true))
         val verticalResult = view.snapshotState().walls.single()

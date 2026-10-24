@@ -1,11 +1,13 @@
 package com.example.boschlaser
 
 import android.graphics.Bitmap
+import com.example.boschlaser.shared.annotation.PhotoPoint
 import android.os.Looper
 import android.view.MotionEvent
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -14,13 +16,14 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class ImageAnnotationViewDimensionInstrumentedTest {
+    // These tests exercise the MotionEvent adapter offscreen; AnnotationCanvasInstrumentedTest
+    // measures an attached Compose host and verifies the actual pointer and drawing path.
     @Test
     fun dimensionDragShowsMagnifierUntilSecondPointIsConfirmed() {
         if (Looper.myLooper() == null) Looper.prepare()
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val view = ImageAnnotationView(context).apply {
             setBitmap(Bitmap.createBitmap(400, 400, Bitmap.Config.ARGB_8888))
-            measure(exactly(400), exactly(400))
             layout(0, 0, 400, 400)
         }
         val magnifierFocusX = privateField("magnifierFocusX")
@@ -32,6 +35,8 @@ class ImageAnnotationViewDimensionInstrumentedTest {
 
         touch(view, MotionEvent.ACTION_DOWN, 80f, 100f)
         assertEquals(1, manipulationStartedCount)
+        assertEquals(PhotoPoint(.2, .25), view.editorState().creation.dimension?.start)
+        assertTrue(view.snapshotDocument().annotations.isEmpty())
         assertNull(magnifierFocusX.get(view))
         assertNull(magnifierFocusY.get(view))
 
@@ -39,11 +44,14 @@ class ImageAnnotationViewDimensionInstrumentedTest {
         assertEquals(1, manipulationStartedCount)
         assertEquals(260f, magnifierFocusX.get(view) as Float, 0f)
         assertEquals(280f, magnifierFocusY.get(view) as Float, 0f)
+        assertEquals(PhotoPoint(.65, .7), view.editorState().creation.dimension?.end)
+        assertTrue(view.snapshotDocument().annotations.isEmpty())
 
         touch(view, MotionEvent.ACTION_UP, 300f, 320f)
         assertNull(magnifierFocusX.get(view))
         assertNull(magnifierFocusY.get(view))
         assertNotNull(confirmedSelection as? AnnotationSelection.Dimension)
+        assertNull(view.editorState().creation.dimension)
         val dimension = view.snapshotState().dimensions.single()
         assertEquals(0.2f, dimension.startX, 0.001f)
         assertEquals(0.25f, dimension.startY, 0.001f)
@@ -57,7 +65,6 @@ class ImageAnnotationViewDimensionInstrumentedTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val view = ImageAnnotationView(context).apply {
             setBitmap(Bitmap.createBitmap(400, 400, Bitmap.Config.ARGB_8888))
-            measure(exactly(400), exactly(400))
             layout(0, 0, 400, 400)
         }
         val magnifierFocusX = privateField("magnifierFocusX")
@@ -69,6 +76,8 @@ class ImageAnnotationViewDimensionInstrumentedTest {
         touch(view, MotionEvent.ACTION_CANCEL, 260f, 280f)
         assertNull(magnifierFocusX.get(view))
         assertEquals(emptyList<DimensionMark>(), view.snapshotState().dimensions)
+        assertNull(view.editorState().creation.dimension)
+        assertFalse(view.undo())
     }
 
     @Test
@@ -79,7 +88,6 @@ class ImageAnnotationViewDimensionInstrumentedTest {
         val view = ImageAnnotationView(context).apply {
             setBitmap(Bitmap.createBitmap(400, 400, Bitmap.Config.ARGB_8888))
             restoreState(AnnotationState(dimensions = listOf(original)))
-            measure(exactly(400), exactly(400))
             layout(0, 0, 400, 400)
             setMode(AnnotationMode.MOVE)
         }
@@ -105,7 +113,6 @@ class ImageAnnotationViewDimensionInstrumentedTest {
         val createdModes = mutableListOf<AnnotationMode>()
         val view = ImageAnnotationView(context).apply {
             setBitmap(Bitmap.createBitmap(400, 400, Bitmap.Config.ARGB_8888))
-            measure(exactly(400), exactly(400))
             layout(0, 0, 400, 400)
             onAnnotationCreated = { createdModes += it }
         }
@@ -125,7 +132,6 @@ class ImageAnnotationViewDimensionInstrumentedTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val view = ImageAnnotationView(context).apply {
             setBitmap(Bitmap.createBitmap(400, 400, Bitmap.Config.ARGB_8888))
-            measure(exactly(400), exactly(400))
             layout(0, 0, 400, 400)
         }
         view.onAnnotationCreated = { view.setMode(AnnotationMode.MOVE, preserveSelection = true) }
@@ -148,7 +154,6 @@ class ImageAnnotationViewDimensionInstrumentedTest {
         val createdModes = mutableListOf<AnnotationMode>()
         val view = ImageAnnotationView(context).apply {
             setBitmap(Bitmap.createBitmap(400, 400, Bitmap.Config.ARGB_8888))
-            measure(exactly(400), exactly(400))
             layout(0, 0, 400, 400)
             onAnnotationCreated = { createdModes += it }
             setMode(AnnotationMode.ANGLE)
@@ -156,16 +161,22 @@ class ImageAnnotationViewDimensionInstrumentedTest {
 
         tap(view, 80f, 100f)
         tap(view, 180f, 180f)
+        assertEquals(listOf(PhotoPoint(.2, .25), PhotoPoint(.45, .45)), view.editorState().creation.anglePoints)
+        assertTrue(view.snapshotDocument().annotations.isEmpty())
         assertTrue(createdModes.isEmpty())
         tap(view, 300f, 100f)
         assertEquals(listOf(AnnotationMode.ANGLE), createdModes)
+        assertTrue(view.editorState().creation.anglePoints.isEmpty())
 
         view.setMode(AnnotationMode.AREA)
         tap(view, 80f, 100f)
         tap(view, 300f, 100f)
+        assertEquals(2, view.editorState().creation.areaPoints.size)
+        assertEquals(1, view.snapshotDocument().annotations.size)
         assertEquals(listOf(AnnotationMode.ANGLE), createdModes)
         tap(view, 180f, 300f)
         assertEquals(listOf(AnnotationMode.ANGLE, AnnotationMode.AREA), createdModes)
+        assertTrue(view.editorState().creation.areaPoints.isEmpty())
     }
 
     @Test
@@ -175,7 +186,6 @@ class ImageAnnotationViewDimensionInstrumentedTest {
         val createdModes = mutableListOf<AnnotationMode>()
         val view = ImageAnnotationView(context).apply {
             setBitmap(Bitmap.createBitmap(400, 400, Bitmap.Config.ARGB_8888))
-            measure(exactly(400), exactly(400))
             layout(0, 0, 400, 400)
             onAnnotationCreated = { createdModes += it }
             setMode(AnnotationMode.TEXT)
@@ -185,6 +195,27 @@ class ImageAnnotationViewDimensionInstrumentedTest {
 
         assertEquals(listOf(AnnotationMode.TEXT), createdModes)
         assertEquals(1, view.snapshotState().texts.size)
+    }
+
+    @Test
+    fun cancellingATouchKeepsConfirmedAngleClicksButChangingToolsClearsThem() {
+        if (Looper.myLooper() == null) Looper.prepare()
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val view = ImageAnnotationView(context).apply {
+            setBitmap(Bitmap.createBitmap(400, 400, Bitmap.Config.ARGB_8888))
+            layout(0, 0, 400, 400)
+            setMode(AnnotationMode.ANGLE)
+        }
+        tap(view, 80f, 100f)
+        touch(view, MotionEvent.ACTION_DOWN, 180f, 180f)
+        touch(view, MotionEvent.ACTION_CANCEL, 180f, 180f)
+        assertEquals(listOf(PhotoPoint(.2, .25)), view.editorState().creation.anglePoints)
+        view.cancelGesture()
+        assertEquals(listOf(PhotoPoint(.2, .25)), view.editorState().creation.anglePoints)
+        assertTrue(view.snapshotDocument().annotations.isEmpty())
+        view.setMode(AnnotationMode.AREA)
+        assertTrue(view.editorState().creation.anglePoints.isEmpty())
+        assertTrue(view.editorState().creation.areaPoints.isEmpty())
     }
 
     private fun tap(view: ImageAnnotationView, x: Float, y: Float) {
@@ -200,11 +231,6 @@ class ImageAnnotationViewDimensionInstrumentedTest {
             event.recycle()
         }
     }
-
-    private fun exactly(size: Int): Int = android.view.View.MeasureSpec.makeMeasureSpec(
-        size,
-        android.view.View.MeasureSpec.EXACTLY,
-    )
 
     private fun privateField(name: String) = ImageAnnotationView::class.java.getDeclaredField(name).apply {
         isAccessible = true

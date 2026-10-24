@@ -1,5 +1,7 @@
 package com.example.boschlaser
 
+import com.example.boschlaser.shared.editor.Selection
+
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
@@ -27,18 +29,8 @@ class SketchViewDoorRenderingInstrumentedTest {
         )
         val bitmap = Bitmap.createBitmap(500, 400, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap).apply { drawColor(Color.WHITE) }
-        val drawOpening = SketchView::class.java.getDeclaredMethod(
-            "drawOpening",
-            Canvas::class.java,
-            SketchOpening::class.java,
-            SketchWall::class.java,
-            Float::class.javaPrimitiveType,
-            Float::class.javaPrimitiveType,
-            Float::class.javaPrimitiveType,
-            Boolean::class.javaPrimitiveType,
-        ).apply { isAccessible = true }
 
-        drawOpening.invoke(view, canvas, door, wall, 1f, 100f, 100f, false)
+        view.drawOpeningFixture(canvas, door, wall, 1f, 100f, 100f, false)
 
         assertEquals(Color.rgb(29, 94, 145), bitmap.getPixel(200, 195))
     }
@@ -55,10 +47,7 @@ class SketchViewDoorRenderingInstrumentedTest {
             width = 100f,
         )
         view.restoreState(SketchState(walls = listOf(wall), openings = listOf(door)))
-        SketchView::class.java.getDeclaredField("selectedOpeningId").apply {
-            isAccessible = true
-            set(view, door.id)
-        }
+        view.selectEntity(Selection.Opening(door.id))
 
         assertTrue(view.updateSelectedOpening(door.width, flipHinge = true))
         val flippedDoor = view.snapshotState().openings.single()
@@ -94,11 +83,9 @@ class SketchViewDoorRenderingInstrumentedTest {
         val wall = SketchWall(id = "wall", start = SketchPoint(0f, 0f), end = SketchPoint(2000f, 0f))
         view.restoreState(SketchState(walls = listOf(wall)))
         view.setMode(SketchMode.DOOR)
-        val addOpening = SketchView::class.java.getDeclaredMethod("addOpening", SketchPoint::class.java).apply {
-            isAccessible = true
-        }
-
-        addOpening.invoke(view, SketchPoint(0f, 0f))
+        val scale = SketchView::class.java.getDeclaredField("scale").apply { isAccessible = true }.getFloat(view)
+        val event = android.view.MotionEvent.obtain(0L, 0L, android.view.MotionEvent.ACTION_UP, 0f * scale, 0f, 0)
+        try { view.onTouchEvent(event) } finally { event.recycle() }
 
         val door = view.snapshotState().openings.single()
         assertEquals(900f / 2f / 2000f, door.position, .0001f)
@@ -110,11 +97,9 @@ class SketchViewDoorRenderingInstrumentedTest {
         val wall = SketchWall(id = "wall", start = SketchPoint(0f, 0f), end = SketchPoint(800f, 0f))
         view.restoreState(SketchState(walls = listOf(wall)))
         view.setMode(SketchMode.DOOR)
-        val addOpening = SketchView::class.java.getDeclaredMethod("addOpening", SketchPoint::class.java).apply {
-            isAccessible = true
-        }
-
-        addOpening.invoke(view, SketchPoint(400f, 0f))
+        val scale = SketchView::class.java.getDeclaredField("scale").apply { isAccessible = true }.getFloat(view)
+        val event = android.view.MotionEvent.obtain(0L, 0L, android.view.MotionEvent.ACTION_UP, 400f * scale, 0f, 0)
+        try { view.onTouchEvent(event) } finally { event.recycle() }
 
         assertTrue(view.snapshotState().openings.isEmpty())
     }
@@ -138,15 +123,8 @@ class SketchViewDoorRenderingInstrumentedTest {
         view.restoreState(SketchState(walls = listOf(wall), openings = listOf(door)))
         val bitmap = Bitmap.createBitmap(500, 300, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap).apply { drawColor(Color.WHITE) }
-        val drawWallNetwork = SketchView::class.java.getDeclaredMethod(
-            "drawWallNetwork",
-            Canvas::class.java,
-            Float::class.javaPrimitiveType,
-            Float::class.javaPrimitiveType,
-            Float::class.javaPrimitiveType,
-        ).apply { isAccessible = true }
 
-        drawWallNetwork.invoke(view, canvas, 1f, 100f, 150f)
+        view.drawWallNetworkFixture(canvas, 1f, 100f, 150f)
 
         assertEquals(Color.WHITE, bitmap.getPixel(250, 150))
         assertEquals(Color.rgb(245, 245, 242), bitmap.getPixel(150, 150))
@@ -171,18 +149,8 @@ class SketchViewDoorRenderingInstrumentedTest {
         )
         val bitmap = Bitmap.createBitmap(500, 300, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap).apply { drawColor(Color.WHITE) }
-        val drawOpening = SketchView::class.java.getDeclaredMethod(
-            "drawOpening",
-            Canvas::class.java,
-            SketchOpening::class.java,
-            SketchWall::class.java,
-            Float::class.javaPrimitiveType,
-            Float::class.javaPrimitiveType,
-            Float::class.javaPrimitiveType,
-            Boolean::class.javaPrimitiveType,
-        ).apply { isAccessible = true }
 
-        drawOpening.invoke(view, canvas, window, wall, 1f, 100f, 150f, false)
+        view.drawOpeningFixture(canvas, window, wall, 1f, 100f, 150f, false)
 
         val windowColor = Color.rgb(29, 94, 145)
         val wallSurfaceColor = Color.rgb(28, 31, 32)
@@ -209,12 +177,12 @@ class SketchViewDoorRenderingInstrumentedTest {
             width = 900f,
         )
 
-        assertTrue(openingSymbolHit(view, SketchPoint(1050f, 450f), door, wall, 30f))
-        assertEquals(false, openingSymbolHit(view, SketchPoint(1500f, -500f), door, wall, 30f))
+        assertTrue(openingSymbolHit( SketchPoint(1050f, 450f), door, wall, 30f))
+        assertEquals(false, openingSymbolHit( SketchPoint(1500f, -500f), door, wall, 30f))
 
         val rightHingedDoor = door.copy(hingeFlipped = true)
-        assertTrue(openingSymbolHit(view, SketchPoint(1950f, 450f), rightHingedDoor, wall, 30f))
-        assertFalse(openingSymbolHit(view, SketchPoint(1050f, 450f), rightHingedDoor, wall, 30f))
+        assertTrue(openingSymbolHit( SketchPoint(1950f, 450f), rightHingedDoor, wall, 30f))
+        assertFalse(openingSymbolHit( SketchPoint(1050f, 450f), rightHingedDoor, wall, 30f))
     }
 
     @Test
@@ -229,38 +197,22 @@ class SketchViewDoorRenderingInstrumentedTest {
             width = 1200f,
         )
 
-        assertTrue(openingSymbolHit(view, SketchPoint(1500f, 40f), window, wall, 30f))
-        assertEquals(false, openingSymbolHit(view, SketchPoint(1500f, 500f), window, wall, 30f))
+        assertTrue(openingSymbolHit( SketchPoint(1500f, 40f), window, wall, 30f))
+        assertEquals(false, openingSymbolHit( SketchPoint(1500f, 500f), window, wall, 30f))
     }
 
     private fun openingSymbolHit(
-        view: SketchView,
         point: SketchPoint,
         opening: SketchOpening,
         wall: SketchWall,
         tolerance: Float,
     ): Boolean {
-        val method = SketchView::class.java.getDeclaredMethod(
-            "isPointNearOpeningSymbol",
-            SketchPoint::class.java,
-            SketchOpening::class.java,
-            SketchWall::class.java,
-            Float::class.javaPrimitiveType,
-        ).apply { isAccessible = true }
-        return method.invoke(view, point, opening, wall, tolerance) as Boolean
+        return com.example.boschlaser.shared.editor.HitTestEngine().hitsOpening(
+            opening.toCoreOpening(wall), wall.toCoreWall(), point.toVec2(), tolerance.toDouble())
     }
 
     private fun drawOpening(view: SketchView, canvas: Canvas, opening: SketchOpening, wall: SketchWall) {
-        SketchView::class.java.getDeclaredMethod(
-            "drawOpening",
-            Canvas::class.java,
-            SketchOpening::class.java,
-            SketchWall::class.java,
-            Float::class.javaPrimitiveType,
-            Float::class.javaPrimitiveType,
-            Float::class.javaPrimitiveType,
-            Boolean::class.javaPrimitiveType,
-        ).apply { isAccessible = true }.invoke(view, canvas, opening, wall, 1f, 100f, 100f, false)
+        view.drawOpeningFixture(canvas, opening, wall, 1f, 100f, 100f, false)
     }
 
     private fun newView(): SketchView {

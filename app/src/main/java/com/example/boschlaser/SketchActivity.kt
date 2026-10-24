@@ -1,105 +1,63 @@
 package com.example.boschlaser
 
-import android.content.Context
-import android.content.res.ColorStateList
-import android.graphics.Color
-import android.graphics.drawable.GradientDrawable
+import com.example.boschlaser.shared.editor.WallEditOperation
+import com.example.boschlaser.shared.editor.WallEditSession
+import com.example.boschlaser.shared.editor.WallEditUpdate
+import com.example.boschlaser.shared.command.WallEditStatus
+
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.collect
+
 import android.os.Bundle
-import android.text.InputType
-import android.view.Gravity
-import android.view.MotionEvent
-import android.view.View
 import android.view.ViewConfiguration
-import android.widget.Button
-import android.widget.EditText
 import android.widget.FrameLayout
-import android.widget.HorizontalScrollView
-import android.widget.ImageButton
-import android.widget.LinearLayout
-import android.widget.TextView
 import android.widget.Toast
-import androidx.appcompat.app.AlertDialog
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import com.example.boschlaser.ui.WallControlLinePicker
+import com.example.boschlaser.ui.DrawingSettingsDialog
+import com.example.boschlaser.ui.DrawingSettingsLabels
+import com.example.boschlaser.shared.model.WallAlignment
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.dimensionResource
+import com.example.boschlaser.ui.SketchScreen
+import com.example.boschlaser.ui.SketchScreenStyle
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.key
+import androidx.compose.ui.platform.LocalDensity
+import com.example.boschlaser.ui.SketchPropertySheet
+import com.example.boschlaser.ui.SketchPropertySheetStyle
+import androidx.compose.runtime.remember
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
+import com.example.boschlaser.ui.NumberProperty
+import com.example.boschlaser.ui.ColumnSizeProperty
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.colorResource
+import com.example.boschlaser.ui.SketchToolbar
+import com.example.boschlaser.ui.SketchToolItem
+import com.example.boschlaser.ui.SketchToolButtons
+import com.example.boschlaser.ui.SketchEditTools
+import com.example.boschlaser.ui.GridSnapControl
+import com.example.boschlaser.ui.EditorActions
+import com.example.boschlaser.ui.SelectionActions
+import com.example.boschlaser.ui.SelectionActionTarget
+import com.example.boschlaser.shared.editor.ToolType
 import androidx.appcompat.app.AppCompatActivity
-import androidx.appcompat.widget.SwitchCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
-import kotlin.math.abs
-import kotlin.math.max
 import kotlin.math.roundToInt
-
-private class SwipeDismissPanel(context: Context) : LinearLayout(context) {
-    var onPanelVisibilityChanged: (() -> Unit)? = null
-    private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
-    private var downRawX = 0f
-    private var downRawY = 0f
-    private var draggingDown = false
-
-    override fun setVisibility(visibility: Int) {
-        if (visibility == View.VISIBLE) {
-            animate().cancel()
-            translationY = 0f
-            alpha = 1f
-        }
-        super.setVisibility(visibility)
-        post { onPanelVisibilityChanged?.invoke() }
-    }
-
-    override fun onInterceptTouchEvent(event: MotionEvent): Boolean {
-        when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN -> {
-                downRawX = event.rawX
-                downRawY = event.rawY
-                draggingDown = false
-            }
-            MotionEvent.ACTION_MOVE -> {
-                val dx = event.rawX - downRawX
-                val dy = event.rawY - downRawY
-                if (dy > touchSlop && dy > abs(dx)) {
-                    draggingDown = true
-                    parent?.requestDisallowInterceptTouchEvent(true)
-                    return true
-                }
-            }
-        }
-        return draggingDown || super.onInterceptTouchEvent(event)
-    }
-
-    override fun onTouchEvent(event: MotionEvent): Boolean {
-        when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN -> {
-                downRawX = event.rawX
-                downRawY = event.rawY
-                draggingDown = false
-                return true
-            }
-            MotionEvent.ACTION_MOVE -> {
-                val dx = event.rawX - downRawX
-                val dy = event.rawY - downRawY
-                if (!draggingDown && dy > touchSlop && dy > abs(dx)) draggingDown = true
-                if (draggingDown) {
-                    translationY = max(0f, dy)
-                    alpha = (1f - translationY / max(1f, height.toFloat())).coerceIn(.35f, 1f)
-                    return true
-                }
-            }
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                if (draggingDown) {
-                    val dismissDistance = max(48f * resources.displayMetrics.density, height * .18f)
-                    if (event.actionMasked == MotionEvent.ACTION_UP && translationY >= dismissDistance) {
-                        animate().translationY(height.toFloat()).alpha(0f).setDuration(160L).withEndAction {
-                            visibility = View.GONE
-                        }.start()
-                    } else {
-                        animate().translationY(0f).alpha(1f).setDuration(160L).start()
-                    }
-                    draggingDown = false
-                    return true
-                }
-            }
-        }
-        return super.onTouchEvent(event)
-    }
-}
 
 class SketchActivity : AppCompatActivity() {
     companion object {
@@ -108,54 +66,65 @@ class SketchActivity : AppCompatActivity() {
         private const val PREFS_NAME = "sketch_settings"
         private const val PREF_GRID_DISPLAY_STEP_MM = "grid_display_step_mm"
         private const val PREF_MAGNIFIER_ZOOM = "magnifier_zoom"
+        private const val PREF_AUTOMATIC_DIMENSIONS = "show_automatic_dimensions"
     }
 
     private lateinit var sketchView: SketchView
-    private lateinit var propertyPanel: LinearLayout
-    private lateinit var modeBar: LinearLayout
-    private lateinit var placementActions: LinearLayout
-    private lateinit var deleteSelectionButton: ImageButton
-    private lateinit var straightenWallButton: ImageButton
-    private lateinit var doorFlipActions: LinearLayout
-    private lateinit var snapGridSwitch: SwitchCompat
-    private lateinit var joinWallsButton: ImageButton
-    private lateinit var extendWallButton: ImageButton
-    private val modeButtons = linkedMapOf<SketchMode, ImageButton>()
+    private var propertyPanelPresent by mutableStateOf(false)
+    private var propertyPanelResetKey by mutableIntStateOf(0)
+    private var animatePropertyDismiss by mutableStateOf(false)
+    private var propertySelection by mutableStateOf<SketchSelection?>(null)
+    private var openingPlacementType by mutableStateOf<SketchOpeningType?>(null)
+    private var propertyPanelVisible by mutableStateOf(false)
+    private var hasSelection by mutableStateOf(false)
+    private var selectionActionTarget by mutableStateOf(SelectionActionTarget.NONE)
+    private var gridSnapEnabled by mutableStateOf(true)
     private var projectId: String? = null
-    private var latestMeasurements = emptyList<Float>()
-    private var moveStart = false
-    private var currentMode = SketchMode.SELECT
-    private var joinWallsActive = false
-    private var firstJoinWallId: String? = null
-    private var firstJoinWallPickPoint: SketchPoint? = null
-    private var extendWallActive = false
-    private var firstExtendWallId: String? = null
-    private var firstExtendWallPickPoint: SketchPoint? = null
-    private var systemBottomInset = 0
-    private var systemTopInset = 0
+    private var settingsVisible by mutableStateOf(false)
+    private var editingFaceDimension by mutableStateOf<com.example.boschlaser.shared.model.WallDimension?>(null)
+    private var settingsGrid = ""
+    private var settingsMagnifier = ""
+    private var settingsAutomaticDimensions = true
+    private var currentMode by mutableStateOf(SketchMode.SELECT)
+    private var wallEditSession by mutableStateOf<WallEditSession?>(null)
+    private val joinWallsActive get() = wallEditSession?.operation == WallEditOperation.TRIM
+    private val extendWallActive get() = wallEditSession?.operation == WallEditOperation.EXTEND
+    private var systemBottomInset by mutableIntStateOf(0)
+    private var systemTopInset by mutableIntStateOf(0)
 
-    private val measurementListener: (List<Float>) -> Unit = { values ->
-        runOnUiThread {
-            latestMeasurements = values
-            val selection = sketchView.selectedWall()?.let(SketchSelection::Wall)
-            if (selection != null && !joinWallsActive && !extendWallActive) showSelection(selection)
-        }
-    }
+    private val measurementScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val projectServices by lazy { ProjectServices.get(this) }
+    private var projectLoaded = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         supportActionBar?.hide()
         projectId = savedInstanceState?.getString(EXTRA_PROJECT_ID) ?: intent.getStringExtra(EXTRA_PROJECT_ID)
-        latestMeasurements = intent.getFloatArrayExtra(EXTRA_MEASUREMENTS_MM)?.toList().orEmpty().asReversed()
         buildInterface()
+        measurementScope.launch {
+            projectServices.migrationNotices.collect { pending ->
+                if (pending) { toast(getString(R.string.project_migration_notice)); projectServices.acknowledgeMigrationNotice() }
+            }
+        }
         val id = projectId
         if (id == null) {
-            toast("草稿文件不存在")
+            toast(getString(R.string.sketch_project_missing))
             finish()
         } else {
-            val project = SketchProjectStore.load(this, id)
-            if (project == null) { toast("无法打开草稿"); finish() }
-            else sketchView.restoreState(project.state, adoptWallThickness = true)
+            sketchView.isEnabled = false
+            measurementScope.launch {
+                try {
+                    val project = projectServices.loadSketch(id).await()
+                    if (project == null) { toast(getString(R.string.project_open_failed)); finish() }
+                    else {
+                        projectId = project.manifest.projectId
+                        sketchView.restoreDocument(project.sketch, adoptWallThickness = true)
+                        projectLoaded = true
+                        sketchView.isEnabled = true
+                    }
+                } catch (failure: CancellationException) { throw failure }
+                catch (_: Exception) { projectServices.acknowledgeError(); toast(getString(R.string.project_open_failed)); finish() }
+            }
         }
     }
 
@@ -164,19 +133,18 @@ class SketchActivity : AppCompatActivity() {
         super.onSaveInstanceState(outState)
     }
 
-    override fun onStart() {
-        super.onStart()
-        MeasurementStore.addListener(measurementListener)
-    }
-
     override fun onStop() {
-        MeasurementStore.removeListener(measurementListener)
+        sketchView.cancelGesture()
         saveProject()
         super.onStop()
     }
 
+    override fun onDestroy() {
+        measurementScope.cancel()
+        super.onDestroy()
+    }
+
     private fun buildInterface() {
-        val root = FrameLayout(this)
         sketchView = SketchView(this).apply {
             onSelectionChanged = { if (!joinWallsActive && !extendWallActive) showSelection(it) }
             onStateChanged = {
@@ -184,679 +152,465 @@ class SketchActivity : AppCompatActivity() {
                     this@SketchActivity.toast(getString(R.string.sketch_auto_save_failed))
                 }
             }
-            onWallPicked = { wall, point ->
-                when {
-                    joinWallsActive -> handleJoinWallPicked(wall, point)
-                    extendWallActive -> handleExtendWallPicked(wall, point)
+            onWallEditSessionChanged = { wallEditSession = it }
+            onWallEditUpdated = { handleWallEditUpdate(it) }
+            onDimensionPlaced = { this@SketchActivity.setMode(SketchMode.SELECT) }
+            onFaceDimensionRequested = { editingFaceDimension = it }
+        }
+        @Composable fun Settings() {
+            if (settingsVisible) {
+                MaterialTheme(colorScheme = lightColorScheme(primary = colorResource(R.color.sketch_tool_active))) {
+                    DrawingSettingsDialog(settingsGrid, settingsMagnifier, settingsAutomaticDimensions,
+                        DrawingSettingsLabels(getString(R.string.sketch_settings_title), getString(R.string.sketch_settings_grid),
+                            getString(R.string.sketch_settings_grid_hint),
+                            getString(R.string.sketch_settings_magnifier, SketchView.MIN_MAGNIFIER_ZOOM.toInt(), SketchView.MAX_MAGNIFIER_ZOOM.toInt()),
+                            getString(R.string.sketch_settings_magnifier_hint), getString(R.string.sketch_property_apply),
+                            getString(R.string.sketch_settings_cancel), getString(R.string.sketch_settings_automatic_dimensions)),
+                        onApply = ::applyDrawingSettings, onDismiss = { settingsVisible = false })
                 }
             }
         }
-        root.addView(sketchView, FrameLayout.LayoutParams(-1, -1))
 
-        modeBar = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(6), dp(5), dp(6), dp(5))
-            setBackgroundColor(Color.argb(245, 255, 255, 255))
-            elevation = dp(8).toFloat()
-        }
-        modeBar.addView(modeIconButton(R.drawable.ic_back, "返回") { finish() })
-        listOf(
-            Triple(SketchMode.SELECT, R.drawable.ic_select, "选择与移动"),
-            Triple(SketchMode.WALL, R.drawable.ic_wall, "放置墙体"),
-            Triple(SketchMode.RECT_COLUMN, R.drawable.ic_column, "放置柱子"),
-            Triple(SketchMode.DOOR, R.drawable.ic_door, "放置门"),
-            Triple(SketchMode.WINDOW, R.drawable.ic_window, "放置窗"),
-        ).forEach { (mode, icon, description) ->
-            val button = modeIconButton(icon, description) { setMode(mode) }
-            modeButtons[mode] = button
-            modeBar.addView(button)
-        }
-        modeBar.addView(modeIconButton(R.drawable.ic_settings, "绘图设置") { showDrawingSettings() })
-        val scroll = HorizontalScrollView(this).apply {
-            isHorizontalScrollBarEnabled = false
-            addView(modeBar)
-        }
-        val editBar = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(8), dp(3), dp(8), dp(5))
-            setBackgroundColor(Color.rgb(246, 249, 248))
-        }
-        joinWallsButton = ImageButton(this).apply {
-            setImageResource(R.drawable.ic_join_walls)
-            imageTintList = ColorStateList.valueOf(Color.rgb(0, 102, 76))
-            contentDescription = "连接两墙"
-            setPadding(dp(10), dp(10), dp(10), dp(10))
-            background = roundedBackground(Color.WHITE, 10)
-            setOnClickListener {
-                if (joinWallsActive) stopWallJoinMode() else startWallJoinMode()
+        @Composable fun Toolbar() {
+            MaterialTheme(colorScheme = lightColorScheme(primary = colorResource(R.color.sketch_tool_active))) {
+                SketchToolbar(ToolType.valueOf(currentMode.name), listOf(
+                    SketchToolItem(ToolType.SELECT, getString(R.string.sketch_tool_select)),
+                    SketchToolItem(ToolType.WALL, getString(R.string.sketch_tool_wall)),
+                    SketchToolItem(ToolType.RECT_COLUMN, getString(R.string.sketch_tool_column)),
+                    SketchToolItem(ToolType.DOOR, getString(R.string.sketch_tool_door)),
+                    SketchToolItem(ToolType.WINDOW, getString(R.string.sketch_tool_window)),
+                    SketchToolItem(ToolType.DIMENSION, getString(R.string.sketch_tool_dimension))),
+                    getString(R.string.sketch_back), getString(R.string.sketch_settings),
+                    onBack = { finish() }, onSettings = ::showDrawingSettings,
+                    onTool = { setMode(SketchMode.valueOf(it.name)) },
+                    backIcon = { Icon(painterResource(R.drawable.ic_back), contentDescription = null) },
+                    settingsIcon = { Icon(painterResource(R.drawable.ic_settings), contentDescription = null) },
+                    toolIcon = { tool -> Icon(painterResource(when (tool) {
+                        ToolType.SELECT -> R.drawable.ic_select
+                        ToolType.WALL -> R.drawable.ic_wall
+                        ToolType.RECT_COLUMN, ToolType.CIRCLE_COLUMN -> R.drawable.ic_column
+                        ToolType.DOOR -> R.drawable.ic_door
+                        ToolType.WINDOW -> R.drawable.ic_window
+                        ToolType.MEASURE -> R.drawable.ic_measure
+                        ToolType.SPLIT -> R.drawable.ic_split
+                        ToolType.DIMENSION -> R.drawable.ic_dimension
+                    }), contentDescription = null) })
             }
         }
-        editBar.addView(joinWallsButton, LinearLayout.LayoutParams(dp(48), dp(44)))
-        extendWallButton = ImageButton(this).apply {
-            setImageResource(R.drawable.ic_extend_wall)
-            imageTintList = ColorStateList.valueOf(Color.rgb(0, 102, 76))
-            contentDescription = "延长或修剪墙到边界墙"
-            setPadding(dp(10), dp(10), dp(10), dp(10))
-            background = roundedBackground(Color.WHITE, 10)
-            setOnClickListener {
-                if (extendWallActive) stopWallExtendMode() else startWallExtendMode()
+
+        @Composable fun EditToolbar() {
+            MaterialTheme(colorScheme = lightColorScheme(primary = colorResource(R.color.sketch_tool_active))) {
+                SketchEditTools(joinWallsActive, extendWallActive,
+                    getString(if (joinWallsActive) R.string.sketch_join_cancel else R.string.sketch_join),
+                    getString(if (extendWallActive) R.string.sketch_extend_cancel else R.string.sketch_extend),
+                    onJoin = { if (joinWallsActive) stopWallJoinMode() else startWallJoinMode() },
+                    onExtend = { if (extendWallActive) stopWallExtendMode() else startWallExtendMode() },
+                    joinIcon = { Icon(painterResource(R.drawable.ic_join_walls), contentDescription = null) },
+                    extendIcon = { Icon(painterResource(R.drawable.ic_extend_wall), contentDescription = null) },
+                    additionalTools = {
+                        SketchToolButtons(ToolType.valueOf(currentMode.name), listOf(
+                            SketchToolItem(ToolType.MEASURE, getString(R.string.sketch_tool_measure)),
+                            SketchToolItem(ToolType.SPLIT, getString(R.string.sketch_tool_split))),
+                            onTool = { setMode(SketchMode.valueOf(it.name)) },
+                            toolIcon = { tool -> Icon(painterResource(
+                                if (tool == ToolType.MEASURE) R.drawable.ic_measure else R.drawable.ic_split),
+                                contentDescription = null) })
+                    })
             }
         }
-        editBar.addView(extendWallButton, LinearLayout.LayoutParams(dp(48), dp(44)).apply {
-            marginStart = dp(6)
-        })
-        val topToolbars = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.argb(250, 255, 255, 255))
-            elevation = dp(8).toFloat()
-            addView(scroll, LinearLayout.LayoutParams(-1, -2))
-            addView(editBar, LinearLayout.LayoutParams(-1, dp(52)))
-        }
-        root.addView(topToolbars, FrameLayout.LayoutParams(-1, -2, Gravity.TOP))
 
-        propertyPanel = SwipeDismissPanel(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(12), dp(16), dp(14))
-            setBackgroundColor(Color.argb(248, 255, 255, 255))
-            elevation = dp(14).toFloat()
-            visibility = View.GONE
+        @Composable fun GridSnap() {
+            MaterialTheme {
+                GridSnapControl(gridSnapEnabled, getString(R.string.sketch_grid_snap)) { enabled ->
+                    gridSnapEnabled = enabled
+                    sketchView.setGridSnapEnabled(enabled)
+                }
+            }
         }
-        root.addView(propertyPanel, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM).apply {
-            setMargins(dp(12), 0, dp(12), dp(14))
-        })
-        snapGridSwitch = SwitchCompat(this).apply {
-            text = "网格吸附"
-            textSize = 14f
-            setTextColor(Color.rgb(35, 42, 42))
-            isChecked = true
-            setPadding(dp(14), dp(6), dp(12), dp(6))
-            elevation = dp(10).toFloat()
-            background = roundedBackground(Color.argb(248, 255, 255, 255), 22)
-            setOnCheckedChangeListener { _, enabled -> sketchView.setGridSnapEnabled(enabled) }
+
+        @Composable fun PlacementActions() {
+            MaterialTheme(colorScheme = lightColorScheme(
+                primary = colorResource(R.color.sketch_tool_active),
+                secondary = colorResource(R.color.editor_action_neutral),
+                error = colorResource(R.color.editor_action_delete),
+                onPrimary = colorResource(R.color.white),
+                onSecondary = colorResource(R.color.white),
+                onError = colorResource(R.color.white),
+            )) {
+                EditorActions(
+                    showDelete = hasSelection && currentMode == SketchMode.SELECT,
+                    showConfirm = currentMode != SketchMode.SELECT,
+                    undoLabel = getString(R.string.sketch_action_undo),
+                    deleteLabel = getString(R.string.sketch_action_delete),
+                    confirmLabel = getString(R.string.sketch_action_confirm),
+                    onUndo = { if (!sketchView.undoPlacement()) toast(getString(R.string.sketch_undo_empty)) },
+                    onDelete = { if (!sketchView.deleteSelected()) toast(getString(R.string.sketch_selection_required)) },
+                    onConfirm = { setMode(SketchMode.SELECT) },
+                    undoIcon = { Icon(painterResource(R.drawable.ic_undo), null) },
+                    deleteIcon = { Icon(painterResource(R.drawable.ic_delete), null) },
+                    confirmIcon = { Icon(painterResource(R.drawable.ic_confirm), null) },
+                )
+            }
         }
-        root.addView(snapGridSwitch, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
-            bottomMargin = dp(14)
-        })
+
+        @Composable fun SelectionTools() {
+            MaterialTheme(colorScheme = lightColorScheme(
+                primary = colorResource(R.color.sketch_tool_active),
+                onPrimary = colorResource(R.color.white),
+            )) {
+                SelectionActions(
+                    target = selectionActionTarget,
+                    straightenLabel = getString(R.string.sketch_action_straighten),
+                    hingeLabel = getString(R.string.door_flip_left_right),
+                    sideLabel = getString(R.string.door_flip_up_down),
+                    onStraighten = {
+                        if (!sketchView.straightenSelectedWall(false)) toast(getString(R.string.sketch_wall_required))
+                    },
+                    onFlipHinge = {
+                        sketchView.selectedOpening()?.takeIf { it.type == SketchOpeningType.DOOR }
+                            ?.let { sketchView.updateSelectedOpening(it.width, flipHinge = true) }
+                    },
+                    onFlipSide = {
+                        sketchView.selectedOpening()?.takeIf { it.type == SketchOpeningType.DOOR }
+                            ?.let { sketchView.updateSelectedOpening(it.width, flip = true) }
+                    },
+                    straightenIcon = { Icon(painterResource(R.drawable.ic_straighten), null) },
+                    hingeIcon = { Icon(painterResource(R.drawable.ic_flip_horizontal), null) },
+                    sideIcon = { Icon(painterResource(R.drawable.ic_flip_vertical), null) },
+                )
+            }
+        }
+
         getSharedPreferences(PREFS_NAME, MODE_PRIVATE).let { preferences ->
             preferences.getFloat(PREF_GRID_DISPLAY_STEP_MM, SketchView.DEFAULT_GRID_DISPLAY_STEP_MM)
                 .let { sketchView.setGridDisplayStepMm(it) }
             preferences.getFloat(PREF_MAGNIFIER_ZOOM, SketchView.DEFAULT_MAGNIFIER_ZOOM)
                 .let { sketchView.setMagnifierZoom(it) }
+            sketchView.setShowAutomaticDimensions(preferences.getBoolean(PREF_AUTOMATIC_DIMENSIONS, true))
         }
-        (propertyPanel as SwipeDismissPanel).onPanelVisibilityChanged = { updateSnapSwitchPosition() }
-        propertyPanel.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> updateSnapSwitchPosition() }
-        placementActions = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-            visibility = View.GONE
-            addView(floatingIconButton(R.drawable.ic_undo, "撤销上一步", Color.rgb(88, 96, 101)) {
-                if (!sketchView.undoPlacement()) toast("没有可撤销的操作")
-            }, LinearLayout.LayoutParams(dp(56), dp(56)).apply { marginEnd = dp(10) })
-            deleteSelectionButton = floatingIconButton(
-                R.drawable.ic_delete,
-                "删除选中对象",
-                Color.rgb(190, 55, 55),
-            ) {
-                if (!sketchView.deleteSelected()) toast("请先选择对象")
-            }.apply { visibility = View.GONE }
-            addView(deleteSelectionButton, LinearLayout.LayoutParams(dp(56), dp(56)).apply { marginEnd = dp(10) })
-            addView(floatingIconButton(R.drawable.ic_confirm, "完成放置", Color.rgb(0, 122, 92)) {
-                setMode(SketchMode.SELECT)
-            }, LinearLayout.LayoutParams(dp(56), dp(56)))
-        }
-        root.addView(placementActions, FrameLayout.LayoutParams(-2, dp(56), Gravity.TOP or Gravity.END).apply {
-            marginEnd = dp(10); topMargin = dp(64)
-        })
-        straightenWallButton = floatingIconButton(
-            R.drawable.ic_straighten,
-            "将墙体拉成水平或垂直",
-            Color.rgb(0, 122, 92),
-        ) {
-            if (!sketchView.straightenSelectedWall(moveStart)) toast("请先选择墙体")
-        }.apply { visibility = View.GONE }
-        root.addView(straightenWallButton, FrameLayout.LayoutParams(dp(56), dp(56), Gravity.END or Gravity.CENTER_VERTICAL).apply {
-            marginEnd = dp(14)
-        })
-        doorFlipActions = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            visibility = View.GONE
-            addView(
-                floatingIconButton(
-                    R.drawable.ic_flip_horizontal,
-                    getString(R.string.door_flip_left_right),
-                    Color.rgb(0, 122, 92),
-                ) {
-                    sketchView.selectedOpening()
-                        ?.takeIf { it.type == SketchOpeningType.DOOR }
-                        ?.let { sketchView.updateSelectedOpening(it.width, flipHinge = true) }
-                },
-                LinearLayout.LayoutParams(dp(56), dp(56)),
-            )
-            addView(
-                floatingIconButton(
-                    R.drawable.ic_flip_vertical,
-                    getString(R.string.door_flip_up_down),
-                    Color.rgb(0, 122, 92),
-                ) {
-                    sketchView.selectedOpening()
-                        ?.takeIf { it.type == SketchOpeningType.DOOR }
-                        ?.let { sketchView.updateSelectedOpening(it.width, flip = true) }
-                },
-                LinearLayout.LayoutParams(dp(56), dp(56)).apply { topMargin = dp(10) },
-            )
-        }
-        root.addView(doorFlipActions, FrameLayout.LayoutParams(dp(56), -2, Gravity.END or Gravity.CENTER_VERTICAL).apply {
-            marginEnd = dp(14)
-        })
+        val root = FrameLayout(this)
+        root.addView(ComposeView(this).apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+            setContent {
+                val density = resources.displayMetrics.density
+                SketchScreen(propertyPanelVisible || propertyPanelPresent, (systemTopInset / density).dp, (systemBottomInset / density).dp,
+                    screenStyle(),
+                    canvas = { AndroidView(factory = { sketchView }, modifier = Modifier.fillMaxSize()) },
+                    toolbar = { Toolbar() }, editToolbar = { EditToolbar() },
+                    actions = { PlacementActions() }, selectionActions = { SelectionTools() },
+                    gridSnap = { GridSnap() },
+                    properties = { Properties() },
+                    dialogs = { Settings(); FaceDistanceDialog() })
+            }
+        }, FrameLayout.LayoutParams(-1, -1))
         setContentView(root)
-        ViewCompat.setOnApplyWindowInsetsListener(topToolbars) { view, insets ->
+        ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
             systemTopInset = bars.top
-            view.setPadding(0, bars.top, 0, 0)
-            updatePlacementActionsPosition()
-            insets
-        }
-        ViewCompat.setOnApplyWindowInsetsListener(propertyPanel) { view, insets ->
-            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
             systemBottomInset = bars.bottom
-            updatePropertyPanelPosition()
-            updateSnapSwitchPosition()
+            sketchView.setMagnifierTopOffset(systemTopInset + resources.getDimension(R.dimen.sketch_magnifier_top_offset))
             insets
         }
-        ViewCompat.setOnApplyWindowInsetsListener(placementActions) { view, insets ->
-            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            systemTopInset = bars.top
-            updatePlacementActionsPosition()
-            insets
-        }
+        ViewCompat.requestApplyInsets(root)
         setMode(SketchMode.SELECT)
     }
+
+    @Composable
+    private fun screenStyle() = SketchScreenStyle(
+        colorResource(R.color.sketch_toolbar_background), dimensionResource(R.dimen.sketch_toolbar_elevation),
+        dimensionResource(R.dimen.sketch_edit_toolbar_height), dimensionResource(R.dimen.sketch_actions_top),
+        dimensionResource(R.dimen.sketch_actions_end), dimensionResource(R.dimen.sketch_actions_height),
+        dimensionResource(R.dimen.sketch_selection_actions_end), dimensionResource(R.dimen.sketch_selection_actions_width),
+        dimensionResource(R.dimen.sketch_bottom_margin), dimensionResource(R.dimen.sketch_properties_horizontal_margin),
+        dimensionResource(R.dimen.sketch_properties_gap),
+    )
 
     private fun setMode(mode: SketchMode) {
         if (joinWallsActive) stopWallJoinMode()
         if (extendWallActive) stopWallExtendMode()
         currentMode = mode
         sketchView.setMode(mode)
-        modeButtons.forEach { (item, button) ->
-            button.setColorFilter(if (item == mode) Color.WHITE else Color.rgb(0, 102, 76))
-            button.background = if (item == mode) roundedBackground(Color.rgb(0, 122, 92), 10) else roundedBackground(Color.TRANSPARENT, 10)
-        }
-        placementActions.visibility = View.VISIBLE
-        val undoButton = placementActions.getChildAt(0)
-        val confirmButton = placementActions.getChildAt(2)
-        confirmButton.visibility = if (mode == SketchMode.SELECT) View.GONE else View.VISIBLE
-        (undoButton.layoutParams as? LinearLayout.LayoutParams)?.let { params ->
-            params.marginEnd = if (mode == SketchMode.SELECT && deleteSelectionButton.visibility != View.VISIBLE) 0 else dp(10)
-            undoButton.layoutParams = params
+        when (mode) {
+            SketchMode.MEASURE -> toast(getString(R.string.sketch_measure_hint))
+            SketchMode.SPLIT -> toast(getString(R.string.sketch_split_hint))
+            SketchMode.DIMENSION -> toast(getString(R.string.sketch_dimension_hint))
+            else -> Unit
         }
         when (mode) {
             SketchMode.DOOR -> showOpeningPlacementProperties(SketchOpeningType.DOOR)
             SketchMode.WINDOW -> showOpeningPlacementProperties(SketchOpeningType.WINDOW)
             SketchMode.SELECT -> Unit
-            else -> propertyPanel.visibility = View.GONE
+            else -> hideProperties()
         }
-        updatePropertyPanelPosition()
     }
 
     private fun startWallJoinMode() {
         setMode(SketchMode.SELECT)
-        joinWallsActive = true
-        firstJoinWallId = null
-        firstJoinWallPickPoint = null
-        sketchView.setWallPickMode(true)
+        sketchView.startWallEdit(WallEditOperation.TRIM)
         showSelection(null)
-        updateWallJoinToolbar()
     }
 
-    private fun stopWallJoinMode(showSelectedWall: Boolean = false) {
-        joinWallsActive = false
-        firstJoinWallId = null
-        firstJoinWallPickPoint = null
-        sketchView.setWallPickMode(false)
-        updateWallJoinToolbar()
-        if (showSelectedWall) {
-            showSelection(sketchView.selectedWall()?.let(SketchSelection::Wall))
-        }
-    }
-
-    private fun handleJoinWallPicked(wall: SketchWall, pickPoint: SketchPoint) {
-        if (!joinWallsActive) return
-        val firstId = firstJoinWallId
-        if (firstId == null) {
-            firstJoinWallId = wall.id
-            firstJoinWallPickPoint = pickPoint
-            sketchView.excludeWallFromNextPick(wall.id)
-            updateWallJoinToolbar()
-            return
-        }
-        if (firstId == wall.id) {
-            toast("第二面墙不能与第一面相同")
-            return
-        }
-        val firstPickPoint = firstJoinWallPickPoint ?: return
-        when (sketchView.joinWallsAtIntersection(firstId, firstPickPoint, wall.id, pickPoint)) {
-            WallJoinResult.SUCCESS -> {
-                stopWallJoinMode(showSelectedWall = true)
-                toast("两面墙已连接")
-            }
-            WallJoinResult.PARALLEL -> {
-                firstJoinWallId = null
-                firstJoinWallPickPoint = null
-                sketchView.setWallPickMode(true)
-                updateWallJoinToolbar()
-                toast("平行墙没有交点")
-            }
-            WallJoinResult.OPENING_CONFLICT -> resetWallJoinSelection("裁剪会切掉门窗，请先移动门窗或保留另一侧")
-            WallJoinResult.SAME_WALL -> toast("请选择两面不同的墙")
-            WallJoinResult.WALL_NOT_FOUND -> {
-                firstJoinWallId = null
-                firstJoinWallPickPoint = null
-                sketchView.setWallPickMode(true)
-                updateWallJoinToolbar()
-            }
-        }
-    }
-
-    private fun updateWallJoinToolbar() {
-        val foreground = if (joinWallsActive) Color.WHITE else Color.rgb(0, 102, 76)
-        joinWallsButton.imageTintList = ColorStateList.valueOf(foreground)
-        joinWallsButton.contentDescription = if (joinWallsActive) "取消连接两墙" else "连接两墙"
-        joinWallsButton.background = roundedBackground(
-            if (joinWallsActive) Color.rgb(0, 122, 92) else Color.WHITE,
-            10,
-        )
-    }
-
-    private fun resetWallJoinSelection(message: String) {
-        firstJoinWallId = null
-        firstJoinWallPickPoint = null
-        sketchView.setWallPickMode(true)
-        updateWallJoinToolbar()
-        toast(message)
-    }
+    private fun stopWallJoinMode() = sketchView.stopWallEdit()
 
     private fun startWallExtendMode() {
         setMode(SketchMode.SELECT)
-        extendWallActive = true
-        firstExtendWallId = null
-        firstExtendWallPickPoint = null
-        sketchView.setWallPickMode(true)
+        sketchView.startWallEdit(WallEditOperation.EXTEND)
         showSelection(null)
-        updateWallExtendToolbar()
-        toast("请选择第一面墙，并点击要保留的部分")
+        toast(getString(R.string.sketch_extend_pick_first))
     }
 
-    private fun stopWallExtendMode(showSelectedWall: Boolean = false) {
-        extendWallActive = false
-        firstExtendWallId = null
-        firstExtendWallPickPoint = null
-        sketchView.setWallPickMode(false)
-        updateWallExtendToolbar()
-        if (showSelectedWall) {
-            showSelection(sketchView.selectedWall()?.let(SketchSelection::Wall))
+    private fun stopWallExtendMode() = sketchView.stopWallEdit()
+
+    private fun handleWallEditUpdate(update: WallEditUpdate) {
+        val message = when (update.status) {
+            null -> if (update.operation == WallEditOperation.EXTEND) R.string.sketch_extend_pick_boundary else null
+            WallEditStatus.SUCCESS -> if (update.operation == WallEditOperation.TRIM)
+                R.string.sketch_trim_success else R.string.sketch_extend_success
+            WallEditStatus.SAME_WALL -> R.string.sketch_edit_different_walls
+            WallEditStatus.WALL_NOT_FOUND -> if (update.operation == WallEditOperation.EXTEND)
+                R.string.sketch_edit_wall_changed else null
+            WallEditStatus.PARALLEL -> if (update.operation == WallEditOperation.TRIM)
+                R.string.sketch_trim_parallel else R.string.sketch_extend_parallel
+            WallEditStatus.ALREADY_REACHES -> R.string.sketch_extend_already_reaches
+            WallEditStatus.TARGET_MISSED -> R.string.sketch_extend_target_missed
+            WallEditStatus.OPENING_CONFLICT, WallEditStatus.INVALID_LENGTH -> if (update.operation == WallEditOperation.TRIM)
+                R.string.sketch_trim_opening_conflict else R.string.sketch_extend_opening_conflict
         }
-    }
-
-    private fun handleExtendWallPicked(wall: SketchWall, pickPoint: SketchPoint) {
-        if (!extendWallActive) return
-        val firstId = firstExtendWallId
-        if (firstId == null) {
-            firstExtendWallId = wall.id
-            firstExtendWallPickPoint = pickPoint
-            sketchView.excludeWallFromNextPick(wall.id)
-            toast("请选择作为边界的第二面墙")
-            return
-        }
-        val firstPickPoint = firstExtendWallPickPoint ?: return
-        when (sketchView.extendWallToWall(firstId, wall.id, firstPickPoint)) {
-            WallExtendResult.SUCCESS -> {
-                stopWallExtendMode(showSelectedWall = true)
-                toast("第一面墙已延长或修剪到目标墙")
-            }
-            WallExtendResult.PARALLEL -> resetWallExtendSelection("两墙平行，无法延长")
-            WallExtendResult.ALREADY_REACHES -> resetWallExtendSelection("第一面墙端点已到达目标墙，无需处理")
-            WallExtendResult.TARGET_MISSED -> resetWallExtendSelection("交点不在第二面墙上")
-            WallExtendResult.OPENING_CONFLICT -> resetWallExtendSelection("延长关联墙后门窗空间不足，操作已取消")
-            WallExtendResult.SAME_WALL -> toast("请选择两面不同的墙")
-            WallExtendResult.WALL_NOT_FOUND -> resetWallExtendSelection("墙体已变化，请重新选择")
-        }
-    }
-
-    private fun resetWallExtendSelection(message: String) {
-        firstExtendWallId = null
-        firstExtendWallPickPoint = null
-        sketchView.setWallPickMode(true)
-        toast(message)
-    }
-
-    private fun updateWallExtendToolbar() {
-        val foreground = if (extendWallActive) Color.WHITE else Color.rgb(0, 102, 76)
-        extendWallButton.imageTintList = ColorStateList.valueOf(foreground)
-        extendWallButton.contentDescription = if (extendWallActive) "取消延长或修剪墙" else "延长或修剪墙到边界墙"
-        extendWallButton.background = roundedBackground(
-            if (extendWallActive) Color.rgb(0, 122, 92) else Color.WHITE,
-            10,
-        )
+        if (message != null) toast(getString(message))
     }
 
     private fun showSelection(selection: SketchSelection?) {
-        propertyPanel.removeAllViews()
-        deleteSelectionButton.visibility =
-            if (selection != null && currentMode == SketchMode.SELECT) View.VISIBLE else View.GONE
-        straightenWallButton.visibility =
-            if (selection is SketchSelection.Wall && currentMode == SketchMode.SELECT) View.VISIBLE else View.GONE
-        doorFlipActions.visibility =
-            if (selection is SketchSelection.Opening &&
-                selection.opening.type == SketchOpeningType.DOOR &&
-                currentMode == SketchMode.SELECT
-            ) View.VISIBLE else View.GONE
-        val undoButton = placementActions.getChildAt(0)
-        (undoButton.layoutParams as? LinearLayout.LayoutParams)?.let { params ->
-            params.marginEnd = if (currentMode == SketchMode.SELECT && selection == null) 0 else dp(10)
-            undoButton.layoutParams = params
+        propertySelection = selection
+        openingPlacementType = null
+        propertyPanelResetKey++
+        animatePropertyDismiss = false
+        hasSelection = selection != null
+        selectionActionTarget = when {
+            currentMode != SketchMode.SELECT -> SelectionActionTarget.NONE
+            selection is SketchSelection.Wall -> SelectionActionTarget.WALL
+            selection is SketchSelection.Opening && selection.opening.type == SketchOpeningType.DOOR -> SelectionActionTarget.DOOR
+            else -> SelectionActionTarget.NONE
         }
-        if (selection == null) {
+        if (selection is SketchSelection.Dimension) {
+            hideProperties()
+        } else if (selection == null) {
             when (currentMode) {
                 SketchMode.DOOR -> showOpeningPlacementProperties(SketchOpeningType.DOOR)
                 SketchMode.WINDOW -> showOpeningPlacementProperties(SketchOpeningType.WINDOW)
-                else -> propertyPanel.visibility = View.GONE
+                else -> hideProperties()
             }
-            return
-        }
-        propertyPanel.visibility = View.VISIBLE
-        updatePropertyPanelPosition()
-        val header = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        header.addView(TextView(this).apply {
-            text = when (selection) {
-                is SketchSelection.Wall -> "墙体属性"
-                is SketchSelection.Column -> if (selection.column.type == SketchColumnType.CIRCLE) "圆柱属性" else "方柱属性"
-                is SketchSelection.Opening -> if (selection.opening.type == SketchOpeningType.DOOR) "门属性" else "窗属性"
-            }
-            textSize = 17f; setTextColor(Color.rgb(25, 25, 25))
-        }, LinearLayout.LayoutParams(0, -2, 1f))
-        propertyPanel.addView(header)
-        when (selection) {
-            is SketchSelection.Wall -> showWallProperties(selection.wall)
-            is SketchSelection.Column -> showColumnProperties(selection.column)
-            is SketchSelection.Opening -> showOpeningProperties(selection.opening)
-        }
+        } else propertyPanelVisible = true
     }
 
-    private fun showWallProperties(wall: SketchWall) {
-        val controlLineRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        controlLineRow.addView(TextView(this).apply {
-            setText(R.string.wall_control_line_label)
-            textSize = 15f
-        })
-        listOf(
-            SketchWallControlLine.CENTER to R.string.wall_control_line_center,
-            SketchWallControlLine.INNER to R.string.wall_control_line_inner,
-            SketchWallControlLine.OUTER to R.string.wall_control_line_outer,
-        ).forEach { (controlLine, label) ->
-            controlLineRow.addView(Button(this).apply {
-                setText(label)
-                isAllCaps = false
-                val selected = wall.controlLine == controlLine
-                setTextColor(if (selected) Color.WHITE else Color.rgb(0, 102, 76))
-                background = roundedBackground(
-                    if (selected) Color.rgb(0, 122, 92) else Color.rgb(232, 240, 237),
-                    8,
-                )
-                setOnClickListener {
-                    if (sketchView.updateSelectedWallControlLine(controlLine)) {
-                        showSelection(sketchView.selectedWall()?.let(SketchSelection::Wall))
-                    }
-                }
-            }, LinearLayout.LayoutParams(0, dp(44), 1f).apply { marginStart = dp(6) })
-        }
-        propertyPanel.addView(controlLineRow)
-
-        val current = wall.measuredLength ?: kotlin.math.hypot(wall.end.x - wall.start.x, wall.end.y - wall.start.y)
-        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        val input = numberInput(current.roundToInt().toString())
-        row.addView(TextView(this).apply { text = "长度(mm)  "; textSize = 15f })
-        row.addView(input, LinearLayout.LayoutParams(0, dp(48), 1f))
-        row.addView(Button(this).apply {
-            text = if (moveStart) "移动起点" else "移动终点"; isAllCaps = false
-            setOnClickListener { moveStart = !moveStart; showSelection(sketchView.selectedWall()?.let(SketchSelection::Wall)) }
-        })
-        row.addView(Button(this).apply {
-            text = "应用"; isAllCaps = false
-            setOnClickListener {
-                val value = input.text.toString().toFloatOrNull()
-                if (value == null || !sketchView.applySelectedWallLength(value, moveStart)) {
-                    toast(if (sketchView.lastWallEditHadOpeningConflict()) "墙长不足以容纳现有门窗" else "请输入有效长度")
-                }
-            }
-        })
-        propertyPanel.addView(row)
-        val thicknessRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        val thicknessInput = numberInput(wall.thickness.roundToInt().toString())
-        thicknessRow.addView(TextView(this).apply { text = "墙厚(mm)  "; textSize = 15f })
-        thicknessRow.addView(thicknessInput, LinearLayout.LayoutParams(0, dp(48), 1f))
-        thicknessRow.addView(Button(this).apply {
-            text = "应用墙厚"; isAllCaps = false
-            setOnClickListener {
-                val value = thicknessInput.text.toString().toFloatOrNull()
-                if (value == null || !sketchView.updateSelectedWallThickness(value)) toast("墙厚请输入50～1000毫米")
-            }
-        })
-        propertyPanel.addView(thicknessRow)
-        if (latestMeasurements.isNotEmpty()) {
-            val measurements = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-            latestMeasurements.take(3).forEach { value ->
-                measurements.addView(Button(this).apply {
-                    text = "${value.roundToInt()} mm"; isAllCaps = false
-                    setOnClickListener { sketchView.applySelectedWallLength(value, moveStart) }
-                }, LinearLayout.LayoutParams(0, -2, 1f))
-            }
-            propertyPanel.addView(measurements)
-        }
-    }
-
-    private fun showColumnProperties(column: SketchColumn) {
-        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        val width = numberInput(column.width.roundToInt().toString())
-        val depth = numberInput(column.depth.roundToInt().toString())
-        row.addView(TextView(this).apply { text = "宽/直径" })
-        row.addView(width, LinearLayout.LayoutParams(0, dp(48), 1f))
-        if (column.type == SketchColumnType.RECTANGLE && currentMode == SketchMode.SELECT) {
-            row.addView(TextView(this).apply { text = "  深" })
-            row.addView(depth, LinearLayout.LayoutParams(0, dp(48), 1f))
-        }
-        row.addView(Button(this).apply {
-            text = "应用"; isAllCaps = false
-            setOnClickListener {
-                val w = width.text.toString().toFloatOrNull()
-                val d = if (column.type == SketchColumnType.CIRCLE) w else depth.text.toString().toFloatOrNull()
-                if (w == null || d == null || !sketchView.updateSelectedColumnSize(w, d)) toast("请输入有效尺寸")
-            }
-        })
-        propertyPanel.addView(row)
-        if (column.type == SketchColumnType.RECTANGLE) {
-            val rotationRow = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-            }
-            val rotation = numberInput(column.rotationDegrees.roundToInt().toString())
-            rotationRow.addView(TextView(this).apply { setText(R.string.column_rotation_angle) })
-            rotationRow.addView(rotation, LinearLayout.LayoutParams(0, dp(48), 1f))
-            rotationRow.addView(Button(this).apply {
-                setText(R.string.column_rotation_apply)
-                isAllCaps = false
-                setOnClickListener {
-                    val angle = rotation.text.toString().toFloatOrNull()
-                    if (angle == null || !sketchView.updateSelectedColumnRotation(angle)) {
-                        toast(getString(R.string.column_rotation_invalid))
-                    }
-                }
-            })
-            propertyPanel.addView(rotationRow)
-        }
-    }
-
-    private fun showOpeningProperties(opening: SketchOpening) {
-        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        val width = numberInput(opening.width.roundToInt().toString())
-        row.addView(TextView(this).apply { text = "宽度(mm)  " })
-        row.addView(width, LinearLayout.LayoutParams(0, dp(48), 1f))
-        row.addView(Button(this).apply {
-            text = "应用"; isAllCaps = false
-            setOnClickListener {
-                val value = width.text.toString().toFloatOrNull()
-                if (value == null || !sketchView.updateSelectedOpening(value)) toast("请输入有效宽度")
-            }
-        })
-        propertyPanel.addView(row)
+    private fun hideProperties() {
+        animatePropertyDismiss = false
+        propertyPanelVisible = false
     }
 
     private fun showOpeningPlacementProperties(type: SketchOpeningType) {
-        propertyPanel.removeAllViews()
-        propertyPanel.visibility = View.VISIBLE
-        updatePropertyPanelPosition()
-        propertyPanel.addView(TextView(this).apply {
-            text = if (type == SketchOpeningType.DOOR) "放置门 · 点击墙体确定位置" else "放置窗 · 点击墙体确定位置"
-            textSize = 17f
-            setTextColor(Color.rgb(25, 25, 25))
-        })
-        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        val width = numberInput(sketchView.placementOpeningWidth(type).roundToInt().toString())
-        row.addView(TextView(this).apply { text = "宽度(mm)  "; textSize = 15f })
-        row.addView(width, LinearLayout.LayoutParams(0, dp(48), 1f))
-        row.addView(Button(this).apply {
-            text = "应用"; isAllCaps = false
-            setOnClickListener {
-                val value = width.text.toString().toFloatOrNull()
-                if (value == null || !sketchView.updatePlacementOpeningWidth(type, value)) toast("请输入100～5000毫米")
-                else toast("后续放置将使用 ${value.roundToInt()} mm")
+        propertySelection = null
+        openingPlacementType = type
+        propertyPanelResetKey++
+        animatePropertyDismiss = false
+        propertyPanelVisible = true
+    }
+
+    @Composable
+    private fun Properties() {
+        val selection = propertySelection
+        val placement = openingPlacementType
+        val title = when (selection) {
+            is SketchSelection.Dimension -> getString(R.string.sketch_dimension_properties)
+            is SketchSelection.Wall -> getString(R.string.sketch_wall_properties)
+            is SketchSelection.Column -> getString(if (selection.column.type == SketchColumnType.CIRCLE)
+                R.string.sketch_circle_properties else R.string.sketch_rectangle_properties)
+            is SketchSelection.Opening -> getString(if (selection.opening.type == SketchOpeningType.DOOR)
+                R.string.sketch_door_properties else R.string.sketch_window_properties)
+            null -> placement?.let { getString(if (it == SketchOpeningType.DOOR)
+                R.string.sketch_place_door_hint else R.string.sketch_place_window_hint) }.orEmpty()
+        }
+        SketchPropertySheet(propertyPanelVisible, propertyPanelResetKey, animatePropertyDismiss, title,
+            propertySheetStyle(), ViewConfiguration.get(this).scaledTouchSlop.toFloat(),
+            onDismiss = { animatePropertyDismiss = true; propertyPanelVisible = false },
+            onPresenceChanged = { propertyPanelPresent = it }) {
+            key(propertyPanelResetKey) {
+                when (selection) {
+                    is SketchSelection.Dimension -> Unit
+                    is SketchSelection.Wall -> WallProperties(selection.wall.id)
+                    is SketchSelection.Column -> ColumnProperties(selection.column.id)
+                    is SketchSelection.Opening -> OpeningProperties(selection.opening.id)
+                    null -> placement?.let { OpeningPlacementProperties(it) }
+                }
             }
-        })
-        propertyPanel.addView(row)
+        }
+    }
+
+    @Composable
+    private fun propertySheetStyle() = SketchPropertySheetStyle(
+        colorResource(R.color.sketch_properties_background), colorResource(R.color.sketch_properties_title),
+        with(LocalDensity.current) { resources.getDimension(R.dimen.sketch_properties_title_size).toSp() },
+        dimensionResource(R.dimen.sketch_properties_horizontal_padding), dimensionResource(R.dimen.sketch_properties_top_padding),
+        dimensionResource(R.dimen.sketch_properties_bottom_padding), dimensionResource(R.dimen.sketch_properties_elevation),
+        dimensionResource(R.dimen.sketch_properties_dismiss_minimum),
+    )
+
+    @Composable
+    private fun FaceDistanceDialog() {
+        val dimension = editingFaceDimension ?: return
+        val value = com.example.boschlaser.shared.geometry.WallDimensionGeometry.layout(sketchView.snapshotDocument(), dimension)?.valueMm
+            ?: return
+        MaterialTheme(colorScheme = lightColorScheme(primary = colorResource(R.color.sketch_tool_active))) {
+            com.example.boschlaser.ui.WallFaceDistanceDialog(formatSketchMillimeters(value),
+                getString(R.string.sketch_dimension_properties), getString(if (dimension.first is com.example.boschlaser.shared.model.WallFaceReference &&
+                    dimension.second is com.example.boschlaser.shared.model.WallFaceReference && dimension.first.entityId == dimension.second.entityId)
+                    R.string.sketch_wall_length_dimension_hint else R.string.sketch_wall_face_drive_hint),
+                getString(R.string.sketch_dimension_value), getString(R.string.sketch_dimension_apply),
+                getString(R.string.sketch_settings_cancel), getString(R.string.sketch_dimension_drive_failed),
+                onApply = { text ->
+                    val requested = text.toDoubleOrNull()
+                    val applied = requested != null && sketchView.applyWallFaceDistance(dimension, requested)
+                    if (applied) editingFaceDimension = null
+                    applied
+                }, onDismiss = { editingFaceDimension = null })
+        }
+    }
+
+    @Composable
+    private fun WallProperties(wallId: String) {
+        val wall = sketchView.renderDocument().walls[wallId] ?: return
+        val alignment = wall.alignment
+        MaterialTheme(colorScheme = lightColorScheme(primary = colorResource(R.color.sketch_tool_active))) {
+            WallControlLinePicker(alignment, getString(R.string.wall_control_line_label), listOf(
+                getString(R.string.wall_control_line_center), getString(R.string.wall_control_line_inner),
+                getString(R.string.wall_control_line_outer))) { selected ->
+                val controlLine = when (selected) {
+                    WallAlignment.CENTER -> SketchWallControlLine.CENTER
+                    WallAlignment.LEFT -> SketchWallControlLine.INNER
+                    WallAlignment.RIGHT -> SketchWallControlLine.OUTER
+                }
+                sketchView.updateSelectedWallControlLine(controlLine)
+            }
+        }
+        NumberInput(formatSketchMillimeters(wall.thickness), getString(R.string.sketch_wall_thickness),
+            getString(R.string.sketch_wall_thickness_apply)) { text ->
+            val value = text.toDoubleOrNull()
+            if (value == null || !sketchView.updateSelectedWallThickness(value)) {
+                toast(getString(R.string.sketch_wall_thickness_invalid))
+            }
+        }
+    }
+
+    @Composable
+    private fun ColumnProperties(columnId: String) {
+        val column = sketchView.renderDocument().columns[columnId] ?: return
+        val rectangle = column as? com.example.boschlaser.shared.model.RectColumn
+        val columnWidth = rectangle?.width ?: (column as com.example.boschlaser.shared.model.CircularColumn).diameter
+        val columnDepth = rectangle?.depth ?: columnWidth
+        var width by remember { mutableStateOf(TextFieldValue(formatSketchMillimeters(columnWidth))) }
+        var depth by remember { mutableStateOf(TextFieldValue(formatSketchMillimeters(columnDepth))) }
+        val showDepth = rectangle != null && currentMode == SketchMode.SELECT
+        MaterialTheme(colorScheme = lightColorScheme(primary = colorResource(R.color.sketch_tool_active))) {
+            ColumnSizeProperty(width, if (showDepth) depth else null,
+                getString(R.string.sketch_column_width), getString(R.string.sketch_column_depth),
+                getString(R.string.sketch_property_apply), onWidth = { width = it }, onDepth = { depth = it },
+                onApply = {
+                    val w = width.text.toDoubleOrNull()
+                    val d = when {
+                        rectangle == null -> w
+                        showDepth -> depth.text.toDoubleOrNull()
+                        else -> (sketchView.snapshotDocument().columns[column.id] as? com.example.boschlaser.shared.model.RectColumn)?.depth
+                    }
+                    if (w == null || d == null || !sketchView.updateSelectedColumnSize(w, d)) {
+                        toast(getString(R.string.sketch_column_size_invalid))
+                    }
+                })
+        }
+        if (rectangle != null) {
+            NumberInput(formatSketchMillimeters(rectangle.rotationDegrees),
+                getString(R.string.column_rotation_angle), getString(R.string.column_rotation_apply)) { text ->
+                val angle = text.toDoubleOrNull()
+                if (angle == null || !sketchView.updateSelectedColumnRotation(angle)) toast(getString(R.string.column_rotation_invalid))
+            }
+        }
+    }
+
+    @Composable
+    private fun OpeningProperties(openingId: String) {
+        val opening = sketchView.renderDocument().openings[openingId] ?: return
+        NumberInput(formatSketchMillimeters(opening.width), getString(R.string.sketch_opening_width)) { text ->
+            val value = text.toDoubleOrNull()
+            if (value == null || !sketchView.updateSelectedOpening(value)) toast(getString(R.string.sketch_opening_width_invalid))
+        }
+    }
+
+    @Composable
+    private fun OpeningPlacementProperties(type: SketchOpeningType) {
+        NumberInput(sketchView.placementOpeningWidth(type).roundToInt().toString(), getString(R.string.sketch_opening_width)) { text ->
+            val value = text.toFloatOrNull()
+            if (value == null || !sketchView.updatePlacementOpeningWidth(type, value)) {
+                toast(getString(R.string.sketch_opening_placement_width_invalid))
+            } else toast(getString(R.string.sketch_opening_placement_width_updated, value.roundToInt()))
+        }
+    }
+
+    @Composable
+    private fun NumberInput(initialValue: String, label: String, applyLabel: String = getString(R.string.sketch_property_apply),
+        accessory: @Composable () -> Unit = {}, onApply: (String) -> Unit) {
+        var draft by remember { mutableStateOf(TextFieldValue(initialValue, TextRange(0, initialValue.length))) }
+        MaterialTheme(colorScheme = lightColorScheme(primary = colorResource(R.color.sketch_tool_active))) {
+            NumberProperty(draft, label, applyLabel, onValue = { draft = it }, onApply = { onApply(draft.text) }, accessory = accessory)
+        }
     }
 
     private fun showDrawingSettings() {
-        val content = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(24), 0, dp(24), 0)
-        }
-        content.addView(TextView(this).apply {
-            text = "背景网格间距（毫米）"
-            textSize = 14f
-            setTextColor(Color.rgb(80, 86, 86))
-        })
-        val gridInput = numberInput(sketchView.gridDisplayStepMm().toString()).apply {
-            hint = "例如 100"
-            selectAll()
-        }
-        content.addView(gridInput, LinearLayout.LayoutParams(-1, dp(52)).apply {
-            topMargin = dp(8)
-        })
-        content.addView(TextView(this).apply {
-            text = "放大镜倍率（${SketchView.MIN_MAGNIFIER_ZOOM.toInt()}～${SketchView.MAX_MAGNIFIER_ZOOM.toInt()} 倍）"
-            textSize = 14f
-            setTextColor(Color.rgb(80, 86, 86))
-        }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(14) })
-        val magnifierInput = numberInput(sketchView.magnifierZoom().toString()).apply {
-            hint = "例如 2.6"
-        }
-        content.addView(magnifierInput, LinearLayout.LayoutParams(-1, dp(52)).apply {
-            topMargin = dp(8)
-        })
-        AlertDialog.Builder(this)
-            .setTitle("绘图设置")
-            .setView(content)
-            .setNegativeButton("取消", null)
-            .setPositiveButton("应用") { _, _ ->
-                val gridValue = gridInput.text.toString().toFloatOrNull()
-                val magnifierValue = magnifierInput.text.toString().toFloatOrNull()
-                if (gridValue == null || gridValue !in SketchView.MIN_GRID_DISPLAY_STEP_MM..SketchView.MAX_GRID_DISPLAY_STEP_MM) {
-                    toast("请输入 ${SketchView.MIN_GRID_DISPLAY_STEP_MM.toInt()}～${SketchView.MAX_GRID_DISPLAY_STEP_MM.toInt()} 毫米")
-                } else if (magnifierValue == null || magnifierValue !in SketchView.MIN_MAGNIFIER_ZOOM..SketchView.MAX_MAGNIFIER_ZOOM) {
-                    toast("放大镜倍率请输入 ${SketchView.MIN_MAGNIFIER_ZOOM.toInt()}～${SketchView.MAX_MAGNIFIER_ZOOM.toInt()}")
-                } else {
-                    sketchView.setGridDisplayStepMm(gridValue)
-                    sketchView.setMagnifierZoom(magnifierValue)
-                    getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
-                        .putFloat(PREF_GRID_DISPLAY_STEP_MM, gridValue)
-                        .putFloat(PREF_MAGNIFIER_ZOOM, magnifierValue)
-                        .apply()
-                }
-            }
-            .show()
+        settingsGrid = sketchView.gridDisplayStepMm().toString()
+        settingsMagnifier = sketchView.magnifierZoom().toString()
+        settingsAutomaticDimensions = sketchView.showAutomaticDimensions()
+        settingsVisible = true
     }
 
-    private fun updatePropertyPanelPosition() {
-        if (!::propertyPanel.isInitialized) return
-        (propertyPanel.layoutParams as? FrameLayout.LayoutParams)?.let { params ->
-            params.bottomMargin = systemBottomInset + dp(14)
-            propertyPanel.layoutParams = params
-        }
-    }
-
-    private fun updateSnapSwitchPosition() {
-        if (!::snapGridSwitch.isInitialized || !::propertyPanel.isInitialized) return
-        val panelOffset = if (propertyPanel.visibility == View.VISIBLE) propertyPanel.height + dp(12) else 0
-        (snapGridSwitch.layoutParams as? FrameLayout.LayoutParams)?.let { params ->
-            params.bottomMargin = systemBottomInset + dp(14) + panelOffset
-            snapGridSwitch.layoutParams = params
-        }
-    }
-
-    private fun updatePlacementActionsPosition() {
-        if (!::placementActions.isInitialized) return
-        sketchView.setMagnifierTopOffset(systemTopInset + dp(110).toFloat())
-        (placementActions.layoutParams as? FrameLayout.LayoutParams)?.let { params ->
-            params.topMargin = systemTopInset + dp(116)
-            placementActions.layoutParams = params
+    private fun applyDrawingSettings(grid: String, magnifier: String, automaticDimensions: Boolean) {
+        settingsVisible = false
+        val gridValue = grid.toFloatOrNull()
+        val magnifierValue = magnifier.toFloatOrNull()
+        if (gridValue == null || gridValue !in SketchView.MIN_GRID_DISPLAY_STEP_MM..SketchView.MAX_GRID_DISPLAY_STEP_MM) {
+            toast(getString(R.string.sketch_settings_grid_invalid, SketchView.MIN_GRID_DISPLAY_STEP_MM.toInt(),
+                SketchView.MAX_GRID_DISPLAY_STEP_MM.toInt()))
+        } else if (magnifierValue == null || magnifierValue !in SketchView.MIN_MAGNIFIER_ZOOM..SketchView.MAX_MAGNIFIER_ZOOM) {
+            toast(getString(R.string.sketch_settings_magnifier_invalid, SketchView.MIN_MAGNIFIER_ZOOM.toInt(),
+                SketchView.MAX_MAGNIFIER_ZOOM.toInt()))
+        } else {
+            sketchView.setGridDisplayStepMm(gridValue)
+            sketchView.setMagnifierZoom(magnifierValue)
+            sketchView.setShowAutomaticDimensions(automaticDimensions)
+            getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
+                .putFloat(PREF_GRID_DISPLAY_STEP_MM, gridValue)
+                .putFloat(PREF_MAGNIFIER_ZOOM, magnifierValue)
+                .putBoolean(PREF_AUTOMATIC_DIMENSIONS, automaticDimensions)
+                .apply()
         }
     }
 
     private fun saveProject(): Boolean {
+        if (!projectLoaded) return true
         val id = projectId ?: return false
         return runCatching {
-            val preview = sketchView.exportPreviewBitmap()
-            try {
-                SketchProjectStore.save(this, id, sketchView.snapshotState(), preview)
-            } finally {
-                preview.recycle()
+            val bitmap = sketchView.exportPreviewBitmap()
+            val preview = try {
+                java.io.ByteArrayOutputStream().also { output ->
+                    check(bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, output))
+                }.toByteArray()
+            } finally { bitmap.recycle() }
+            val pending = projectServices.saveSketch(id, sketchView.snapshotDocument(), preview)
+            measurementScope.launch {
+                try { pending.await() }
+                catch (failure: CancellationException) { throw failure }
+                catch (_: Exception) { projectServices.acknowledgeError(); toast(getString(R.string.sketch_auto_save_failed)) }
             }
+            true
         }.getOrDefault(false)
     }
 
-    private fun modeIconButton(icon: Int, description: String, action: () -> Unit) = ImageButton(this).apply {
-        setImageResource(icon)
-        contentDescription = description
-        setColorFilter(Color.rgb(0, 102, 76))
-        setPadding(dp(12), dp(10), dp(12), dp(10))
-        background = roundedBackground(Color.TRANSPARENT, 10)
-        setOnClickListener { action() }
-        layoutParams = LinearLayout.LayoutParams(dp(44), dp(48)).apply { marginEnd = dp(2) }
-    }
-
-    private fun floatingIconButton(icon: Int, description: String, color: Int, action: () -> Unit) = ImageButton(this).apply {
-        setImageResource(icon)
-        contentDescription = description
-        setColorFilter(Color.WHITE)
-        setPadding(dp(15), dp(15), dp(15), dp(15))
-        elevation = dp(10).toFloat()
-        background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(color) }
-        setOnClickListener { action() }
-    }
-
-    private fun roundedBackground(color: Int, radiusDp: Int) = GradientDrawable().apply {
-        setColor(color); cornerRadius = dp(radiusDp).toFloat()
-    }
-
-    private fun numberInput(value: String) = EditText(this).apply {
-        setText(value); inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
-        setSelectAllOnFocus(true); setSingleLine(true)
-    }
 
     private fun dp(value: Int) = (value * resources.displayMetrics.density).roundToInt()
     private fun toast(message: String) = Toast.makeText(this, message, Toast.LENGTH_SHORT).show()

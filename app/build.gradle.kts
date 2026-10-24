@@ -1,8 +1,10 @@
 plugins {
     alias(libs.plugins.android.application)
+    alias(libs.plugins.compose.compiler)
 }
 
 android {
+    buildFeatures { compose = true }
     namespace = "com.example.boschlaser"
     compileSdk {
         version = release(37)
@@ -35,10 +37,19 @@ android {
 }
 
 dependencies {
+    implementation(project(":shared"))
+    implementation(project(":shared-ui"))
+    implementation(libs.androidx.compose.ui)
+    implementation(libs.androidx.compose.foundation)
+    implementation(libs.androidx.compose.material3)
+    implementation(libs.androidx.lifecycle.compose)
+    implementation(libs.kotlinx.coroutines.android)
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.core.ktx)
     implementation(libs.material)
     testImplementation(libs.junit)
+    debugImplementation(libs.androidx.compose.test.manifest)
+    androidTestImplementation(libs.androidx.compose.test)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(libs.androidx.junit)
 }

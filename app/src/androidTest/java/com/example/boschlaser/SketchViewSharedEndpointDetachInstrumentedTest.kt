@@ -1,5 +1,7 @@
 package com.example.boschlaser
 
+import com.example.boschlaser.shared.editor.Selection
+
 import android.os.Looper
 import android.view.MotionEvent
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -53,7 +55,7 @@ class SketchViewSharedEndpointDetachInstrumentedTest {
             setGridSnapEnabled(false)
             restoreState(SketchState(walls = walls))
             privateField("scale").setFloat(this, 1f)
-            privateField("selectedWallId").set(this, selectedWallId)
+            this.selectEntity(Selection.Wall(selectedWallId))
         }
     }
 

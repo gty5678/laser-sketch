@@ -1,5 +1,7 @@
 package com.example.boschlaser
 
+import com.example.boschlaser.shared.editor.Selection
+
 import android.os.Looper
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -27,7 +29,7 @@ class SketchViewWallControlLineSelectionInstrumentedTest {
             restoreState(SketchState(walls = listOf(wall)))
         }
         privateField("scale").setFloat(view, 1f)
-        privateField("selectedWallId").set(view, wall.id)
+        view.selectEntity(Selection.Wall(wall.id))
 
         assertEquals(true, view.updateSelectedWallControlLine(SketchWallControlLine.INNER))
         val innerWall = view.snapshotState().walls.single()
@@ -44,8 +46,7 @@ class SketchViewWallControlLineSelectionInstrumentedTest {
         assertNotNull(findEndpoint(view, 100f, 200f))
         assertNull(findEndpoint(view, 100f, 80f))
 
-        privateField("dragEndpoint").setInt(view, 0)
-        moveSelection(view, SketchPoint(200f, 200f))
+        view.previewWorldDrag(SketchPoint(100f, 200f), SketchPoint(200f, 200f))
         assertEquals(SketchPoint(200f, 80f), view.snapshotState().walls.single().start)
     }
 
@@ -78,7 +79,7 @@ class SketchViewWallControlLineSelectionInstrumentedTest {
             controlLine = SketchWallControlLine.OUTER,
         )
         val view = SketchView(context).apply { restoreState(SketchState(walls = listOf(wall))) }
-        privateField("selectedWallId").set(view, wall.id)
+        view.selectEntity(Selection.Wall(wall.id))
         val originalControls = wallControlLinePoints(wall)
 
         assertTrue(view.updateSelectedWallThickness(400f))
@@ -93,21 +94,14 @@ class SketchViewWallControlLineSelectionInstrumentedTest {
         isAccessible = true
     }
 
-    private fun findEndpoint(view: SketchView, x: Float, y: Float): Pair<*, *>? {
-        val method = SketchView::class.java.getDeclaredMethod(
-            "findEndpoint",
-            Float::class.javaPrimitiveType,
-            Float::class.javaPrimitiveType,
-        ).apply { isAccessible = true }
-        return method.invoke(view, x, y) as Pair<*, *>?
+    private fun findEndpoint(view: SketchView, x: Float, y: Float):
+        com.example.boschlaser.shared.editor.SelectionGestureTarget.WallEndpoint? {
+        view.sendWorldPointer(android.view.MotionEvent.ACTION_DOWN, SketchPoint(x, y))
+        val endpoint = view.editorState().selectionGesture?.target as?
+            com.example.boschlaser.shared.editor.SelectionGestureTarget.WallEndpoint
+        view.cancelGesture()
+        return endpoint
     }
 
-    private fun moveSelection(view: SketchView, pointer: SketchPoint) {
-        SketchView::class.java.getDeclaredMethod(
-            "moveSelection",
-            Float::class.javaPrimitiveType,
-            Float::class.javaPrimitiveType,
-            SketchPoint::class.java,
-        ).apply { isAccessible = true }.invoke(view, 100f, 0f, pointer)
-    }
+
 }

@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <integer name="annotation_area_edge_double_tap_window_ms">450</integer>
+</resources>

@@ -1,23 +1,31 @@
 package com.example.boschlaser
 
+import com.example.boschlaser.shared.editor.Selection
+
 import android.content.Intent
-import android.graphics.drawable.GradientDrawable
-import android.view.View
-import android.view.ViewGroup
-import android.widget.Button
-import android.widget.ImageButton
-import android.widget.LinearLayout
+import android.os.SystemClock
+import kotlinx.coroutines.runBlocking
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.Rule
+import androidx.compose.ui.test.junit4.createEmptyComposeRule
+import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.graphics.toPixelMap
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class SketchActivityDoorPropertiesInstrumentedTest {
+    @get:Rule val compose = createEmptyComposeRule()
     @Test
     fun doorFlipActionsAreVerticalCircularButtonsOnTheCanvasRightSide() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
@@ -36,78 +44,82 @@ class SketchActivityDoorPropertiesInstrumentedTest {
             Intent(context, SketchActivity::class.java).putExtra(SketchActivity.EXTRA_PROJECT_ID, projectId),
         )
         try {
+            val deadline = SystemClock.uptimeMillis() + 5000
+            var loaded = false
+            while (!loaded && SystemClock.uptimeMillis() < deadline) {
+                scenario.onActivity { activity ->
+                    val view = SketchActivity::class.java.getDeclaredField("sketchView").apply { isAccessible = true }.get(activity) as SketchView
+                    loaded = wall.id in view.snapshotDocument().walls
+                }
+                if (!loaded) SystemClock.sleep(20)
+            }
+            assertTrue("Project must finish asynchronous loading", loaded)
             scenario.onActivity { activity ->
                 val sketchView = SketchActivity::class.java.getDeclaredField("sketchView").apply {
                     isAccessible = true
                 }.get(activity) as SketchView
-                SketchView::class.java.getDeclaredField("selectedOpeningId").apply {
-                    isAccessible = true
-                    set(sketchView, door.id)
-                }
-                SketchActivity::class.java.getDeclaredMethod("showSelection", SketchSelection::class.java)
-                    .apply { isAccessible = true }
-                    .invoke(activity, SketchSelection.Opening(door))
+                sketchView.selectEntity(Selection.Opening(door.id))
             }
             instrumentation.waitForIdleSync()
+            compose.onNodeWithContentDescription(context.getString(R.string.sketch_tool_select)).assertExists()
+            compose.onNodeWithContentDescription("保存草稿").assertDoesNotExist()
+            compose.onAllNodes((hasContentDescription(context.getString(R.string.door_flip_left_right)) or
+                hasContentDescription(context.getString(R.string.door_flip_up_down))) and
+                hasAnyAncestor(hasTestTag("sketch-property-sheet"))).assertCountEquals(0)
+            val leftRight = compose.onNodeWithContentDescription(context.getString(R.string.door_flip_left_right))
+            val upDown = compose.onNodeWithContentDescription(context.getString(R.string.door_flip_up_down))
+            val leftRightBounds = leftRight.fetchSemanticsNode().boundsInWindow
+            val upDownBounds = upDown.fetchSemanticsNode().boundsInWindow
+            assertTrue(leftRightBounds.left > context.resources.displayMetrics.widthPixels / 2)
+            assertEquals(leftRightBounds.left, upDownBounds.left, 1f)
+            assertTrue(leftRightBounds.bottom < upDownBounds.top)
+            for (node in listOf(leftRight, upDown)) {
+                val bounds = node.fetchSemanticsNode().boundsInRoot
+                val size = 56f * context.resources.displayMetrics.density
+                assertEquals(size, bounds.width, 1f)
+                assertEquals(size, bounds.height, 1f)
+                // The top midpoint is filled; a point outside the circular outline is not.
+                val image = node.captureToImage()
+                val pixels = image.toPixelMap()
+                val filled = pixels[image.width / 2, image.height / 10]
+                val outside = pixels[1, image.height / 4]
+                assertEquals(122f / 255f, filled.green, .08f)
+                assertEquals(92f / 255f, filled.blue, .08f)
+                assertTrue(kotlin.math.abs(outside.red - filled.red) + kotlin.math.abs(outside.green - filled.green) +
+                    kotlin.math.abs(outside.blue - filled.blue) > .15f)
+            }
+            leftRight.performClick()
+            upDown.performClick()
             scenario.onActivity { activity ->
-                val panel = SketchActivity::class.java.getDeclaredField("propertyPanel").apply {
-                    isAccessible = true
-                }.get(activity) as LinearLayout
-                val modeBar = SketchActivity::class.java.getDeclaredField("modeBar").apply {
-                    isAccessible = true
-                }.get(activity) as LinearLayout
-                assertFalse(modeBar.descendants(ImageButton::class.java).any {
-                    it.contentDescription == "保存草稿"
-                })
-                assertFalse(panel.descendants(Button::class.java).any {
-                    it.text == context.getString(R.string.door_flip_left_right) ||
-                        it.text == context.getString(R.string.door_flip_up_down)
-                })
-
-                val actions = SketchActivity::class.java.getDeclaredField("doorFlipActions").apply {
-                    isAccessible = true
-                }.get(activity) as LinearLayout
-                assertEquals(View.VISIBLE, actions.visibility)
-                assertEquals(LinearLayout.VERTICAL, actions.orientation)
-                assertEquals(2, actions.childCount)
-                val leftRight = actions.getChildAt(0) as ImageButton
-                val upDown = actions.getChildAt(1) as ImageButton
-                assertEquals(context.getString(R.string.door_flip_left_right), leftRight.contentDescription)
-                assertEquals(context.getString(R.string.door_flip_up_down), upDown.contentDescription)
-                assertEquals(GradientDrawable.OVAL, (leftRight.background as GradientDrawable).shape)
-                assertEquals(GradientDrawable.OVAL, (upDown.background as GradientDrawable).shape)
-                val leftRightLocation = leftRight.screenLocation()
-                val upDownLocation = upDown.screenLocation()
-
-                assertTrue(leftRightLocation[0] > activity.resources.displayMetrics.widthPixels / 2)
-                assertEquals(leftRightLocation[0], upDownLocation[0])
-                assertTrue(leftRightLocation[1] < upDownLocation[1])
-
-                leftRight.performClick()
-                upDown.performClick()
                 val opening = (SketchActivity::class.java.getDeclaredField("sketchView").apply {
                     isAccessible = true
                 }.get(activity) as SketchView).selectedOpening()
                 assertTrue(opening?.hingeFlipped == true)
                 assertTrue(opening?.flipped == true)
-                val savedOpening = SketchProjectStore.load(context, projectId)?.state?.openings?.single()
+            }
+            compose.onNodeWithContentDescription(context.getString(R.string.sketch_tool_wall)).performClick()
+            leftRight.assertDoesNotExist()
+            upDown.assertDoesNotExist()
+            runBlocking {
+                val services = ProjectServices.get(context)
+                services.flush().await()
+                val savedOpening = services.loadSketch("sketch-$projectId").await()?.sketch?.openings?.values?.single()
                 assertTrue(savedOpening?.hingeFlipped == true)
                 assertTrue(savedOpening?.flipped == true)
             }
+            // Editing the migrated project must not rewrite the preserved original.
+            val originalOpening = SketchProjectStore.load(context, projectId)?.state?.openings?.single()
+            assertTrue(originalOpening?.hingeFlipped == false)
+            assertTrue(originalOpening?.flipped == false)
         } finally {
-            scenario.close()
+            finishAndCloseScenario(scenario)
+            runBlocking {
+                val services = ProjectServices.get(context)
+                services.flush().await()
+                services.delete("sketch-$projectId").await()
+            }
             SketchProjectStore.delete(context, projectId)
         }
     }
 
-    private fun <T : View> View.descendants(type: Class<T>): List<T> {
-        val result = mutableListOf<T>()
-        if (type.isInstance(this)) result.add(type.cast(this)!!)
-        if (this is ViewGroup) {
-            for (index in 0 until childCount) result += getChildAt(index).descendants(type)
-        }
-        return result
-    }
-
-    private fun View.screenLocation() = IntArray(2).also(::getLocationOnScreen)
 }

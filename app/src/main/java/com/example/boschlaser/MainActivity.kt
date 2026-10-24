@@ -3,49 +3,53 @@ package com.example.boschlaser
 import android.Manifest
 import android.content.pm.PackageManager
 import android.content.Intent
-import android.graphics.Color
-import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.text.TextUtils
-import android.view.Gravity
-import android.widget.Button
 import android.widget.EditText
-import android.widget.FrameLayout
-import android.widget.ImageButton
-import android.widget.ImageView
-import android.widget.LinearLayout
-import android.widget.PopupMenu
-import android.widget.ScrollView
-import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.compose.material3.Icon
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.colorResource
+import androidx.compose.runtime.Composable
+import com.example.boschlaser.ui.HomeScreen
+import com.example.boschlaser.ui.HomeLabels
+import com.example.boschlaser.ui.HomeStyle
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import com.example.boschlaser.ui.AndroidMeasurements
+import com.example.boschlaser.ui.AndroidProjectList
+import com.example.boschlaser.ui.ProjectLabels
+import com.example.boschlaser.ui.DeviceLabels
+import com.example.boschlaser.ui.DeviceScreen
+import com.example.boschlaser.ui.DeviceScreenState
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.collect
+import com.example.boschlaser.shared.measurement.MeasurementRecord
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
 class MainActivity : AppCompatActivity(), BoschBleManager.Listener {
     private lateinit var ble: BoschBleManager
-    private lateinit var statusText: TextView
-    private lateinit var deviceText: TextView
-    private lateinit var distanceText: TextView
-    private lateinit var historyContainer: LinearLayout
-    private lateinit var projectContainer: LinearLayout
-    private lateinit var sketchProjectContainer: LinearLayout
-    private lateinit var deviceConnectionPanel: LinearLayout
-    private lateinit var deviceFloatingButton: ImageButton
-    private lateinit var connectSavedButton: Button
-    private lateinit var disconnectButton: Button
-    private lateinit var greenButton: Button
+    private var showDevice by mutableStateOf(false)
+    private var deviceUi by mutableStateOf(DeviceScreenState("", ""))
 
-    private val measurements = mutableListOf<Measurement>()
-    private var visibleHistoryCount = 100
+    private val measurementScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val projectServices by lazy { ProjectServices.get(this) }
+    private var projectJob: Job? = null
+    private var pendingExportProjectId: String? = null
+    private val measurementServices by lazy { MeasurementServices.get(this) }
+    private val measurements: List<Measurement>
+        get() = measurementServices.service.records.value.map { it.toLegacyMeasurement(this) }
     private val handler = Handler(Looper.getMainLooper())
     private var autoReconnectEnabled = true
     private var reconnectAttempt = 0
@@ -53,7 +57,7 @@ class MainActivity : AppCompatActivity(), BoschBleManager.Listener {
     private val reconnectRunnable = Runnable {
         if (!autoReconnectEnabled || ble.isConnected || ble.savedAddress == null || !hasPermissions()) return@Runnable
         reconnectAttempt++
-        statusText.text = "正在自动连接上次设备（第 ${reconnectAttempt} 次）…"
+        deviceUi = deviceUi.copy(status = getString(R.string.device_reconnecting, reconnectAttempt))
         ble.connectSaved()
         handler.removeCallbacks(reconnectTimeout)
         handler.postDelayed(reconnectTimeout, 10_000)
@@ -61,7 +65,7 @@ class MainActivity : AppCompatActivity(), BoschBleManager.Listener {
 
     private val reconnectTimeout = Runnable {
         if (!autoReconnectEnabled || ble.isConnected) return@Runnable
-        statusText.text = "本次连接超时，稍后继续重试…"
+        deviceUi = deviceUi.copy(status = getString(R.string.device_retry_timeout))
         ble.disconnect()
         scheduleAutoReconnect(reconnectDelay())
     }
@@ -71,10 +75,10 @@ class MainActivity : AppCompatActivity(), BoschBleManager.Listener {
     ) { result ->
         if (result.values.all { it }) {
             updateDisconnectedControls()
-            statusText.text = "蓝牙权限已允许，准备自动连接GLM"
+            deviceUi = deviceUi.copy(status = getString(R.string.device_permission_granted))
             startAutoReconnect()
         } else {
-            statusText.text = "需要允许“附近设备”权限才能连接GLM"
+            deviceUi = deviceUi.copy(status = getString(R.string.device_permission_needed))
         }
     }
 
@@ -82,236 +86,117 @@ class MainActivity : AppCompatActivity(), BoschBleManager.Listener {
         ActivityResultContracts.CreateDocument("text/csv"),
     ) { uri ->
         if (uri == null) return@registerForActivityResult
-        runCatching {
-            contentResolver.openOutputStream(uri)?.bufferedWriter(Charsets.UTF_8).use { writer ->
-                requireNotNull(writer)
-                writer.write("序号,时间,类型,本次毫米,本次米,累计毫米,原始报文\n")
-                measurements.forEachIndexed { index, item ->
-                    writer.write(
-                        listOf(
-                            index + 1,
-                            item.timeText,
-                            item.operation ?: "单次距离",
-                            "%.1f".format(Locale.US, item.millimeters),
-                            "%.4f".format(Locale.US, item.meters),
-                            item.accumulatedMeters?.let { "%.1f".format(Locale.US, it * 1000f) }.orEmpty(),
-                            item.raw.hex(),
-                        ).joinToString(",") + "\n",
-                    )
-                }
-            }
-        }.onSuccess {
-            toast("CSV已保存")
-        }.onFailure {
-            toast("导出失败：${it.message}")
+        val pending = measurementServices.exportCsv(uri)
+        measurementScope.launch {
+            try { pending.await(); toast(getString(R.string.measurement_csv_complete)) }
+            catch (failure: CancellationException) { throw failure }
+            catch (_: Exception) { toast(getString(R.string.measurement_csv_failed)) }
         }
+    }
+
+    private val projectImportLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@registerForActivityResult
+        val pending = projectServices.importProject(uri)
+        measurementScope.launch {
+            try { toast(getString(R.string.project_import_complete, pending.await().manifest.name)) }
+            catch (failure: CancellationException) { throw failure }
+            catch (_: Exception) { projectServices.acknowledgeError(); toast(getString(R.string.project_import_failed)) }
+        }
+    }
+    private val projectExportLauncher = registerForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+        val id = pendingExportProjectId
+        pendingExportProjectId = null
+        if (uri == null || id == null) return@registerForActivityResult
+        val pending = projectServices.exportProject(id, uri)
+        measurementScope.launch {
+            try { pending.await(); toast(getString(R.string.project_export_complete)) }
+            catch (failure: CancellationException) { throw failure }
+            catch (_: Exception) { projectServices.acknowledgeError(); toast(getString(R.string.project_export_failed)) }
+        }
+    }
+    private fun exportProject(id: String) {
+        pendingExportProjectId = id
+        projectExportLauncher.launch("LaserSketch-${dateForFile()}.lsk")
+    }
+    override fun onSaveInstanceState(outState: Bundle) {
+        pendingExportProjectId?.let { outState.putString("exportProjectId", it) }
+        super.onSaveInstanceState(outState)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        pendingExportProjectId = savedInstanceState?.getString("exportProjectId")
+        deviceUi = DeviceScreenState(getString(R.string.device_disconnected), getString(R.string.device_none_saved))
         title = "LaserSketch"
         buildInterface()
-        measurements += MeasurementHistoryStore.load(this)
-        MeasurementStore.replaceAll(measurements.map { it.millimeters })
-        renderMeasurementHistory()
-        updateCurrentDistance()
-        ble = BoschBleManager(this, this)
-        deviceText.text = if (ble.savedAddress != null) {
-            "上次设备：${ble.savedName ?: "Bosch GLM"} · ${ble.savedAddress}"
-        } else {
-            "尚未保存设备"
+        measurementScope.launch {
+            measurementServices.errors.collect { toast(getString(R.string.measurement_storage_failed)) }
         }
+        ble = BoschBleManager(this, this)
+        deviceUi = deviceUi.copy(device = if (ble.savedAddress != null) {
+            getString(R.string.device_saved, ble.savedName ?: getString(R.string.ble_default_device), ble.savedAddress)
+        } else getString(R.string.device_none_saved))
         updateDisconnectedControls()
         ensurePermissions()
     }
 
+    override fun onStart() {
+        super.onStart()
+        projectJob = measurementScope.launch {
+            launch { projectServices.errors.collect { pending ->
+                if (pending) { toast(getString(R.string.project_storage_failed)); projectServices.acknowledgeError() }
+            } }
+            launch { projectServices.migrationNotices.collect { pending ->
+                if (pending) { toast(getString(R.string.project_migration_notice)); projectServices.acknowledgeMigrationNotice() }
+            } }
+        }
+    }
+
+    override fun onStop() {
+        projectJob?.cancel()
+        projectJob = null
+        super.onStop()
+    }
+
     override fun onResume() {
         super.onResume()
-        if (::projectContainer.isInitialized) renderAnnotationProjects()
-        if (::sketchProjectContainer.isInitialized) renderSketchProjects()
+        projectServices.refresh()
     }
 
     private fun buildInterface() {
-        val screen = FrameLayout(this)
-        val scroll = ScrollView(this)
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(12), dp(16), dp(104))
-        }
-        scroll.addView(root)
-        screen.addView(scroll, FrameLayout.LayoutParams(-1, -1))
-        setContentView(screen)
-        applyWindowInsets(root)
-
-        statusText = bodyText("未连接")
-        deviceText = smallText("尚未保存设备")
-        val connectionButtons = row()
-        connectionButtons.addView(actionButton("扫描并连接") {
-            requirePermissionThen {
-                autoReconnectEnabled = false
-                cancelAutoReconnect()
-                ble.scanAndConnect()
-            }
-        })
-        connectSavedButton = actionButton("连接上次设备") {
-            requirePermissionThen {
-                autoReconnectEnabled = true
-                reconnectAttempt = 0
-                scheduleAutoReconnect(0)
-            }
-        }
-        disconnectButton = actionButton("断开") {
-            autoReconnectEnabled = false
-            cancelAutoReconnect()
-            ble.disconnect()
-            onDisconnected()
-        }
-        connectionButtons.addView(connectSavedButton)
-        connectionButtons.addView(disconnectButton)
-
-        deviceConnectionPanel = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            elevation = dp(14).toFloat()
-            setPadding(dp(16), dp(12), dp(16), dp(14))
-            background = GradientDrawable().apply {
-                setColor(Color.argb(250, 255, 255, 255))
-                cornerRadius = dp(16).toFloat()
-            }
-            visibility = android.view.View.GONE
-            addView(sectionTitle("设备连接").apply { setPadding(0, 0, 0, dp(5)) })
-            addView(statusText)
-            addView(deviceText)
-            addView(connectionButtons)
-        }
-        screen.addView(
-            deviceConnectionPanel,
-            FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM).apply {
-                setMargins(dp(16), dp(16), dp(16), dp(96))
-            },
-        )
-
-        deviceFloatingButton = ImageButton(this).apply {
-            setImageResource(R.drawable.ic_device)
-            setColorFilter(Color.WHITE)
-            setPadding(dp(15), dp(15), dp(15), dp(15))
-            elevation = dp(12).toFloat()
-            contentDescription = "设备连接"
-            background = deviceButtonBackground(false)
-            setOnClickListener {
-                deviceConnectionPanel.visibility = if (deviceConnectionPanel.visibility == android.view.View.VISIBLE) {
-                    android.view.View.GONE
-                } else {
-                    android.view.View.VISIBLE
+        setContentView(ComposeView(this).apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+            setContent {
+                MaterialTheme {
+                    HomeScreen(
+                        labels = HomeLabels(getString(R.string.project_import_copy), getString(R.string.home_photos),
+                            getString(R.string.home_sketches), getString(R.string.home_add_photo),
+                            getString(R.string.home_add_sketch), getString(R.string.device_title), getString(R.string.home_add_symbol)),
+                        style = HomeStyle(colorResource(R.color.annotation_tool_active), colorResource(R.color.home_sketch_action),
+                            colorResource(R.color.home_device_connected), colorResource(R.color.home_device_disconnected), colorResource(R.color.white)),
+                        connected = deviceUi.connected, showDevice = showDevice,
+                        onImport = { projectImportLauncher.launch(arrayOf("*/*")) },
+                        onAddPhoto = ::showImageSourceChooser, onAddSketch = ::createSketchProject,
+                        onToggleDevice = { showDevice = !showDevice },
+                        photos = { ProjectList(sketch = false) }, sketches = { ProjectList(sketch = true) },
+                        measurements = {
+                            AndroidMeasurements(measurementServices.service, deviceUi.connected,
+                                onMeasure = { ble.send(BoschProtocol.greenMeasureKey) }, onClear = ::confirmClearMeasurements,
+                                onExport = { exportLauncher.launch("bosch-glm-${dateForFile()}.csv") },
+                                onDelete = { id -> measurementServices.enqueue { delete(id) } })
+                        },
+                        device = {
+                            DeviceScreen(deviceUi, DeviceLabels(getString(R.string.device_title), getString(R.string.device_scan),
+                                getString(R.string.device_connect_saved), getString(R.string.device_disconnect)),
+                                onScan = { requirePermissionThen { autoReconnectEnabled = false; cancelAutoReconnect(); ble.scanAndConnect() } },
+                                onConnectSaved = { requirePermissionThen { autoReconnectEnabled = true; reconnectAttempt = 0; scheduleAutoReconnect(0) } },
+                                onDisconnect = { autoReconnectEnabled = false; cancelAutoReconnect(); ble.disconnect(); onDisconnected() })
+                        },
+                        deviceIcon = { Icon(painterResource(R.drawable.ic_device), contentDescription = null) },
+                    )
                 }
             }
-        }
-        screen.addView(
-            deviceFloatingButton,
-            FrameLayout.LayoutParams(dp(60), dp(60), Gravity.BOTTOM or Gravity.END).apply {
-                marginEnd = dp(18)
-                bottomMargin = dp(22)
-            },
-        )
-        ViewCompat.setOnApplyWindowInsetsListener(deviceFloatingButton) { view, insets ->
-            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            (view.layoutParams as FrameLayout.LayoutParams).apply {
-                bottomMargin = bars.bottom + dp(22)
-                view.layoutParams = this
-            }
-            (deviceConnectionPanel.layoutParams as FrameLayout.LayoutParams).apply {
-                bottomMargin = bars.bottom + dp(96)
-                deviceConnectionPanel.layoutParams = this
-            }
-            insets
-        }
-        ViewCompat.requestApplyInsets(deviceFloatingButton)
-
-        root.addView(sectionTitle("图片标注文件"))
-        projectContainer = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-        }
-        root.addView(projectContainer)
-
-        root.addView(sectionTitle("平面草稿"))
-        sketchProjectContainer = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-        }
-        root.addView(sketchProjectContainer)
-
-        root.addView(sectionTitle("当前距离"))
-        distanceText = TextView(this).apply {
-            text = "— mm"
-            textSize = 34f
-            setTextColor(Color.rgb(20, 80, 55))
-            setPadding(0, dp(6), 0, dp(2))
-        }
-        root.addView(distanceText)
-        greenButton = actionButton("测量并记录") {
-            ble.send(BoschProtocol.greenMeasureKey)
-        }
-        val greenButtons = row()
-        greenButtons.addView(greenButton)
-        root.addView(greenButtons)
-
-        root.addView(sectionTitle("测量记录"))
-        val recordButtons = row()
-        recordButtons.addView(actionButton("清空记录") {
-            if (measurements.isEmpty()) {
-                toast("还没有测量记录")
-            } else {
-                AlertDialog.Builder(this)
-                    .setTitle("清空全部测量记录？")
-                    .setMessage("清空后无法恢复。")
-                    .setNegativeButton("取消", null)
-                    .setPositiveButton("清空") { _, _ ->
-                        MeasurementHistoryStore.clear(this)
-                        measurements.clear()
-                        MeasurementStore.clear()
-                        visibleHistoryCount = 100
-                        renderMeasurementHistory()
-                        updateCurrentDistance()
-                    }
-                    .show()
-            }
         })
-        recordButtons.addView(actionButton("导出CSV") {
-            if (measurements.isEmpty()) toast("还没有测量记录")
-            else exportLauncher.launch("bosch-glm-${dateForFile()}.csv")
-        })
-        root.addView(recordButtons)
-        historyContainer = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(0, dp(8), 0, 0)
-        }
-        root.addView(historyContainer)
-
-        val addAnnotationButton = floatingAddButton("添加图片尺寸标注", Color.rgb(0, 112, 82)) {
-            showImageSourceChooser()
-        }
-        val addSketchButton = floatingAddButton("添加平面草稿", Color.rgb(28, 91, 145)) {
-            createSketchProject()
-        }
-        val addButtons = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-            addView(addSketchButton, LinearLayout.LayoutParams(dp(64), dp(64)).apply { marginEnd = dp(8) })
-            addView(addAnnotationButton, LinearLayout.LayoutParams(dp(64), dp(64)).apply { marginStart = dp(8) })
-        }
-        screen.addView(
-            addButtons,
-            FrameLayout.LayoutParams(-2, dp(64), Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
-                bottomMargin = dp(20)
-            },
-        )
-        ViewCompat.setOnApplyWindowInsetsListener(addButtons) { view, insets ->
-            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            (view.layoutParams as FrameLayout.LayoutParams).apply {
-                bottomMargin = bars.bottom + dp(20)
-                view.layoutParams = this
-            }
-            insets
-        }
-        ViewCompat.requestApplyInsets(addButtons)
     }
 
     private fun showImageSourceChooser() {
@@ -326,10 +211,6 @@ class MainActivity : AppCompatActivity(), BoschBleManager.Listener {
                 startActivity(
                     Intent(this, AnnotationActivity::class.java).apply {
                         putExtra(AnnotationActivity.EXTRA_START_SOURCE, source)
-                        putExtra(
-                            AnnotationActivity.EXTRA_MEASUREMENTS_MM,
-                            measurements.map { it.millimeters }.toFloatArray(),
-                        )
                     },
                 )
             }
@@ -338,119 +219,31 @@ class MainActivity : AppCompatActivity(), BoschBleManager.Listener {
     }
 
     private fun createSketchProject() {
-        val id = runCatching { SketchProjectStore.create(this) }.getOrElse {
-            toast("无法创建草稿：${it.message}")
-            return
-        }
-        openSketchProject(id)
-    }
-
-    private fun renderAnnotationProjects() {
-        projectContainer.removeAllViews()
-        val projects = AnnotationProjectStore.list(this)
-        if (projects.isEmpty()) {
-            projectContainer.addView(smallText("暂无标注文件，点击下方 + 新建"))
-            return
-        }
-        projects.chunked(2).forEach { pair ->
-            val gridRow = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.TOP
-            }
-            pair.forEachIndexed { index, project ->
-                gridRow.addView(
-                    annotationProjectCard(project),
-                    LinearLayout.LayoutParams(0, -2, 1f).apply {
-                        if (index == 0) marginEnd = dp(5) else marginStart = dp(5)
-                        bottomMargin = dp(10)
-                    },
-                )
-            }
-            if (pair.size == 1) {
-                gridRow.addView(android.view.View(this), LinearLayout.LayoutParams(0, 1, 1f).apply { marginStart = dp(5) })
-            }
-            projectContainer.addView(gridRow)
+        val date = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date())
+        val pending = projectServices.createSketch(getString(R.string.project_sketch_default_name, date))
+        measurementScope.launch {
+            try { openSketchProject(pending.await().manifest.projectId) }
+            catch (failure: CancellationException) { throw failure }
+            catch (_: Exception) { /* The active project error subscription presents the failure. */ }
         }
     }
 
-    private fun annotationProjectCard(project: AnnotationProjectSummary): LinearLayout {
-        val availableWidth = resources.displayMetrics.widthPixels - dp(32) - dp(10)
-        val cardWidth = availableWidth / 2
-        val previewHeight = (cardWidth * 4f / 3f).toInt()
-        val card = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            elevation = 0f
-            setPadding(0, 0, 0, dp(6))
-            setBackgroundColor(Color.TRANSPARENT)
-            isClickable = true
-            isFocusable = true
-            setOnClickListener { openAnnotationProject(project.id) }
-        }
-        val previewFrame = FrameLayout(this)
-        previewFrame.addView(
-            ImageView(this).apply {
-                scaleType = ImageView.ScaleType.CENTER_CROP
-                contentDescription = "${project.name}预览图"
-                AnnotationProjectStore.loadThumbnail(this@MainActivity, project.id, dp(180))?.let(::setImageBitmap)
-            },
-            FrameLayout.LayoutParams(-1, previewHeight),
-        )
-        val moreButton = ImageButton(this).apply {
-            setImageResource(R.drawable.ic_more_vert)
-            setColorFilter(Color.rgb(45, 45, 45))
-            contentDescription = "${project.name}更多操作"
-            setPadding(dp(9), dp(9), dp(9), dp(9))
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(Color.argb(225, 255, 255, 255))
-            }
-            setOnClickListener { showProjectMenu(this, project) }
-        }
-        previewFrame.addView(
-            moreButton,
-            FrameLayout.LayoutParams(dp(40), dp(40), Gravity.TOP or Gravity.END).apply {
-                topMargin = dp(4)
-                marginEnd = dp(4)
-            },
-        )
-        card.addView(previewFrame, LinearLayout.LayoutParams(-1, previewHeight))
-        card.addView(TextView(this).apply {
-            text = project.name
-            textSize = 14f
-            setTextColor(Color.rgb(30, 30, 30))
-            maxLines = 1
-            ellipsize = TextUtils.TruncateAt.END
-            setPadding(dp(2), dp(8), dp(2), dp(2))
-        }, LinearLayout.LayoutParams(-1, -2))
-        card.addView(TextView(this).apply {
-            text = "编辑于 " + SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(project.updatedAt))
-            textSize = 11f
-            setTextColor(Color.GRAY)
-            maxLines = 1
-            setPadding(dp(2), 0, dp(2), 0)
-        }, LinearLayout.LayoutParams(-1, -2))
-        return card
-    }
-
-    private fun showProjectMenu(anchor: android.view.View, project: AnnotationProjectSummary) {
-        PopupMenu(this, anchor).apply {
-            menu.add(0, 1, 0, "修改名字")
-            menu.add(0, 2, 1, "删除")
-            setOnMenuItemClickListener { item ->
-                when (item.itemId) {
-                    1 -> {
-                        showRenameProjectDialog(project)
-                        true
-                    }
-                    2 -> {
-                        confirmDeleteProject(project)
-                        true
-                    }
-                    else -> false
-                }
-            }
-            show()
-        }
+    @Composable
+    private fun ProjectList(sketch: Boolean) {
+        val labels = ProjectLabels(getString(if (sketch) R.string.project_empty_sketch else R.string.project_empty_photo),
+            getString(R.string.project_actions), getString(R.string.project_rename), getString(R.string.project_delete), getString(R.string.project_export))
+        AndroidProjectList(projectServices, sketch, labels,
+            updatedLabel = { getString(R.string.project_updated, SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(it))) },
+            onOpen = { if (sketch) openSketchProject(it) else openAnnotationProject(it) },
+            onRename = { id -> projectServices.projects.value.firstOrNull { it.info.id == id }?.info?.let {
+                if (sketch) showRenameSketchDialog(SketchProjectSummary(it.id, it.name, it.updatedAt))
+                else showRenameProjectDialog(AnnotationProjectSummary(it.id, it.name, it.updatedAt))
+            } },
+            onDelete = { id -> projectServices.projects.value.firstOrNull { it.info.id == id }?.info?.let {
+                if (sketch) confirmDeleteSketch(SketchProjectSummary(it.id, it.name, it.updatedAt))
+                else confirmDeleteProject(AnnotationProjectSummary(it.id, it.name, it.updatedAt))
+            } },
+            onExport = ::exportProject)
     }
 
     private fun showRenameProjectDialog(project: AnnotationProjectSummary) {
@@ -467,8 +260,7 @@ class MainActivity : AppCompatActivity(), BoschBleManager.Listener {
             .setPositiveButton("保存") { _, _ ->
                 val name = input.text.toString().trim()
                 if (name.isEmpty()) toast("名字不能为空")
-                else if (!AnnotationProjectStore.rename(this, project.id, name)) toast("修改名字失败")
-                renderAnnotationProjects()
+                else projectServices.rename(project.id, name)
             }
             .show()
     }
@@ -476,68 +268,69 @@ class MainActivity : AppCompatActivity(), BoschBleManager.Listener {
     private fun confirmDeleteProject(project: AnnotationProjectSummary) {
         AlertDialog.Builder(this)
             .setTitle("删除“${project.name}”？")
-            .setMessage("照片和可编辑标注将一起删除，且无法恢复。")
+            .setMessage(R.string.project_delete_message)
             .setNegativeButton("取消", null)
             .setPositiveButton("删除") { _, _ ->
-                if (!AnnotationProjectStore.delete(this, project.id)) toast("删除失败")
-                renderAnnotationProjects()
+                projectServices.delete(project.id)
             }
             .show()
     }
 
     private fun openAnnotationProject(projectId: String) {
+        val photos = projectServices.projects.value.firstOrNull { it.info.id == projectId }?.photoAssetIds.orEmpty()
+        if (photos.size > 1) {
+            AlertDialog.Builder(this).setTitle(R.string.project_photo_choose)
+                .setItems(photos.mapIndexed { index, _ -> getString(R.string.project_photo_number, index + 1) }.toTypedArray()) { _, index ->
+                    launchAnnotationProject(projectId, photos[index])
+                }.show()
+        } else launchAnnotationProject(projectId, photos.firstOrNull())
+    }
+
+    private fun launchAnnotationProject(projectId: String, assetId: String?) {
         startActivity(
             Intent(this, AnnotationActivity::class.java).apply {
                 putExtra(AnnotationActivity.EXTRA_PROJECT_ID, projectId)
-                putExtra(
-                    AnnotationActivity.EXTRA_MEASUREMENTS_MM,
-                    measurements.map { it.millimeters }.toFloatArray(),
-                )
+                putExtra(AnnotationActivity.EXTRA_PHOTO_ASSET_ID, assetId)
             },
         )
     }
 
     override fun onConnectionStatus(message: String) {
-        statusText.text = message
+        deviceUi = deviceUi.copy(status = message)
     }
 
     override fun onConnected(name: String, address: String) {
         autoReconnectEnabled = true
         cancelAutoReconnect()
         reconnectAttempt = 0
-        statusText.text = "已连接，测量通知已启用"
-        deviceText.text = "$name · $address"
+        deviceUi = deviceUi.copy(status = getString(R.string.device_ready))
+        deviceUi = deviceUi.copy(device = getString(R.string.device_connected_name, name, address))
         updateConnectedControls()
     }
 
     override fun onDisconnected() {
         handler.removeCallbacksAndMessages(null)
-        statusText.text = "连接已断开"
+        deviceUi = deviceUi.copy(status = getString(R.string.device_connection_closed))
         updateDisconnectedControls()
         if (autoReconnectEnabled) scheduleAutoReconnect(reconnectDelay())
     }
 
-    override fun onFrame(frame: ByteArray) {
-        BoschProtocol.parseMeasurement(frame)?.let { addMeasurement(it) }
+    override fun onMeasurement(measurement: MeasurementRecord) {
+        measurementServices.enqueue { record(measurement) }
     }
 
     override fun onScanCandidates(devices: List<BoschBleManager.ScanCandidate>) {
         if (devices.isEmpty() || isFinishing) return
         val visible = devices.take(30)
-        AlertDialog.Builder(this)
-            .setTitle("选择附近的Bosch GLM")
-            .setMessage("未能通过名称或服务UUID自动识别。请打开GLM蓝牙后，选择信号较强或名称包含GLM的设备。")
-            .setItems(visible.map { it.displayText }.toTypedArray()) { _, position ->
-                val selected = visible[position]
-                deviceText.text = "正在尝试：${selected.displayText}"
-                ble.connectAddress(selected.address)
-            }
-            .setNegativeButton("取消", null)
-            .show()
+        com.example.boschlaser.platform.showBleDevicePicker(this, visible.map { it.displayText }) { position ->
+            val selected = visible[position]
+            deviceUi = deviceUi.copy(device = getString(R.string.device_trying, selected.displayText))
+            ble.connectAddress(selected.address)
+        }
     }
 
     override fun onError(message: String) {
-        statusText.text = message
+        deviceUi = deviceUi.copy(status = message)
         if (!ble.isConnected) {
             updateDisconnectedControls()
             if (autoReconnectEnabled) scheduleAutoReconnect(reconnectDelay()) else toast(message)
@@ -546,89 +339,23 @@ class MainActivity : AppCompatActivity(), BoschBleManager.Listener {
         }
     }
 
-    private fun addMeasurement(item: Measurement) {
-        measurements += item
-        MeasurementHistoryStore.add(this, item)
-        MeasurementStore.add(item.millimeters)
-        distanceText.text = "%.1f mm".format(item.millimeters)
-        renderMeasurementHistory()
-    }
-
-    private fun renderMeasurementHistory() {
-        if (!::historyContainer.isInitialized) return
-        historyContainer.removeAllViews()
-        if (measurements.isEmpty()) {
-            historyContainer.addView(smallText("暂无测量记录"))
-            return
-        }
-
-        measurements.takeLast(visibleHistoryCount).asReversed().forEach { item ->
-            val recordRow = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                setPadding(0, dp(3), 0, dp(3))
-            }
-            val total = item.accumulatedMeters?.let { "，累计 %.1f mm".format(it * 1000f) }.orEmpty()
-            recordRow.addView(
-                TextView(this).apply {
-                    text = "${item.timeText}  ${item.operation ?: "距离"}  %.1f mm%s".format(item.millimeters, total)
-                    textSize = 14f
-                    setTextIsSelectable(true)
-                },
-                LinearLayout.LayoutParams(0, -2, 1f),
-            )
-            recordRow.addView(
-                ImageButton(this).apply {
-                    setImageResource(R.drawable.ic_delete)
-                    setColorFilter(Color.rgb(180, 45, 45))
-                    setBackgroundColor(Color.TRANSPARENT)
-                    contentDescription = "删除这条测量记录"
-                    setPadding(dp(10), dp(10), dp(10), dp(10))
-                    setOnClickListener { deleteMeasurement(item) }
-                },
-                LinearLayout.LayoutParams(dp(48), dp(48)),
-            )
-            historyContainer.addView(recordRow)
-        }
-
-        val hiddenCount = measurements.size - visibleHistoryCount
-        if (hiddenCount > 0) {
-            historyContainer.addView(
-                actionButton("显示更早记录（还有 $hiddenCount 条）") {
-                    visibleHistoryCount += 100
-                    renderMeasurementHistory()
-                }.apply { layoutParams = LinearLayout.LayoutParams(-1, -2) },
-            )
-        }
-    }
-
-    private fun deleteMeasurement(item: Measurement) {
-        val index = measurements.indexOfFirst { it.timestamp == item.timestamp }
-        if (index < 0) return
-        MeasurementHistoryStore.delete(this, item.timestamp)
-        measurements.removeAt(index)
-        MeasurementStore.replaceAll(measurements.map { it.millimeters })
-        renderMeasurementHistory()
-        updateCurrentDistance()
-    }
-
-    private fun updateCurrentDistance() {
-        distanceText.text = measurements.lastOrNull()?.let { "%.1f mm".format(it.millimeters) } ?: "— mm"
+    private fun confirmClearMeasurements() {
+        if (measurementServices.service.records.value.isEmpty()) return
+        AlertDialog.Builder(this)
+            .setTitle(R.string.measurement_clear_title)
+            .setMessage(R.string.measurement_clear_message)
+            .setNegativeButton(R.string.action_cancel, null)
+            .setPositiveButton(R.string.measurement_clear) { _, _ -> measurementServices.enqueue { clear() } }
+            .show()
     }
 
     private fun updateConnectedControls() {
-        connectSavedButton.isEnabled = false
-        disconnectButton.isEnabled = true
-        greenButton.isEnabled = true
-        if (::deviceFloatingButton.isInitialized) deviceFloatingButton.background = deviceButtonBackground(true)
+        deviceUi = deviceUi.copy(connected = true, canConnectSaved = false)
     }
 
     private fun updateDisconnectedControls() {
         val permitted = hasPermissions()
-        connectSavedButton.isEnabled = permitted && ::ble.isInitialized && ble.savedAddress != null
-        disconnectButton.isEnabled = false
-        greenButton.isEnabled = false
-        if (::deviceFloatingButton.isInitialized) deviceFloatingButton.background = deviceButtonBackground(false)
+        deviceUi = deviceUi.copy(connected = false, canConnectSaved = permitted && ::ble.isInitialized && ble.savedAddress != null)
     }
 
     private fun ensurePermissions() {
@@ -638,7 +365,7 @@ class MainActivity : AppCompatActivity(), BoschBleManager.Listener {
 
     private fun startAutoReconnect() {
         if (ble.savedAddress == null) {
-            statusText.text = "未保存设备，请先扫描并连接一次"
+            deviceUi = deviceUi.copy(status = getString(R.string.device_no_saved_hint))
             return
         }
         autoReconnectEnabled = true
@@ -677,149 +404,14 @@ class MainActivity : AppCompatActivity(), BoschBleManager.Listener {
         Manifest.permission.BLUETOOTH_CONNECT,
     )
 
-    private fun sectionTitle(text: String) = TextView(this).apply {
-        this.text = text
-        textSize = 19f
-        setTextColor(Color.rgb(30, 30, 30))
-        setPadding(0, dp(18), 0, dp(6))
-    }
-
-    private fun bodyText(text: String) = TextView(this).apply {
-        this.text = text
-        textSize = 15f
-        setPadding(0, dp(3), 0, dp(3))
-    }
-
-    private fun smallText(text: String) = TextView(this).apply {
-        this.text = text
-        textSize = 13f
-        setTextColor(Color.DKGRAY)
-        setPadding(0, dp(3), 0, dp(5))
-    }
-
-    private fun row() = LinearLayout(this).apply {
-        orientation = LinearLayout.HORIZONTAL
-        gravity = Gravity.START
-    }
-
-    private fun actionButton(text: String, action: () -> Unit) = Button(this).apply {
-        this.text = text
-        isAllCaps = false
-        setOnClickListener { action() }
-        layoutParams = LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = dp(6) }
-    }
-
-    private fun floatingAddButton(description: String, color: Int, action: () -> Unit) = Button(this).apply {
-        text = "+"
-        textSize = 30f
-        setTextColor(Color.WHITE)
-        gravity = Gravity.CENTER
-        elevation = dp(12).toFloat()
-        contentDescription = description
-        background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(color) }
-        setOnClickListener { action() }
-    }
-
-    private fun deviceButtonBackground(connected: Boolean) = GradientDrawable().apply {
-        shape = GradientDrawable.OVAL
-        setColor(if (connected) Color.rgb(0, 130, 92) else Color.rgb(92, 99, 105))
-    }
-
-    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
-
-    private fun applyWindowInsets(root: LinearLayout) {
-        ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
-            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            view.setPadding(dp(16), bars.top + dp(8), dp(16), maxOf(dp(104), bars.bottom + dp(84)))
-            insets
-        }
-        ViewCompat.requestApplyInsets(root)
-    }
     private fun toast(message: String) = Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
     private fun dateForFile(): String = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
 
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
-        if (::ble.isInitialized) ble.disconnect()
+        if (::ble.isInitialized) ble.close()
+        measurementScope.cancel()
         super.onDestroy()
-    }
-
-    private fun renderSketchProjects() {
-        sketchProjectContainer.removeAllViews()
-        val projects = SketchProjectStore.list(this)
-        if (projects.isEmpty()) {
-            sketchProjectContainer.addView(smallText("暂无平面草稿，点击下方蓝色 + 新建"))
-            return
-        }
-        projects.chunked(2).forEach { pair ->
-            val gridRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.TOP }
-            pair.forEachIndexed { index, project ->
-                gridRow.addView(
-                    sketchProjectCard(project),
-                    LinearLayout.LayoutParams(0, -2, 1f).apply {
-                        if (index == 0) marginEnd = dp(5) else marginStart = dp(5)
-                        bottomMargin = dp(10)
-                    },
-                )
-            }
-            if (pair.size == 1) gridRow.addView(android.view.View(this), LinearLayout.LayoutParams(0, 1, 1f).apply { marginStart = dp(5) })
-            sketchProjectContainer.addView(gridRow)
-        }
-    }
-
-    private fun sketchProjectCard(project: SketchProjectSummary): LinearLayout {
-        val availableWidth = resources.displayMetrics.widthPixels - dp(32) - dp(10)
-        val cardWidth = availableWidth / 2
-        val previewHeight = (cardWidth * 3f / 4f).toInt()
-        return LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(0, 0, 0, dp(6))
-            setBackgroundColor(Color.TRANSPARENT)
-            isClickable = true
-            isFocusable = true
-            setOnClickListener { openSketchProject(project.id) }
-            addView(FrameLayout(this@MainActivity).apply {
-                setBackgroundColor(Color.rgb(242, 244, 243))
-                addView(ImageView(this@MainActivity).apply {
-                    scaleType = ImageView.ScaleType.CENTER_CROP
-                    contentDescription = "${project.name}预览图"
-                    SketchProjectStore.loadThumbnail(this@MainActivity, project.id, dp(220))?.let(::setImageBitmap)
-                }, FrameLayout.LayoutParams(-1, previewHeight))
-                addView(ImageButton(this@MainActivity).apply {
-                    setImageResource(R.drawable.ic_more_vert)
-                    setColorFilter(Color.rgb(45, 45, 45))
-                    contentDescription = "${project.name}更多操作"
-                    setPadding(dp(9), dp(9), dp(9), dp(9))
-                    background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.argb(225, 255, 255, 255)) }
-                    setOnClickListener { showSketchProjectMenu(this, project) }
-                }, FrameLayout.LayoutParams(dp(40), dp(40), Gravity.TOP or Gravity.END).apply {
-                    topMargin = dp(4); marginEnd = dp(4)
-                })
-            }, LinearLayout.LayoutParams(-1, previewHeight))
-            addView(TextView(this@MainActivity).apply {
-                text = project.name; textSize = 14f; setTextColor(Color.rgb(30, 30, 30))
-                maxLines = 1; ellipsize = TextUtils.TruncateAt.END; setPadding(dp(2), dp(8), dp(2), dp(2))
-            })
-            addView(TextView(this@MainActivity).apply {
-                text = "编辑于 " + SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(project.updatedAt))
-                textSize = 11f; setTextColor(Color.GRAY); maxLines = 1; setPadding(dp(2), 0, dp(2), 0)
-            })
-        }
-    }
-
-    private fun showSketchProjectMenu(anchor: android.view.View, project: SketchProjectSummary) {
-        PopupMenu(this, anchor).apply {
-            menu.add(0, 1, 0, "修改名字")
-            menu.add(0, 2, 1, "删除")
-            setOnMenuItemClickListener { item ->
-                when (item.itemId) {
-                    1 -> { showRenameSketchDialog(project); true }
-                    2 -> { confirmDeleteSketch(project); true }
-                    else -> false
-                }
-            }
-            show()
-        }
     }
 
     private fun showRenameSketchDialog(project: SketchProjectSummary) {
@@ -829,25 +421,22 @@ class MainActivity : AppCompatActivity(), BoschBleManager.Listener {
             .setPositiveButton("保存") { _, _ ->
                 val name = input.text.toString().trim()
                 if (name.isEmpty()) toast("名字不能为空")
-                else if (!SketchProjectStore.rename(this, project.id, name)) toast("修改名字失败")
-                renderSketchProjects()
+                else projectServices.rename(project.id, name)
             }.show()
     }
 
     private fun confirmDeleteSketch(project: SketchProjectSummary) {
         AlertDialog.Builder(this).setTitle("删除“${project.name}”？")
-            .setMessage("草稿中的墙、柱、门窗和尺寸将一起删除，且无法恢复。")
+            .setMessage(R.string.project_delete_message)
             .setNegativeButton("取消", null)
             .setPositiveButton("删除") { _, _ ->
-                if (!SketchProjectStore.delete(this, project.id)) toast("删除失败")
-                renderSketchProjects()
+                projectServices.delete(project.id)
             }.show()
     }
 
     private fun openSketchProject(projectId: String) {
         startActivity(Intent(this, SketchActivity::class.java).apply {
             putExtra(SketchActivity.EXTRA_PROJECT_ID, projectId)
-            putExtra(SketchActivity.EXTRA_MEASUREMENTS_MM, measurements.map { it.millimeters }.toFloatArray())
         })
     }
 }

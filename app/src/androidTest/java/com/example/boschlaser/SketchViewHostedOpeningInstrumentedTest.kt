@@ -1,5 +1,7 @@
 package com.example.boschlaser
 
+import com.example.boschlaser.shared.editor.Selection
+
 import android.os.Looper
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -37,19 +39,8 @@ class SketchViewHostedOpeningInstrumentedTest {
     fun rotatingMovedEndpointKeepsOpeningDistanceFromFixedEndpoint() {
         val view = viewWithOpening()
         selectWall(view, "wall")
-        SketchView::class.java.getDeclaredField("dragEndpoint").apply {
-            isAccessible = true
-            setInt(view, 1)
-        }
         view.setGridSnapEnabled(false)
-        val moveSelection = SketchView::class.java.getDeclaredMethod(
-            "moveSelection",
-            Float::class.javaPrimitiveType,
-            Float::class.javaPrimitiveType,
-            SketchPoint::class.java,
-        ).apply { isAccessible = true }
-
-        moveSelection.invoke(view, 0f, 0f, SketchPoint(0f, 3000f))
+        view.previewWorldDrag(view.selectedWall()!!.end, SketchPoint(0f, 3000f))
 
         val state = view.snapshotState()
         assertEquals(SketchPoint(0f, 3000f), state.walls.single().end)
@@ -132,10 +123,7 @@ class SketchViewHostedOpeningInstrumentedTest {
     )
 
     private fun selectWall(view: SketchView, wallId: String) {
-        SketchView::class.java.getDeclaredField("selectedWallId").apply {
-            isAccessible = true
-            set(view, wallId)
-        }
+        view.selectEntity(Selection.Wall(wallId))
     }
 
     private fun newView(): SketchView {
