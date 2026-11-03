@@ -46,6 +46,7 @@ data class SketchOpening(
     val width: Float = if (type == SketchOpeningType.DOOR) 900f else 1200f,
     val flipped: Boolean = false,
     val hingeFlipped: Boolean = false,
+    val doorStyle: com.example.boschlaser.shared.model.DoorStyle = com.example.boschlaser.shared.model.DoorStyle.SINGLE,
 )
 
 data class SketchState(
@@ -157,6 +158,7 @@ object SketchProjectStore {
             put("id", opening.id); put("type", opening.type.name); put("wallId", opening.wallId)
             put("position", opening.position); put("width", opening.width); put("flipped", opening.flipped)
             put("hingeFlipped", opening.hingeFlipped)
+            put("doorStyle", opening.doorStyle.name)
         }) } })
     }
 
@@ -179,6 +181,7 @@ object SketchProjectStore {
             runCatching { SketchOpeningType.valueOf(item.optString("type")) }.getOrDefault(SketchOpeningType.DOOR),
             item.optString("wallId"), item.optDouble("position", .5).toFloat().coerceIn(0f, 1f),
             item.optDouble("width", 900.0).toFloat(), item.optBoolean("flipped"), item.optBoolean("hingeFlipped"),
+            com.example.boschlaser.shared.model.DoorStyle.valueOf(item.optString("doorStyle", "SINGLE")),
         ) },
     )
 

@@ -1,6 +1,7 @@
 package com.example.boschlaser.shared.model
 
 enum class OpeningType { DOOR, WINDOW }
+enum class DoorStyle { SINGLE, DOUBLE, SLIDING, OPENING }
 /** Offset is the opening CENTER distance from the host reference-line start, in mm. */
 data class Opening(
     val id: String,
@@ -10,6 +11,7 @@ data class Opening(
     val type: OpeningType,
     val flipped: Boolean = false,
     val hingeFlipped: Boolean = false,
+    val doorStyle: DoorStyle = DoorStyle.SINGLE,
 ) {
     init {
         require(id.isNotBlank() && hostWallId.isNotBlank())

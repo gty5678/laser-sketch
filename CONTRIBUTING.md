@@ -253,3 +253,29 @@ BLE 分层与测试范围见 [BLE 架构](docs/ble-architecture.md)。修改传�
 
 
 `HostedOpeningEditMatrixTest` 通过共享正式命令覆盖 24 个方向、三种定位线、两种固定端、连接墙门窗冲突、T 宿主跟随，以及 Trim/Extend 的九种定位线组合。断言包括固定端毫米距离、门窗实际位置/宽度、边界墙不变、整次失败保留 Redo 与精确 Undo/Redo；这组 JVM 矩阵不能替代 Android 触控和像素套件。
+
+
+## 编辑器性能基线
+
+使用仓库 Wrapper 单独运行：
+
+```powershell
+.\gradlew.bat :shared:editorPerformanceBaseline --console=plain
+```
+
+报告在 `shared/build/reports/performance/editor-baseline.csv`，不提交生成物。
+该诊断使用合成的 100/500/1000 面交错水平、竖直墙，包含近墙和空白指针，分别测量
+命中、默认吸附、实体边吸附、交点吸附和工程语义 JSON 序列化。每项预热 30 次，
+记录 40 次单次调用的中位数与 P95；结果被消费，不设易受机器负载影响的耗时断言。
+稀疏合成场景不代表密集交叉墙、完整工程或 Android 实机；最坏情况下附近墙对仍可能为平方级。
+
+2026-10-30 同机 JVM 25.0.2 的诊断中，1000 面墙交点吸附中位耗时由 10.7863 ms
+降至 0.0694 ms，P95 由 19.2429 ms 降至 0.1604 ms。该值来自两次独立进程，
+仅用于定位热点，不能作为稳定倍数承诺；重测时保持 JVM、场景、机器和负载条件一致。
+此任务不测 Compose 帧率、图片解码、磁盘原子写入或 BLE 延迟，仍需 Android 设备分析。
+
+`AnnotationPageStateTest` 验证页面选择投影、属性草稿、面板收起、拒绝修改、
+光标/组合文本、面积顶点、测量快照与单次/连续放置规则。
+`IntersectionSnapEquivalenceTest` 对比原全量交点算法，覆盖旋转与密集墙、
+容差、同距、边中点优先级、端点参数容差及大坐标。相关实际页面交互继续运行
+`AnnotationActivityProjectInstrumentedTest`，测试 APK 构建不能替代设备执行。

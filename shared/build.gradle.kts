@@ -48,3 +48,13 @@ kotlin {
         }
     }
 }
+
+val jvmTestCompilation = kotlin.targets.getByName("jvm").compilations.getByName("test")
+tasks.register<JavaExec>("editorPerformanceBaseline") {
+    group = "verification"
+    description = "Report JVM editor latency for synthetic 100/500/1000-wall projects (no timing assertions)."
+    dependsOn(jvmTestCompilation.compileTaskProvider)
+    classpath(jvmTestCompilation.output.allOutputs, jvmTestCompilation.runtimeDependencyFiles)
+    mainClass.set("com.example.boschlaser.shared.performance.EditorPerformanceBaseline")
+    args(layout.buildDirectory.file("reports/performance/editor-baseline.csv").get().asFile.absolutePath)
+}

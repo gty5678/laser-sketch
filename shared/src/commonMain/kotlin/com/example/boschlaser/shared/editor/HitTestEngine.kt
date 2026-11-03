@@ -7,6 +7,8 @@ import com.example.boschlaser.shared.geometry.Vec2
 import com.example.boschlaser.shared.geometry.WallGeometry
 import com.example.boschlaser.shared.model.Column
 import com.example.boschlaser.shared.model.Opening
+import com.example.boschlaser.shared.model.OpeningType
+import com.example.boschlaser.shared.model.DoorStyle
 import com.example.boschlaser.shared.model.SketchDocument
 import com.example.boschlaser.shared.model.Wall
 import com.example.boschlaser.shared.topology.WallEndpoint
@@ -63,6 +65,18 @@ class HitTestEngine {
     }
     fun hitsOpening(opening: Opening, wall: Wall, point: Vec2, tolerance: Double): Boolean {
         require(tolerance.isFinite() && tolerance >= 0.0)
+        if (opening.type == OpeningType.DOOR && opening.doorStyle == DoorStyle.OPENING) {
+            // A bare doorway has no leaf or arc to grab: its actual cutout is the handle.
+            val polygon = OpeningGeometry.cutoutPolygon(opening, wall)
+            val along = Geometry.normalize(polygon[1] - polygon[0])
+            val across = Vec2(-along.y, along.x)
+            val center = (polygon[0] + polygon[2]) * 0.5
+            val delta = point - center
+            val halfWidth = Geometry.distance(polygon[0], polygon[1]) / 2.0
+            val halfThickness = Geometry.distance(polygon[1], polygon[2]) / 2.0
+            return kotlin.math.abs(delta.x * along.x + delta.y * along.y) <= halfWidth + tolerance + 1e-7 &&
+                kotlin.math.abs(delta.x * across.x + delta.y * across.y) <= halfThickness + tolerance + 1e-7
+        }
         return OpeningGeometry.symbolSegments(opening, wall).any { Geometry.distanceToSegment(point, it) <= tolerance }
     }
     fun hitsColumn(column: Column, point: Vec2, tolerance: Double) = ColumnGeometry.contains(column, point, tolerance)

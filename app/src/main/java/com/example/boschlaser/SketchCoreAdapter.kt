@@ -52,7 +52,7 @@ internal fun SketchState.toDocument(): SketchDocument {
             val host = coreWalls.getValue(opening.wallId)
             opening.id to Opening(opening.id, opening.wallId,
                 opening.position * Geometry.length(Segment2(host.start, host.end)), opening.width.toDouble(),
-                OpeningType.valueOf(opening.type.name), opening.flipped, opening.hingeFlipped)
+                OpeningType.valueOf(opening.type.name), opening.flipped, opening.hingeFlipped, opening.doorStyle)
         },
         columns = columns.associate { column ->
             column.id to when (column.type) {
@@ -76,7 +76,7 @@ internal fun SketchDocument.toSketchState() = SketchState(
         val host = walls.getValue(opening.hostWallId)
         val length = Geometry.length(Segment2(host.start, host.end))
         SketchOpening(opening.id, SketchOpeningType.valueOf(opening.type.name), opening.hostWallId,
-            (opening.offset / length).toFloat(), opening.width.toFloat(), opening.flipped, opening.hingeFlipped)
+            (opening.offset / length).toFloat(), opening.width.toFloat(), opening.flipped, opening.hingeFlipped, opening.doorStyle)
     },
 )
 
@@ -87,5 +87,5 @@ internal fun SketchColumn.toCoreColumn() = when (type) {
 
 internal fun SketchOpening.toCoreOpening(wall: SketchWall) = Opening(
     id, wallId, position * Geometry.length(Segment2(wall.start.toVec2(), wall.end.toVec2())),
-    width.toDouble(), OpeningType.valueOf(type.name), flipped, hingeFlipped,
+    width.toDouble(), OpeningType.valueOf(type.name), flipped, hingeFlipped, doorStyle,
 )

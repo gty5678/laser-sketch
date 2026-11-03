@@ -4,6 +4,17 @@ import com.example.boschlaser.shared.geometry.Geometry
 import com.example.boschlaser.shared.geometry.OpeningGeometry
 import com.example.boschlaser.shared.geometry.WallGeometry
 import com.example.boschlaser.shared.model.SketchDocument
+import com.example.boschlaser.shared.model.DoorStyle
+import com.example.boschlaser.shared.model.OpeningType
+
+/** Switching the symbol preserves the exact host, position, width and flip state. */
+data class ChangeDoorStyleCommand(val openingId: String, val style: DoorStyle) : SketchCommand {
+    override fun apply(document: SketchDocument): SketchDocument? {
+        val old = document.openings[openingId] ?: return null
+        if (old.type != OpeningType.DOOR) return null
+        return UpdateOpeningCommand(old.copy(doorStyle = style)).apply(document)
+    }
+}
 
 /** Resize retains the center where possible, clamping only enough to fit the unchanged host. */
 data class ChangeOpeningPropertiesCommand(

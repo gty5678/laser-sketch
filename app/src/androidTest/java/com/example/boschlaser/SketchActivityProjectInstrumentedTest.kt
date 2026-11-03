@@ -8,6 +8,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.compose.ui.geometry.Offset
 import com.example.boschlaser.shared.editor.Selection
+import com.example.boschlaser.shared.editor.SelectionGestureTarget
 import com.example.boschlaser.shared.geometry.Vec2
 import com.example.boschlaser.shared.model.*
 import kotlinx.coroutines.Deferred
@@ -71,6 +72,203 @@ class SketchActivityProjectInstrumentedTest {
                 assertEquals(view.snapshotDocument().columns.keys.single(), view.selectedColumn()?.id)
                 assertTrue(view.undo())
                 assertTrue(view.snapshotDocument().columns.isEmpty())
+            }
+        } finally {
+            finishAndCloseScenario(scenario)
+            services.flush().awaitResult()
+            services.delete(project.manifest.projectId).awaitResult()
+        }
+    }
+
+    @Test fun overlappingOpeningsWarnButStillMoveAndSave() {
+        val services = ProjectServices.get(context)
+        val wall = Wall("overlap-host", Vec2(-2000.0, 0.0), Vec2(2000.0, 0.0))
+        val doorway = Opening("overlap-door", wall.id, 1200.0, 900.0, OpeningType.DOOR, doorStyle = DoorStyle.OPENING)
+        val window = Opening("overlap-window", wall.id, 2600.0, 900.0, OpeningType.WINDOW)
+        val document = SketchDocument(walls = mapOf(wall.id to wall),
+            openings = mapOf(doorway.id to doorway, window.id to window))
+        val project = services.createSketch("Overlap warning fixture").awaitResult()
+        services.saveSketch(project.manifest.projectId, document, null).awaitResult()
+        val scenario = ActivityScenario.launch<SketchActivity>(Intent(context, SketchActivity::class.java)
+            .putExtra(SketchActivity.EXTRA_PROJECT_ID, project.manifest.projectId))
+        var moved = document
+        try {
+            awaitDocument(scenario, document)
+            val message = context.getString(R.string.sketch_openings_overlap_warning)
+            val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+            val event = automation.executeAndWaitForEvent({
+                scenario.onActivity {
+                    val canvas = view(it)
+                    touch(canvas, MotionEvent.ACTION_DOWN, canvas.worldToScreen(Vec2(-800.0, 0.0)))
+                    touch(canvas, MotionEvent.ACTION_MOVE, canvas.worldToScreen(Vec2(200.0, 0.0)))
+                    touch(canvas, MotionEvent.ACTION_UP, canvas.worldToScreen(Vec2(200.0, 0.0)))
+                    moved = canvas.snapshotDocument()
+                    assertEquals(2200.0, moved.openings.getValue(doorway.id).offset, 1.0)
+                    assertEquals(window, moved.openings[window.id])
+                    assertEquals(document.walls, moved.walls)
+                }
+            }, { it.eventType == android.view.accessibility.AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED &&
+                it.text.any { text -> text.toString().contains(message) } }, 5000)
+            event.recycle()
+            assertTrue(com.example.boschlaser.shared.geometry.hasEditedOpeningOverlap(document, moved))
+        } finally {
+            finishAndCloseScenario(scenario)
+            services.flush().awaitResult()
+            try { assertEquals(moved, services.loadSketch(project.manifest.projectId).awaitResult()!!.sketch) }
+            finally { services.delete(project.manifest.projectId).awaitResult() }
+        }
+    }
+
+    @Test fun bareDoorwayCanBeDraggedFromItsInteriorAndSaved() {
+        val services = ProjectServices.get(context)
+        val wall = Wall("doorway-host", Vec2(-2000.0, 0.0), Vec2(2000.0, 0.0))
+        val doorway = Opening("bare-doorway", wall.id, 2000.0, 1000.0, OpeningType.DOOR,
+            doorStyle = DoorStyle.OPENING)
+        val document = SketchDocument(walls = mapOf(wall.id to wall), openings = mapOf(doorway.id to doorway))
+        val project = services.createSketch("Doorway drag fixture").awaitResult()
+        services.saveSketch(project.manifest.projectId, document, null).awaitResult()
+        val scenario = ActivityScenario.launch<SketchActivity>(Intent(context, SketchActivity::class.java)
+            .putExtra(SketchActivity.EXTRA_PROJECT_ID, project.manifest.projectId))
+        var moved = document
+        try {
+            awaitDocument(scenario, document)
+            scenario.onActivity {
+                val canvas = view(it)
+                val start = canvas.worldToScreen(Vec2(0.0, 0.0))
+                val end = canvas.worldToScreen(Vec2(400.0, 0.0))
+                touch(canvas, MotionEvent.ACTION_DOWN, start)
+                assertEquals(SelectionGestureTarget.Opening(doorway.id), canvas.editorState().selectionGesture?.target)
+                touch(canvas, MotionEvent.ACTION_MOVE, end)
+                touch(canvas, MotionEvent.ACTION_UP, end)
+                moved = canvas.snapshotDocument()
+                val result = moved.openings.getValue(doorway.id)
+                assertEquals(2400.0, result.offset, 1.0)
+                assertEquals(doorway.copy(offset = result.offset), result)
+                assertEquals(document.walls, moved.walls)
+                assertTrue(canvas.undo())
+                assertEquals(document, canvas.snapshotDocument())
+            }
+            // Repeat through the real pointer path after undo and verify persistence.
+            scenario.onActivity {
+                val canvas = view(it)
+                touch(canvas, MotionEvent.ACTION_DOWN, canvas.worldToScreen(Vec2(0.0, 0.0)))
+                touch(canvas, MotionEvent.ACTION_MOVE, canvas.worldToScreen(Vec2(400.0, 0.0)))
+                touch(canvas, MotionEvent.ACTION_UP, canvas.worldToScreen(Vec2(400.0, 0.0)))
+                assertEquals(moved, canvas.snapshotDocument())
+            }
+        } finally {
+            finishAndCloseScenario(scenario)
+            services.flush().awaitResult()
+            try { assertEquals(moved, services.loadSketch(project.manifest.projectId).awaitResult()!!.sketch) }
+            finally { services.delete(project.manifest.projectId).awaitResult() }
+        }
+    }
+
+    @Test fun selectedDoorPropertiesSwitchStyleAndPersistWithoutChangingGeometry() {
+        val services = ProjectServices.get(context)
+        val wall = Wall("style-host", Vec2(-2000.0, 0.0), Vec2(2000.0, 0.0))
+        val door = Opening("editable-door", wall.id, 2000.123456789, 900.987654321,
+            OpeningType.DOOR, flipped = true, hingeFlipped = true)
+        val document = SketchDocument(walls = mapOf(wall.id to wall), openings = mapOf(door.id to door))
+        val project = services.createSketch("Door style edit fixture").awaitResult()
+        services.saveSketch(project.manifest.projectId, document, null).awaitResult()
+        val scenario = ActivityScenario.launch<SketchActivity>(Intent(context, SketchActivity::class.java)
+            .putExtra(SketchActivity.EXTRA_PROJECT_ID, project.manifest.projectId))
+        var expected = document
+        try {
+            awaitDocument(scenario, document)
+            scenario.onActivity {
+                val point = view(it).worldToScreen(com.example.boschlaser.shared.geometry.OpeningGeometry
+                    .symbolSegments(door, wall)[2].start)
+                touch(view(it), MotionEvent.ACTION_DOWN, point)
+                touch(view(it), MotionEvent.ACTION_UP, point)
+                assertEquals(door.id, view(it).selectedOpening()?.id)
+            }
+            for ((style, label) in listOf(DoorStyle.DOUBLE to R.string.sketch_door_double,
+                DoorStyle.SLIDING to R.string.sketch_door_sliding, DoorStyle.OPENING to R.string.sketch_door_opening,
+                DoorStyle.SINGLE to R.string.sketch_door_single)) {
+                compose.onNodeWithText(context.getString(label)).performScrollTo().performClick()
+                compose.onNodeWithText(context.getString(label)).assertIsSelected()
+                expected = document.copy(openings = mapOf(door.id to door.copy(doorStyle = style)))
+                scenario.onActivity {
+                    assertEquals(expected, view(it).snapshotDocument())
+                    assertEquals(door.id, view(it).selectedOpening()?.id)
+                    assertEquals(DoorStyle.SINGLE, view(it).placementDoorStyle)
+                }
+            }
+            scenario.onActivity {
+                assertTrue(view(it).undo())
+                expected = document.copy(openings = mapOf(door.id to door.copy(doorStyle = DoorStyle.OPENING)))
+                assertEquals(expected, view(it).snapshotDocument())
+            }
+        } finally {
+            finishAndCloseScenario(scenario)
+            services.flush().awaitResult()
+            try { assertEquals(expected, services.loadSketch(project.manifest.projectId).awaitResult()!!.sketch) }
+            finally { services.delete(project.manifest.projectId).awaitResult() }
+        }
+    }
+
+    @Test fun doorPlacementPickerCreatesAndPersistsAllFourStyles() {
+        val services = ProjectServices.get(context)
+        val wall = Wall("door-styles-wall", Vec2(-3000.0, 0.0), Vec2(3000.0, 0.0))
+        val document = SketchDocument(walls = mapOf(wall.id to wall))
+        val project = services.createSketch("Door styles fixture").awaitResult()
+        services.saveSketch(project.manifest.projectId, document, null).awaitResult()
+        val scenario = ActivityScenario.launch<SketchActivity>(Intent(context, SketchActivity::class.java)
+            .putExtra(SketchActivity.EXTRA_PROJECT_ID, project.manifest.projectId))
+        var expected = document
+        try {
+            awaitDocument(scenario, document)
+            compose.onNodeWithContentDescription(context.getString(R.string.sketch_tool_door)).performClick()
+            val choices = listOf(
+                DoorStyle.SINGLE to R.string.sketch_door_single,
+                DoorStyle.DOUBLE to R.string.sketch_door_double,
+                DoorStyle.SLIDING to R.string.sketch_door_sliding,
+                DoorStyle.OPENING to R.string.sketch_door_opening,
+            )
+            choices.forEachIndexed { index, (style, label) ->
+                compose.onNodeWithText(context.getString(label)).performScrollTo().performClick().assertIsSelected()
+                scenario.onActivity {
+                    assertEquals(expected, view(it).snapshotDocument())
+                    val point = view(it).worldToScreen(Vec2(-2000.0 + index * 1200.0, 0.0))
+                    touch(view(it), MotionEvent.ACTION_DOWN, point)
+                    touch(view(it), MotionEvent.ACTION_UP, point)
+                    expected = view(it).snapshotDocument()
+                    assertEquals(index + 1, expected.openings.size)
+                    assertEquals(style, expected.openings.values.last().doorStyle)
+                }
+            }
+        } finally {
+            finishAndCloseScenario(scenario)
+            services.flush().awaitResult()
+            try { assertEquals(expected, services.loadSketch(project.manifest.projectId).awaitResult()!!.sketch) }
+            finally { services.delete(project.manifest.projectId).awaitResult() }
+        }
+    }
+
+    @Test fun newlyPlacedColumnAllowsBothSizeEditsWhilePlacementContinues() {
+        val services = ProjectServices.get(context)
+        val project = services.createSketch("Column placement sizes fixture").awaitResult()
+        val scenario = ActivityScenario.launch<SketchActivity>(Intent(context, SketchActivity::class.java)
+            .putExtra(SketchActivity.EXTRA_PROJECT_ID, project.manifest.projectId))
+        try {
+            awaitDocument(scenario, SketchDocument())
+            compose.onNodeWithContentDescription(context.getString(R.string.sketch_tool_column)).performClick()
+            compose.onNodeWithTag("sketch-canvas").performTouchInput { click(Offset(width * .65f, height * .45f)) }
+            lateinit var placed: RectColumn
+            scenario.onActivity { placed = view(it).snapshotDocument().columns.values.single() as RectColumn }
+            val widthLabel = context.getString(R.string.sketch_column_width)
+            val depthLabel = context.getString(R.string.sketch_column_depth)
+            val applySize = context.getString(R.string.sketch_property_apply) + " " + widthLabel
+            compose.onNodeWithContentDescription(widthLabel).performTextReplacement("550")
+            compose.onNodeWithContentDescription(depthLabel).performTextReplacement("")
+            compose.onNodeWithContentDescription(applySize).performClick()
+            scenario.onActivity { assertEquals(placed, view(it).snapshotDocument().columns[placed.id]) }
+            compose.onNodeWithContentDescription(depthLabel).performTextReplacement("800")
+            compose.onNodeWithContentDescription(applySize).performClick()
+            scenario.onActivity {
+                assertEquals(placed.copy(width = 550.0, depth = 800.0), view(it).snapshotDocument().columns[placed.id])
             }
         } finally {
             finishAndCloseScenario(scenario)

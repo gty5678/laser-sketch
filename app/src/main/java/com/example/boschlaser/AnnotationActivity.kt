@@ -30,9 +30,6 @@ import androidx.compose.ui.res.dimensionResource
 import com.example.boschlaser.ui.AnnotationPropertySheet
 import com.example.boschlaser.ui.AnnotationPropertySheetStyle
 import com.example.boschlaser.ui.AnnotationScreen
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.res.painterResource
@@ -50,10 +47,6 @@ import com.example.boschlaser.ui.ColorOption
 import com.example.boschlaser.ui.AnnotationLabelProperties
 import com.example.boschlaser.ui.AnnotationQuantityProperty
 import com.example.boschlaser.shared.measurement.MeasurementRecord
-import com.example.boschlaser.shared.measurement.isNewestMeasurementAdded
-import com.example.boschlaser.shared.annotation.AnnotationQuantityLabel
-import androidx.compose.ui.text.TextRange
-import androidx.compose.ui.text.input.TextFieldValue
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
 import androidx.core.view.ViewCompat
@@ -83,27 +76,7 @@ class AnnotationActivity : AppCompatActivity() {
 
     private lateinit var annotationView: ImageAnnotationView
     private lateinit var hintText: TextView
-    private var propertyPanelVisible by mutableStateOf(false)
-    private var propertyPanelResetKey by mutableStateOf(0)
-    private var animatePropertyDismiss by mutableStateOf(false)
-    private var distanceProperty by mutableStateOf<TextFieldValue?>(null)
-    private var distanceUnit by mutableStateOf(0)
-    private var textProperty by mutableStateOf<TextFieldValue?>(null)
-    private var angleProperty by mutableStateOf<TextFieldValue?>(null)
-    private var dismissPropertyFocus by mutableStateOf(0)
-    private var areaProperty by mutableStateOf<TextFieldValue?>(null)
-    private var areaUnit by mutableStateOf(0)
-    private var hasAnnotationSelection by mutableStateOf(false)
-    private var hasSelectedAreaPoint by mutableStateOf(false)
-    private var recentMeasurementLabels by mutableStateOf<List<String>>(emptyList())
-    private var selectedMark by mutableStateOf<DimensionMark?>(null)
-    private var selectedTextMark by mutableStateOf<TextMark?>(null)
-    private var selectedAngleMark by mutableStateOf<AngleMark?>(null)
-    private var selectedAreaMark by mutableStateOf<AreaMark?>(null)
-    private var editorMode by mutableStateOf(AnnotationMode.DIMENSION)
-    private var continuousPlacement by mutableStateOf(false)
-    private var latestMeasurements: List<Double> = emptyList()
-    private var observedMeasurementIds: List<String>? = null
+    internal val pageState by lazy { AnnotationPageState(quantityUnits(false), quantityUnits(true)) }
     private var cameraUri: Uri? = null
     private var currentImageUri: Uri? = null
     private var currentProjectId: String? = null
@@ -141,7 +114,7 @@ class AnnotationActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         supportActionBar?.hide()
         buildInterface()
-        continuousPlacement = savedInstanceState?.getBoolean(STATE_CONTINUOUS_PLACEMENT) ?: false
+        pageState.continuousPlacement = savedInstanceState?.getBoolean(STATE_CONTINUOUS_PLACEMENT) ?: false
         currentProjectId = if (savedInstanceState?.getBoolean(STATE_LOADING_IMAGE) == true) null else
             savedInstanceState?.getString(STATE_PROJECT_ID) ?: intent.getStringExtra(EXTRA_PROJECT_ID)
         pendingPhotoProjectId = savedInstanceState?.getString(STATE_PENDING_PROJECT)
@@ -175,7 +148,7 @@ class AnnotationActivity : AppCompatActivity() {
         currentPhotoAssetId?.let { outState.putString(EXTRA_PHOTO_ASSET_ID, it) }
         outState.putBoolean(STATE_LOADING_IMAGE, loadingNewImage)
         pendingPhotoProjectId?.let { outState.putString(STATE_PENDING_PROJECT, it) }
-        outState.putBoolean(STATE_CONTINUOUS_PLACEMENT, continuousPlacement)
+        outState.putBoolean(STATE_CONTINUOUS_PLACEMENT, pageState.continuousPlacement)
         super.onSaveInstanceState(outState)
     }
 
@@ -229,7 +202,7 @@ class AnnotationActivity : AppCompatActivity() {
                 onPrimary = colorResource(R.color.white),
             )) {
                 AnnotationToolbar(
-                    selected = editorMode,
+                    selected = pageState.mode,
                     tools = listOf(
                         AnnotationToolItem(AnnotationMode.MOVE, getString(R.string.annotation_tool_move)),
                         AnnotationToolItem(AnnotationMode.DIMENSION, getString(R.string.annotation_tool_dimension)),
@@ -261,28 +234,19 @@ class AnnotationActivity : AppCompatActivity() {
                 primary = colorResource(R.color.annotation_tool_active),
                 onPrimary = colorResource(R.color.white),
             )) {
-                PlacementOptions(editorMode != AnnotationMode.MOVE, continuousPlacement,
+                PlacementOptions(pageState.mode != AnnotationMode.MOVE, pageState.continuousPlacement,
                     getString(R.string.annotation_placement_mode), getString(R.string.annotation_placement_single),
-                    getString(R.string.annotation_placement_continuous), { continuousPlacement = it })
+                    getString(R.string.annotation_placement_continuous), { pageState.continuousPlacement = it })
             }
         }
 
         @Composable fun LabelProperties() {
             MaterialTheme {
-                AnnotationLabelProperties(textProperty, angleProperty,
+                AnnotationLabelProperties(pageState.properties.text, pageState.properties.angle,
                     getString(R.string.annotation_text_input), getString(R.string.annotation_angle_input),
-                    getString(R.string.annotation_degree), dismissPropertyFocus,
-                    onText = { value ->
-                        if (textProperty?.text == value.text || annotationView.updateSelectedText(value.text)) {
-                            textProperty = value
-                            selectedTextMark = selectedTextMark?.copy(text = value.text)
-                        }
-                    }, onAngle = { value ->
-                        if (angleProperty?.text == value.text || annotationView.updateSelectedAngleLabel(value.text)) {
-                            angleProperty = value
-                            selectedAngleMark = selectedAngleMark?.copy(label = value.text.trim())
-                        }
-                    })
+                    getString(R.string.annotation_degree), pageState.properties.dismissFocus,
+                    onText = { pageState.updateText(it, annotationView::updateSelectedText) },
+                    onAngle = { pageState.updateAngle(it, annotationView::updateSelectedAngleLabel) })
             }
         }
 
@@ -290,24 +254,22 @@ class AnnotationActivity : AppCompatActivity() {
             MaterialTheme(colorScheme = lightColorScheme(
                 primary = colorResource(R.color.annotation_tool_active), onPrimary = colorResource(R.color.white),
             )) {
-                AnnotationStyleProperties(selectedTextMark?.textSize, selectedTextMark?.whiteBackground ?: true,
-                    selectedMark?.thickness,
+                AnnotationStyleProperties(pageState.properties.textMark?.textSize, pageState.properties.textMark?.whiteBackground ?: true,
+                    pageState.properties.dimension?.thickness,
                     AnnotationStyleLabels(getString(R.string.annotation_style_size),
                         resources.getStringArray(R.array.annotation_style_sizes).toList(),
                         getString(R.string.annotation_style_background), getString(R.string.annotation_style_thickness),
                         resources.getStringArray(R.array.annotation_style_thicknesses).toList()),
                     onTextSize = ::selectTextSize,
                     onBackground = { checked ->
-                        if (annotationView.updateSelectedTextBackground(checked)) {
-                            selectedTextMark = selectedTextMark?.copy(whiteBackground = checked)
-                        }
+                        pageState.updateTextBackground(checked, annotationView::updateSelectedTextBackground)
                     }, onThickness = ::selectLineThickness)
             }
         }
 
         @Composable fun DeleteAreaPoint() {
             MaterialTheme {
-                AnnotationAreaPointAction(hasSelectedAreaPoint, getString(R.string.annotation_delete_area_point),
+                AnnotationAreaPointAction(pageState.properties.hasAreaPoint, getString(R.string.annotation_delete_area_point),
                     onDelete = {
                         if (!annotationView.deleteSelectedAreaPoint()) {
                             toast(getString(R.string.annotation_area_point_delete_failed))
@@ -339,8 +301,8 @@ class AnnotationActivity : AppCompatActivity() {
                 error = colorResource(R.color.annotation_action_delete),
                 onPrimary = colorResource(R.color.white), onError = colorResource(R.color.white),
             )) {
-                AnnotationActions(editorMode != AnnotationMode.MOVE,
-                    editorMode == AnnotationMode.MOVE && hasAnnotationSelection,
+                AnnotationActions(pageState.mode != AnnotationMode.MOVE,
+                    pageState.mode == AnnotationMode.MOVE && (pageState.properties.selection != null),
                     getString(R.string.annotation_finish), getString(R.string.annotation_delete_selected),
                     onFinish = { setEditorMode(AnnotationMode.MOVE) },
                     onDelete = { if (!annotationView.deleteSelected()) toast(getString(R.string.annotation_selection_required)) },
@@ -351,13 +313,13 @@ class AnnotationActivity : AppCompatActivity() {
         @Composable fun RecentValues() {
             MaterialTheme(colorScheme = lightColorScheme(primary = colorResource(R.color.annotation_tool_active),
                 onPrimary = colorResource(R.color.white))) {
-                RecentMeasurements(recentMeasurementLabels, selectedMark != null, ::applyRecentMeasurement)
+                RecentMeasurements(pageState.recentMeasurementLabels, pageState.properties.dimension != null, ::applyRecentMeasurement)
             }
         }
 
         @Composable fun Colors() {
             MaterialTheme(colorScheme = lightColorScheme(secondary = colorResource(R.color.annotation_color_selected))) {
-                ColorPalette(selectedMark?.color ?: selectedTextMark?.color ?: selectedAngleMark?.color ?: selectedAreaMark?.color,
+                ColorPalette(pageState.properties.color,
                     getString(R.string.annotation_style_color), listOf(
                         ColorOption(resources.getColor(R.color.annotation_color_red, theme), getString(R.string.annotation_color_red)),
                         ColorOption(resources.getColor(R.color.annotation_tool_active, theme), getString(R.string.annotation_color_green)),
@@ -382,7 +344,7 @@ class AnnotationActivity : AppCompatActivity() {
                     canvas = { AndroidView(factory = { annotationView }, modifier = Modifier.fillMaxSize()) },
                     actions = { ImageActionsOverlay() },
                     properties = {
-                        AnnotationPropertySheet(propertyPanelVisible, propertyPanelResetKey, animatePropertyDismiss,
+                        AnnotationPropertySheet(pageState.properties.visible, pageState.properties.resetKey, pageState.properties.animateDismiss,
                             getString(R.string.annotation_properties_dismiss), propertySheetStyle(), ::dismissSelectionPanel) {
                             QuantityProperties(false)
                             LabelProperties()
@@ -411,24 +373,8 @@ class AnnotationActivity : AppCompatActivity() {
     )
 
     private fun showSelection(selection: AnnotationSelection?) {
-        hasAnnotationSelection = selection != null
-        selectedMark = (selection as? AnnotationSelection.Dimension)?.mark
-        selectedTextMark = (selection as? AnnotationSelection.Text)?.mark
-        selectedAngleMark = (selection as? AnnotationSelection.Angle)?.mark
-        selectedAreaMark = (selection as? AnnotationSelection.Area)?.mark
-        propertyPanelResetKey++
-        animatePropertyDismiss = false
-        propertyPanelVisible = selection != null
-        textProperty = selectedTextMark?.text?.let { TextFieldValue(it, TextRange(it.length)) }
-        angleProperty = selectedAngleMark?.label?.let { TextFieldValue(it, TextRange(it.length)) }
-        hasSelectedAreaPoint = (selection as? AnnotationSelection.Area)?.selectedPointIndex?.let { it >= 0 } == true
+        pageState.showSelection(selection)
         updateRecentMeasurements(availableMeasurements())
-        val distance = selectedMark?.label?.let { AnnotationQuantityLabel.parse(it, quantityUnits(false)) }
-        distanceProperty = distance?.text?.let { TextFieldValue(it, TextRange(it.length)) }
-        distanceUnit = distance?.unit ?: 0
-        val area = selectedAreaMark?.label?.let { AnnotationQuantityLabel.parse(it, quantityUnits(true)) }
-        areaProperty = area?.text?.let { TextFieldValue(it, TextRange(it.length)) }
-        areaUnit = area?.unit ?: 0
     }
 
     private fun quantityUnits(area: Boolean) = resources.getStringArray(
@@ -437,37 +383,20 @@ class AnnotationActivity : AppCompatActivity() {
     @Composable
     private fun QuantityProperties(area: Boolean) {
         MaterialTheme {
-            AnnotationQuantityProperty(if (area) areaProperty else distanceProperty,
-                if (area) areaUnit else distanceUnit, quantityUnits(area),
+            val properties = pageState.properties
+            val value = if (area) properties.area else properties.distance
+            val unit = if (area) properties.areaUnit else properties.distanceUnit
+            val commit: (String) -> Boolean = if (area) annotationView::updateSelectedAreaLabel else annotationView::updateSelectedLabel
+            AnnotationQuantityProperty(value, unit, quantityUnits(area),
                 getString(if (area) R.string.annotation_area_input else R.string.annotation_distance_input),
-                getString(if (area) R.string.annotation_area_unit else R.string.annotation_distance_unit), dismissPropertyFocus,
-                onValue = { value ->
-                    val previous = if (area) areaProperty else distanceProperty
-                    if (previous?.text == value.text || updateQuantity(area, value.text, if (area) areaUnit else distanceUnit)) {
-                        if (area) areaProperty = value else distanceProperty = value
-                    }
-                }, onUnit = { unit ->
-                    val value = if (area) areaProperty else distanceProperty
-                    val previousUnit = if (area) areaUnit else distanceUnit
-                    if (value != null && unit != previousUnit && updateQuantity(area, value.text, unit)) {
-                        if (area) areaUnit = unit else distanceUnit = unit
-                    }
-                })
+                getString(if (area) R.string.annotation_area_unit else R.string.annotation_distance_unit), properties.dismissFocus,
+                onValue = { pageState.updateQuantity(area, it, unit, commit) },
+                onUnit = { selected -> if (value != null) pageState.updateQuantity(area, value, selected, commit) })
         }
-    }
-
-    private fun updateQuantity(area: Boolean, text: String, unit: Int): Boolean {
-        val label = AnnotationQuantityLabel.format(text, unit, quantityUnits(area))
-        val accepted = if (area) annotationView.updateSelectedAreaLabel(label) else annotationView.updateSelectedLabel(label)
-        if (accepted) {
-            if (area) selectedAreaMark = selectedAreaMark?.copy(label = label)
-            else selectedMark = selectedMark?.copy(label = label)
-        }
-        return accepted
     }
 
     private fun setEditorMode(mode: AnnotationMode, preserveSelection: Boolean = false) {
-        editorMode = mode
+        pageState.mode = mode
         annotationView.setMode(mode, preserveSelection)
         hintText.text = when (mode) {
             AnnotationMode.MOVE -> getString(R.string.annotation_move_mode_hint)
@@ -479,67 +408,47 @@ class AnnotationActivity : AppCompatActivity() {
     }
 
     private fun handleAnnotationCreated(mode: AnnotationMode) {
-        if (continuousPlacement || editorMode != mode) return
+        if (!pageState.completePlacement(mode)) return
         setEditorMode(AnnotationMode.MOVE, preserveSelection = true)
         hintText.text = getString(R.string.annotation_single_placement_completed_hint)
     }
 
     private fun selectMarkColor(color: Int) {
-        if (!annotationView.updateSelectedColor(color)) return
-        selectedMark = selectedMark?.copy(color = color)
-        selectedTextMark = selectedTextMark?.copy(color = color)
-        selectedAngleMark = selectedAngleMark?.copy(color = color)
-        selectedAreaMark = selectedAreaMark?.copy(color = color)
-        hintText.text = getString(R.string.annotation_color_changed)
+        if (pageState.updateColor(color, annotationView::updateSelectedColor)) {
+            hintText.text = getString(R.string.annotation_color_changed)
+        }
     }
 
-    private fun selectTextSize(textSize: Int) {
-        if (!annotationView.updateSelectedTextSize(textSize)) return
-        selectedTextMark = selectedTextMark?.copy(textSize = textSize)
-    }
+    private fun selectTextSize(textSize: Int) = pageState.updateTextSize(textSize, annotationView::updateSelectedTextSize)
 
-    private fun selectLineThickness(thickness: Int) {
-        if (!annotationView.updateSelectedLineThickness(thickness)) return
-        selectedMark = selectedMark?.copy(thickness = thickness)
-    }
+    private fun selectLineThickness(thickness: Int) = pageState.updateThickness(thickness, annotationView::updateSelectedLineThickness)
 
     private fun dismissSelectionPanel() {
-        if (!propertyPanelVisible) return
+        if (!pageState.properties.visible) return
         finishDistanceEditing()
-        animatePropertyDismiss = true
-        propertyPanelVisible = false
+        pageState.dismissPanel()
     }
 
     private fun finishDistanceEditing() {
-        dismissPropertyFocus++
+        pageState.dismissFocus()
         (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager)
             .hideSoftInputFromWindow(window.decorView.windowToken, 0)
     }
 
     private fun updateRecentMeasurements(values: List<Double>) {
-        latestMeasurements = values.take(3)
-        if (::annotationView.isInitialized) {
-            annotationView.defaultDimensionLabel = latestMeasurements.firstOrNull()?.let {
-                "${formatAnnotationMillimeters(it)} mm"
-            }.orEmpty()
-        }
-        recentMeasurementLabels = latestMeasurements.map { "${formatAnnotationMillimeters(it)} mm" }
+        pageState.updateRecentMeasurements(values)
+        if (::annotationView.isInitialized) annotationView.defaultDimensionLabel = pageState.defaultDimensionLabel
     }
 
     private fun handleMeasurementSnapshot(records: List<MeasurementRecord>) {
-        val ids = records.map { it.measurement.id }
-        val receivedNewValue = isNewestMeasurementAdded(observedMeasurementIds, ids)
-        observedMeasurementIds = ids
-        val values = records.map { it.measurement.valueMm }
-        updateRecentMeasurements(values)
-        if (receivedNewValue && selectedMark != null) {
-            applyMeasurementToSelected(values.first(), automatic = true)
-        }
+        val value = pageState.receiveMeasurements(records)
+        annotationView.defaultDimensionLabel = pageState.defaultDimensionLabel
+        if (value != null && pageState.properties.dimension != null) applyMeasurementToSelected(value, automatic = true)
     }
 
     private fun applyRecentMeasurement(index: Int) {
-        val value = latestMeasurements.getOrNull(index) ?: return
-        if (selectedMark == null) {
+        val value = pageState.latestMeasurements.getOrNull(index) ?: return
+        if (pageState.properties.dimension == null) {
             toast(getString(R.string.annotation_dimension_selection_required))
             return
         }
@@ -548,10 +457,7 @@ class AnnotationActivity : AppCompatActivity() {
 
     private fun applyMeasurementToSelected(value: Double, automatic: Boolean) {
         val text = formatAnnotationMillimeters(value)
-        distanceProperty = TextFieldValue(text, TextRange(text.length))
-        distanceUnit = 0
-        annotationView.updateSelectedLabel("$text mm")
-        selectedMark = selectedMark?.copy(label = "$text mm")
+        if (!pageState.applyMeasurement(value, annotationView::updateSelectedLabel)) return
         if (automatic) {
             hintText.text = getString(R.string.annotation_latest_measurement_applied, text)
             toast(getString(R.string.annotation_dimension_updated, text))

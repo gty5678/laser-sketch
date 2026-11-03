@@ -5,6 +5,28 @@ import com.example.boschlaser.shared.model.*
 import kotlin.test.*
 
 class OpeningPropertyCommandsTest {
+    @Test fun doorStyleSwitchesPreserveGeometryAndFlipsAndUndoExactly() {
+        val flipped = door.copy(flipped = true, hingeFlipped = true)
+        val initial = original.copy(openings = original.openings + (door.id to flipped))
+        val manager = CommandManager(initial)
+        for (style in DoorStyle.entries) {
+            val command = ChangeDoorStyleCommand(door.id, style)
+            assertEquals(style != DoorStyle.SINGLE, manager.execute(command))
+            val expected = initial.copy(openings = initial.openings + (door.id to flipped.copy(doorStyle = style)))
+            assertEquals(expected, manager.document)
+            assertFalse(manager.execute(command))
+            if (style != DoorStyle.SINGLE) {
+                assertTrue(manager.undo())
+                assertEquals(initial, manager.document)
+                assertTrue(manager.redo())
+                assertEquals(expected, manager.document)
+                assertTrue(manager.undo())
+            }
+        }
+        assertNull(ChangeDoorStyleCommand(window.id, DoorStyle.DOUBLE).apply(initial))
+        assertNull(ChangeDoorStyleCommand("missing", DoorStyle.DOUBLE).apply(initial))
+        assertEquals(initial, manager.document)
+    }
     private val wall = Wall("wall", Vec2(10.123456789, 20.987654321), Vec2(4010.123456789, 20.987654321),
         240.123456789, WallAlignment.RIGHT)
     private val door = Opening("door", wall.id, 700.123456789, 900.123456789, OpeningType.DOOR)

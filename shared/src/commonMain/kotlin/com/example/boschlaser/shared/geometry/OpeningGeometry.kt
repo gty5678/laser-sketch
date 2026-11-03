@@ -3,6 +3,7 @@ package com.example.boschlaser.shared.geometry
 import com.example.boschlaser.shared.model.Opening
 import com.example.boschlaser.shared.model.Wall
 import com.example.boschlaser.shared.model.WallAnchor
+import com.example.boschlaser.shared.model.DoorStyle
 import com.example.boschlaser.shared.model.OpeningType
 import kotlin.math.PI
 import kotlin.math.cos
@@ -57,25 +58,41 @@ object OpeningGeometry {
                 Segment2(offset(a, it), offset(b, it))
             }
         }
-        val side = if (opening.flipped) -1.0 else 1.0
-        val hingeDirection = if (opening.hingeFlipped) -1.0 else 1.0
-        val hinge = if (opening.hingeFlipped) b else a
-        val closedEnd = if (opening.hingeFlipped) a else b
-        val width = halfOpening * 2.0
         val segments = jambs.toMutableList()
-        segments += Segment2(hinge, offset(hinge, width * side))
-        var previous = closedEnd
-        for (step in 1..12) {
-            val angle = PI / 2.0 * step / 12.0
-            val next = hinge + (unit * (hingeDirection * cos(angle)) + normal * (side * sin(angle))) * width
-            segments += Segment2(previous, next)
-            previous = next
+        if (opening.doorStyle == DoorStyle.SLIDING) {
+            val track = halfWall / 3.0
+            val halfOverlap = min(halfOpening * 0.05, 20.0)
+            segments += Segment2(offset(a, -track), offset(center + unit * halfOverlap, -track))
+            segments += Segment2(offset(center - unit * halfOverlap, track), offset(b, track))
+        }
+        for (swing in doorSwings(opening, wall)) {
+            segments += Segment2(swing.hinge, swing.leafEnd)
+            var previous = swing.hinge + Vec2(cos(swing.startDegrees * PI / 180.0), sin(swing.startDegrees * PI / 180.0)) * swing.radius
+            for (step in 1..12) {
+                val angle = (swing.startDegrees + swing.sweepDegrees * step / 12.0) * PI / 180.0
+                val next = swing.hinge + Vec2(cos(angle), sin(angle)) * swing.radius
+                segments += Segment2(previous, next)
+                previous = next
+            }
         }
         return segments
     }
 
+    fun doorSwings(opening: Opening, wall: Wall): List<DoorSwing> {
+        if (opening.type != OpeningType.DOOR || opening.doorStyle == DoorStyle.OPENING || opening.doorStyle == DoorStyle.SLIDING) return emptyList()
+        if (opening.doorStyle == DoorStyle.SINGLE) return listOfNotNull(doorSwing(opening, wall))
+        val length = Geometry.length(WallGeometry.referenceLine(wall))
+        if (length < 1.0) return emptyList()
+        val width = min(opening.width, length)
+        val centerOffset = constrainedOffset(opening.offset, length, width)
+        return listOfNotNull(
+            doorSwing(opening.copy(offset = centerOffset - width / 4.0, width = width / 2.0, doorStyle = DoorStyle.SINGLE, hingeFlipped = false), wall),
+            doorSwing(opening.copy(offset = centerOffset + width / 4.0, width = width / 2.0, doorStyle = DoorStyle.SINGLE, hingeFlipped = true), wall),
+        )
+    }
+
     fun doorSwing(opening: Opening, wall: Wall): DoorSwing? {
-        if (opening.type != OpeningType.DOOR || Geometry.length(WallGeometry.referenceLine(wall)) < 1.0) return null
+        if (opening.type != OpeningType.DOOR || opening.doorStyle != DoorStyle.SINGLE || Geometry.length(WallGeometry.referenceLine(wall)) < 1.0) return null
         val line = WallGeometry.build(wall).centerLine
         val length = Geometry.length(line)
         if (length < 1.0) return null

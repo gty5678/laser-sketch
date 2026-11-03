@@ -1,6 +1,7 @@
 package com.example.boschlaser.shared.editor
 
 import com.example.boschlaser.shared.geometry.Geometry
+import com.example.boschlaser.shared.geometry.Segment2
 import com.example.boschlaser.shared.geometry.Vec2
 import com.example.boschlaser.shared.geometry.WallGeometry
 import com.example.boschlaser.shared.model.Column
@@ -54,8 +55,11 @@ class SnapEngine {
             if (context.midpoints) candidates += SnapResult((line.start + line.end) * .5, SnapType.MIDPOINT, id)
         }
         if (context.intersections) {
-            for (first in lines.indices) for (second in first + 1 until lines.size) {
-                Geometry.segmentIntersection(lines[first].second, lines[second].second)?.let {
+            // An intersection within tolerance must lie near both segment bounds. Keep document
+            // order for equal-distance ties and the geometry kernel's endpoint extension tolerance.
+            val nearby = lines.filter { nearBounds(it.second, input, context.tolerance) }
+            for (first in nearby.indices) for (second in first + 1 until nearby.size) {
+                Geometry.segmentIntersection(nearby[first].second, nearby[second].second)?.let {
                     candidates += SnapResult(it, SnapType.INTERSECTION)
                 }
             }
@@ -85,6 +89,17 @@ class SnapEngine {
             }
         }
         return result
+    }
+
+    private fun nearBounds(line: Segment2, point: Vec2, tolerance: Double): Boolean {
+        val marginX = tolerance + abs(line.end.x - line.start.x) * Geometry.EPSILON +
+            max(abs(line.start.x), abs(line.end.x)) * Geometry.EPSILON
+        val marginY = tolerance + abs(line.end.y - line.start.y) * Geometry.EPSILON +
+            max(abs(line.start.y), abs(line.end.y)) * Geometry.EPSILON
+        return point.x >= min(line.start.x, line.end.x) - marginX &&
+            point.x <= max(line.start.x, line.end.x) + marginX &&
+            point.y >= min(line.start.y, line.end.y) - marginY &&
+            point.y <= max(line.start.y, line.end.y) + marginY
     }
 
     fun grid(point: Vec2, step: Double): Vec2 {

@@ -280,4 +280,9 @@
     <string name="sketch_dimension_reverse">交换固定墙与移动墙</string>
     <string name="sketch_dimension_reversed_hint">已交换固定侧，应用时将移动另一面墙</string>
     <string name="sketch_dimension_drive_failed">无法应用：请输入 1～1000000 mm；门窗只能沿宿主墙移动且不能超出墙端，请检查参考线、墙连接与门窗空间；本次未修改</string>
+    <string name="sketch_door_single">单开门</string>
+    <string name="sketch_door_double">双开门</string>
+    <string name="sketch_door_sliding">推拉门</string>
+    <string name="sketch_door_opening">门洞</string>
+    <string name="sketch_openings_overlap_warning">门窗洞口有重叠，请检查位置；本次操作已保留</string>
 </resources>

@@ -73,8 +73,7 @@ class AnnotationActivityProjectInstrumentedTest {
                 receive.invoke(activity, listOf(second, first))
                 assertEquals("16777217.1 mm", annotationView.defaultDimensionLabel)
                 assertEquals("16777217.1 mm", (annotationView.snapshotDocument().annotations.getValue(mark.id) as DimensionAnnotation).label)
-                val recent = AnnotationActivity::class.java.getDeclaredField("latestMeasurements").apply { isAccessible = true }
-                assertEquals(listOf(16777217.1, 1000.0), recent.get(activity))
+                assertEquals(listOf(16777217.1, 1000.0), activity.pageState.latestMeasurements)
                 annotationView.updateSelectedLabel("Manual reset")
                 receive.invoke(activity, listOf(second, first))
                 assertEquals("Manual reset", (annotationView.snapshotDocument().annotations.getValue(mark.id) as DimensionAnnotation).label)

@@ -95,6 +95,7 @@ class SketchActivity : AppCompatActivity() {
     private val measurementScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val projectServices by lazy { ProjectServices.get(this) }
     private var projectLoaded = false
+    private var previousOpeningDocument: com.example.boschlaser.shared.model.SketchDocument? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -119,6 +120,7 @@ class SketchActivity : AppCompatActivity() {
                     else {
                         projectId = project.manifest.projectId
                         sketchView.restoreDocument(project.sketch, adoptWallThickness = true)
+                        previousOpeningDocument = project.sketch
                         projectLoaded = true
                         sketchView.isEnabled = true
                     }
@@ -148,6 +150,13 @@ class SketchActivity : AppCompatActivity() {
         sketchView = SketchView(this).apply {
             onSelectionChanged = { if (!joinWallsActive && !extendWallActive) showSelection(it) }
             onStateChanged = {
+                val document = snapshotDocument()
+                val previous = previousOpeningDocument
+                previousOpeningDocument = document
+                if (projectLoaded && previous != null &&
+                    com.example.boschlaser.shared.geometry.hasEditedOpeningOverlap(previous, document)) {
+                    this@SketchActivity.toast(getString(R.string.sketch_openings_overlap_warning))
+                }
                 if (!this@SketchActivity.saveProject()) {
                     this@SketchActivity.toast(getString(R.string.sketch_auto_save_failed))
                 }
@@ -508,18 +517,14 @@ class SketchActivity : AppCompatActivity() {
         val columnDepth = rectangle?.depth ?: columnWidth
         var width by remember { mutableStateOf(TextFieldValue(formatSketchMillimeters(columnWidth))) }
         var depth by remember { mutableStateOf(TextFieldValue(formatSketchMillimeters(columnDepth))) }
-        val showDepth = rectangle != null && currentMode == SketchMode.SELECT
+        val showDepth = rectangle != null
         MaterialTheme(colorScheme = lightColorScheme(primary = colorResource(R.color.sketch_tool_active))) {
             ColumnSizeProperty(width, if (showDepth) depth else null,
                 getString(R.string.sketch_column_width), getString(R.string.sketch_column_depth),
                 getString(R.string.sketch_property_apply), onWidth = { width = it }, onDepth = { depth = it },
                 onApply = {
                     val w = width.text.toDoubleOrNull()
-                    val d = when {
-                        rectangle == null -> w
-                        showDepth -> depth.text.toDoubleOrNull()
-                        else -> (sketchView.snapshotDocument().columns[column.id] as? com.example.boschlaser.shared.model.RectColumn)?.depth
-                    }
+                    val d = if (showDepth) depth.text.toDoubleOrNull() else w
                     if (w == null || d == null || !sketchView.updateSelectedColumnSize(w, d)) {
                         toast(getString(R.string.sketch_column_size_invalid))
                     }
@@ -537,6 +542,10 @@ class SketchActivity : AppCompatActivity() {
     @Composable
     private fun OpeningProperties(openingId: String) {
         val opening = sketchView.renderDocument().openings[openingId] ?: return
+        if (currentMode == SketchMode.DOOR) DoorPlacementStylePicker()
+        else if (opening.type == com.example.boschlaser.shared.model.OpeningType.DOOR) {
+            DoorStylePicker(opening.doorStyle) { sketchView.updateSelectedDoorStyle(it) }
+        }
         NumberInput(formatSketchMillimeters(opening.width), getString(R.string.sketch_opening_width)) { text ->
             val value = text.toDoubleOrNull()
             if (value == null || !sketchView.updateSelectedOpening(value)) toast(getString(R.string.sketch_opening_width_invalid))
@@ -544,7 +553,28 @@ class SketchActivity : AppCompatActivity() {
     }
 
     @Composable
+    private fun DoorPlacementStylePicker() {
+        var selected by remember { mutableStateOf(sketchView.placementDoorStyle) }
+        DoorStylePicker(selected) { style ->
+            selected = style
+            sketchView.updatePlacementDoorStyle(style)
+        }
+    }
+
+    @Composable
+    private fun DoorStylePicker(selected: com.example.boschlaser.shared.model.DoorStyle,
+        onSelect: (com.example.boschlaser.shared.model.DoorStyle) -> Unit) {
+        com.example.boschlaser.ui.DoorStylePicker(selected, linkedMapOf(
+            com.example.boschlaser.shared.model.DoorStyle.SINGLE to getString(R.string.sketch_door_single),
+            com.example.boschlaser.shared.model.DoorStyle.DOUBLE to getString(R.string.sketch_door_double),
+            com.example.boschlaser.shared.model.DoorStyle.SLIDING to getString(R.string.sketch_door_sliding),
+            com.example.boschlaser.shared.model.DoorStyle.OPENING to getString(R.string.sketch_door_opening),
+        ), onSelect)
+    }
+
+    @Composable
     private fun OpeningPlacementProperties(type: SketchOpeningType) {
+        if (type == SketchOpeningType.DOOR) DoorPlacementStylePicker()
         NumberInput(sketchView.placementOpeningWidth(type).roundToInt().toString(), getString(R.string.sketch_opening_width)) { text ->
             val value = text.toFloatOrNull()
             if (value == null || !sketchView.updatePlacementOpeningWidth(type, value)) {

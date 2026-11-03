@@ -31,12 +31,17 @@ fun DrawScope.drawSketchOpening(opening: Opening, wall: Wall, viewport: Viewport
         for (index in listOf(2, 3)) line(segments[index], style.wallColor, style.wallWidthPx)
         for (index in listOf(4, 5, 0, 1)) line(segments[index], style.symbolColor, style.symbolWidthPx)
     } else {
-        val swing = OpeningGeometry.doorSwing(opening, wall) ?: return
-        val hinge = screen(swing.hinge)
-        val radius = (swing.radius * viewport.scale).toFloat()
-        drawLine(style.symbolColor, hinge, screen(swing.leafEnd), strokeWidth = style.symbolWidthPx)
-        drawArc(style.symbolColor, swing.startDegrees.toFloat(), swing.sweepDegrees.toFloat(), false,
-            topLeft = hinge - Offset(radius, radius), size = Size(radius * 2, radius * 2),
-            style = Stroke(width = style.symbolWidthPx))
+        if (opening.doorStyle == com.example.boschlaser.shared.model.DoorStyle.SLIDING ||
+            opening.doorStyle == com.example.boschlaser.shared.model.DoorStyle.OPENING) {
+            OpeningGeometry.symbolSegments(opening, wall).forEach { line(it, style.symbolColor, style.symbolWidthPx) }
+        }
+        for (swing in OpeningGeometry.doorSwings(opening, wall)) {
+            val hinge = screen(swing.hinge)
+            val radius = (swing.radius * viewport.scale).toFloat()
+            drawLine(style.symbolColor, hinge, screen(swing.leafEnd), strokeWidth = style.symbolWidthPx)
+            drawArc(style.symbolColor, swing.startDegrees.toFloat(), swing.sweepDegrees.toFloat(), false,
+                topLeft = hinge - Offset(radius, radius), size = Size(radius * 2, radius * 2),
+                style = Stroke(width = style.symbolWidthPx))
+        }
     }
 }

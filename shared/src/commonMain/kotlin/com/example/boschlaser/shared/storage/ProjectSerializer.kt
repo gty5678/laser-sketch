@@ -93,6 +93,7 @@ object ProjectSerializer {
             put("id", opening.id); put("hostWallId", opening.hostWallId); put("offset", opening.offset)
             put("width", opening.width); put("type", opening.type.name)
             put("flipped", opening.flipped); put("hingeFlipped", opening.hingeFlipped)
+            if (opening.doorStyle != DoorStyle.SINGLE) put("doorStyle", opening.doorStyle.name)
         } }))
         put("columns", JsonArray(project.sketch.columns.values.map { column -> buildJsonObject {
             put("id", column.id); put("center", point(column.center.x, column.center.y))
@@ -157,9 +158,10 @@ object ProjectSerializer {
             WallAlignment.valueOf(data.string("alignment")), data.optionalDouble("measuredLength"))
     }
     private fun opening(data: JsonObject): Opening {
-        data.keys("id", "hostWallId", "offset", "width", "type", "flipped", "hingeFlipped")
+        data.keys("id", "hostWallId", "offset", "width", "type", "flipped", "hingeFlipped", "doorStyle")
         return Opening(data.string("id"), data.string("hostWallId"), data.double("offset"), data.double("width"),
-            OpeningType.valueOf(data.string("type")), data.boolean("flipped"), data.boolean("hingeFlipped"))
+            OpeningType.valueOf(data.string("type")), data.boolean("flipped"), data.boolean("hingeFlipped"),
+            if ("doorStyle" in data) DoorStyle.valueOf(data.string("doorStyle")) else DoorStyle.SINGLE)
     }
     private fun column(data: JsonObject): Column = when (data.string("type")) {
         "RECTANGLE" -> {

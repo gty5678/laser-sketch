@@ -58,6 +58,7 @@ data class PlacementSettings(
     val alignment: WallAlignment = WallAlignment.CENTER,
     val doorWidth: Double = 900.0,
     val windowWidth: Double = 1200.0,
+    val doorStyle: com.example.boschlaser.shared.model.DoorStyle = com.example.boschlaser.shared.model.DoorStyle.SINGLE,
 ) {
     init {
         require(wallThickness.isFinite() && wallThickness in 50.0..1000.0)

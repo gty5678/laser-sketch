@@ -51,7 +51,7 @@ object ProjectMigration {
             Opening(opening.string("id", "opening-$index"), hostId,
                 opening.number("position", 0.5).coerceIn(0.0, 1.0) * Geometry.length(Segment2(host.start, host.end)),
                 opening.number("width", 900.0), OpeningType.valueOf(opening.string("type", "DOOR")),
-                opening.boolean("flipped", false), opening.boolean("hingeFlipped", false))
+                opening.boolean("flipped", false), opening.boolean("hingeFlipped", false), DoorStyle.valueOf(opening.string("doorStyle", "SINGLE")))
         }) { it.id }
         val project = Project(data.manifest(targetId), SketchDocument(walls = walls, columns = columns, openings = openings))
         ProjectSerializer.encode(project) // Validate the full target before returning any migrated state.

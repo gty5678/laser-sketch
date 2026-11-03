@@ -110,6 +110,13 @@ class SketchView @JvmOverloads constructor(
     private val dragging get() = editor.state.dragging
     private var zoomGesture = false
     private val rotatingColumn get() = editor.state.selectionGesture?.target is SelectionGestureTarget.ColumnRotation
+    var placementDoorStyle = com.example.boschlaser.shared.model.DoorStyle.SINGLE
+        private set
+
+    fun updatePlacementDoorStyle(style: com.example.boschlaser.shared.model.DoorStyle) {
+        placementDoorStyle = style
+    }
+
     private var defaultDoorWidth = 900f
     private var defaultWindowWidth = 1200f
     private var currentWallThickness = 240f
@@ -451,6 +458,16 @@ class SketchView @JvmOverloads constructor(
         return true
     }
 
+    fun updateSelectedDoorStyle(style: com.example.boschlaser.shared.model.DoorStyle): Boolean {
+        val id = selectedOpeningId ?: return false
+        val command = com.example.boschlaser.shared.command.ChangeDoorStyleCommand(id, style)
+        if (command.apply(editor.renderDocument) == null) return false
+        beginEdit()
+        editor.preview(command)
+        notifySelection(); changed()
+        return true
+    }
+
     fun placementOpeningWidth(type: SketchOpeningType): Float =
         if (type == SketchOpeningType.DOOR) defaultDoorWidth else defaultWindowWidth
 
@@ -525,7 +542,7 @@ class SketchView @JvmOverloads constructor(
         SketchWallControlLine.CENTER -> WallAlignment.CENTER
         SketchWallControlLine.INNER -> WallAlignment.LEFT
         SketchWallControlLine.OUTER -> WallAlignment.RIGHT
-    }, defaultDoorWidth.toDouble(), defaultWindowWidth.toDouble())
+    }, defaultDoorWidth.toDouble(), defaultWindowWidth.toDouble(), placementDoorStyle)
 
     private fun sceneDrawingStyle(density: Density): SketchSceneStyle =
         androidSketchDrawingStyle(context, density, COLUMN_ROTATION_HANDLE_RADIUS_DP * density.density)
