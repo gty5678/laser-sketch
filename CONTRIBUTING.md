@@ -7,7 +7,7 @@
 准备以下工具：
 
 - Android Studio（建议使用当前稳定版）
-- JDK 17 或更高版本，用于运行 Gradle 9.5
+- JDK 17 或更高版本，用于运行 Gradle 9.6
 - Android SDK Platform 37 及对应 Build Tools
 - Android 12（API 31）或更高版本的模拟器/真机
 - 可选：支持 BLE 的 Bosch GLM 设备，用于端到端测距验证

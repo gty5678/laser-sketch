@@ -13,7 +13,7 @@ LaserSketch 的 Android 宿主使用 Kotlin、共享 Compose 项目列表、草�
 - 包名及 namespace：`com.example.boschlaser`
 - 最低 Android 版本：API 31（Android 12）
 - compileSdk / targetSdk：37
-- Gradle / AGP：9.5.0 / 9.3.2
+- Gradle / AGP：9.6.0 / 9.3.2
 - Gradle 运行 JDK：17 或更高版本
 - Java/Kotlin 字节码兼容目标：Java 11
 

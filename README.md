@@ -66,7 +66,7 @@ LaserSketch 是一款面向 Android 的激光测距与空间记录工具。应�
 - Kotlin
 - Kotlin Multiplatform `:shared` 核心（Android / JVM / iOS targets）
 - Android Gradle Plugin `9.3.2`
-- Gradle `9.5.0`
+- Gradle `9.6.0`
 - Android SDK：`compileSdk 37`，`targetSdk 37`
 - 最低支持：Android `12`（API 31）
 - AndroidX Core KTX、AppCompat、Material Components
@@ -110,12 +110,12 @@ LaserSketch 是一款面向 Android 的激光测距与空间记录工具。应�
 ## 环境要求
 
 - Android Studio
-- JDK 17 或更高版本（Gradle 9.5 运行要求）
-- Android SDK Platform 37
+- JDK 17 或更高版本（Gradle 9.6 运行要求）
+- Android SDK Platform 37.0 和 Android SDK Build-Tools 36.0.0
 - 一台 Android 12 或更高版本的设备或模拟器
 - 如需测距功能，需要支持 BLE 的 Bosch GLM 测距设备
 
-项目源码的 Java 编译目标为 Java 11，但 Gradle 本身使用 JDK 17 或更高版本运行。
+项目源码的 Java 编译目标为 Java 11。Gradle 启动器需要 JDK 17 或更高版本，仓库的 Gradle Daemon 配置使用 JDK 25。
 
 ## 构建与运行
 
@@ -138,7 +138,19 @@ app/build/outputs/apk/debug/app-debug.apk
 .\gradlew.bat :app:installDebug
 ```
 
-在 macOS/Linux 中使用：
+在 macOS 中，从仓库根目录运行：
+
+```bash
+./build-macos.sh
+./build-macos.sh :app:assembleRelease
+./build-macos.sh :app:installDebug
+```
+
+不带参数时构建 Debug APK。脚本优先使用已设置的 `JAVA_HOME`，否则尝试使用标准安装位置的 Android Studio 自带 JDK，再查找系统注册的 JDK（优先 JDK 25，最低 JDK 17）。未设置 SDK 环境变量时，脚本会尝试使用 macOS 的默认 SDK 目录 `~/Library/Android/sdk`。首次构建需要联网下载 Gradle 和项目依赖。
+
+在 Android Studio 中打开仓库根目录，使用项目的 Gradle Wrapper 和 Android Studio 自带的 JDK 25。通过 SDK Manager 安装上述 SDK 组件并接受许可，再同步项目。
+
+在 Linux 中使用：
 
 ```bash
 ./gradlew :app:assembleDebug
