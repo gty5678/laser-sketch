@@ -148,7 +148,7 @@ class ImageAnnotationViewDimensionInstrumentedTest {
     }
 
     @Test
-    fun angleAndAreaCallbacksFireOnlyAfterTheirThirdPoint() {
+    fun angleCreatesAtThirdPointAndAreaOnlyAfterExplicitClosure() {
         if (Looper.myLooper() == null) Looper.prepare()
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val createdModes = mutableListOf<AnnotationMode>()
@@ -175,6 +175,11 @@ class ImageAnnotationViewDimensionInstrumentedTest {
         assertEquals(1, view.snapshotDocument().annotations.size)
         assertEquals(listOf(AnnotationMode.ANGLE), createdModes)
         tap(view, 180f, 300f)
+        assertEquals(3, view.editorState().creation.areaPoints.size)
+        assertEquals(listOf(AnnotationMode.ANGLE), createdModes)
+        tap(view, 80f, 300f)
+        assertTrue(view.finishArea())
+        assertEquals(4, view.snapshotDocument().annotations.values.last().points.size)
         assertEquals(listOf(AnnotationMode.ANGLE, AnnotationMode.AREA), createdModes)
         assertTrue(view.editorState().creation.areaPoints.isEmpty())
     }

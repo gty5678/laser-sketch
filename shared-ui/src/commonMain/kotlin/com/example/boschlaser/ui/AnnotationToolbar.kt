@@ -46,5 +46,6 @@ fun AnnotationToolbar(
             IconButton(onClick = onShare, modifier = Modifier.semantics { contentDescription = shareLabel }, content = shareIcon)
             IconButton(onClick = onSave, modifier = Modifier.semantics { contentDescription = saveLabel }, content = saveIcon)
         }
+
     }
 }

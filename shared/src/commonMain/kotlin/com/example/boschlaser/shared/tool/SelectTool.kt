@@ -94,7 +94,7 @@ class SelectTool : SketchTool {
             is SelectionGestureTarget.WallEndpoint -> {
                 val wall = doc.walls[target.id] ?: return cancelMissingTarget(editor)
                 val pointOnGrid = context.gridStep?.let { editor.snapEngine.grid(point, it) } ?: point
-                editor.preview(MoveWallEndpointCommand(wall.id, target.start, pointOnGrid, true))
+                editor.preview(MoveWallEndpointCommand(wall.id, target.start, pointOnGrid, editor.detachMultiWayEndpoints))
                 val updated = editor.renderDocument.walls.getValue(wall.id)
                 magnifier = if (target.start) updated.start else updated.end
             }
@@ -104,7 +104,11 @@ class SelectTool : SketchTool {
             }
             is SelectionGestureTarget.Column -> {
                 val column = doc.columns[target.id] ?: return cancelMissingTarget(editor)
-                val snap = editor.snapEngine.columnCenter(doc, column, column.center + delta, context.columnSnapTolerance)
+                // Snapping affects presentation, never the next move's unsnapped position.
+                // Use the original center and cumulative pointer motion so small moves can escape.
+                val original = editor.document.columns[target.id] ?: return cancelMissingTarget(editor)
+                val proposed = original.center + (point - gesture.startWorld)
+                val snap = editor.snapEngine.columnCenter(doc, column, proposed, context.columnSnapTolerance)
                 val moved = when (column) { is RectColumn -> column.copy(center = snap.point); is CircularColumn -> column.copy(center = snap.point) }
                 editor.preview(UpdateColumnCommand(moved))
                 magnifier = snap.point

@@ -85,6 +85,7 @@ class SketchActivity : AppCompatActivity() {
     private var settingsGrid = ""
     private var settingsMagnifier = ""
     private var settingsAutomaticDimensions = true
+    private var detachMultiWayEndpoints by mutableStateOf(true)
     private var currentMode by mutableStateOf(SketchMode.SELECT)
     private var wallEditSession by mutableStateOf<WallEditSession?>(null)
     private val joinWallsActive get() = wallEditSession?.operation == WallEditOperation.TRIM
@@ -101,7 +102,9 @@ class SketchActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         supportActionBar?.hide()
         projectId = savedInstanceState?.getString(EXTRA_PROJECT_ID) ?: intent.getStringExtra(EXTRA_PROJECT_ID)
+        detachMultiWayEndpoints = savedInstanceState?.getBoolean("detach_multi_way_endpoints", true) ?: true
         buildInterface()
+        sketchView.setDetachMultiWayEndpoints(detachMultiWayEndpoints)
         measurementScope.launch {
             projectServices.migrationNotices.collect { pending ->
                 if (pending) { toast(getString(R.string.project_migration_notice)); projectServices.acknowledgeMigrationNotice() }
@@ -132,6 +135,7 @@ class SketchActivity : AppCompatActivity() {
 
     override fun onSaveInstanceState(outState: Bundle) {
         projectId?.let { outState.putString(EXTRA_PROJECT_ID, it) }
+        outState.putBoolean("detach_multi_way_endpoints", detachMultiWayEndpoints)
         super.onSaveInstanceState(outState)
     }
 
@@ -174,7 +178,9 @@ class SketchActivity : AppCompatActivity() {
                             getString(R.string.sketch_settings_grid_hint),
                             getString(R.string.sketch_settings_magnifier, SketchView.MIN_MAGNIFIER_ZOOM.toInt(), SketchView.MAX_MAGNIFIER_ZOOM.toInt()),
                             getString(R.string.sketch_settings_magnifier_hint), getString(R.string.sketch_property_apply),
-                            getString(R.string.sketch_settings_cancel), getString(R.string.sketch_settings_automatic_dimensions)),
+                            getString(R.string.sketch_settings_cancel), getString(R.string.sketch_settings_automatic_dimensions),
+                            getString(R.string.sketch_settings_grid_invalid, 10, 2000),
+                            getString(R.string.sketch_settings_magnifier_invalid, 1, 8)),
                         onApply = ::applyDrawingSettings, onDismiss = { settingsVisible = false })
                 }
             }
@@ -218,8 +224,8 @@ class SketchActivity : AppCompatActivity() {
                     extendIcon = { Icon(painterResource(R.drawable.ic_extend_wall), contentDescription = null) },
                     additionalTools = {
                         SketchToolButtons(ToolType.valueOf(currentMode.name), listOf(
-                            SketchToolItem(ToolType.MEASURE, getString(R.string.sketch_tool_measure)),
-                            SketchToolItem(ToolType.SPLIT, getString(R.string.sketch_tool_split))),
+                            SketchToolItem(ToolType.SPLIT, getString(R.string.sketch_tool_split)),
+                            SketchToolItem(ToolType.MEASURE, getString(R.string.sketch_tool_measure))),
                             onTool = { setMode(SketchMode.valueOf(it.name)) },
                             toolIcon = { tool -> Icon(painterResource(
                                 if (tool == ToolType.MEASURE) R.drawable.ic_measure else R.drawable.ic_split),
@@ -308,6 +314,21 @@ class SketchActivity : AppCompatActivity() {
                     toolbar = { Toolbar() }, editToolbar = { EditToolbar() },
                     actions = { PlacementActions() }, selectionActions = { SelectionTools() },
                     gridSnap = { GridSnap() },
+                    guidance = {
+                        Text(getString(when {
+                            wallEditSession?.first != null -> R.string.sketch_wall_edit_preview_hint
+                            wallEditSession != null -> R.string.sketch_extend_pick_first
+                            currentMode == SketchMode.DIMENSION -> R.string.sketch_dimension_hint
+                            currentMode == SketchMode.WALL -> R.string.sketch_wall_chain_hint
+                            else -> R.string.sketch_selection_gestures_hint
+                        }))
+                        if (propertySelection is SketchSelection.Wall && currentMode == SketchMode.SELECT && wallEditSession == null) {
+                            androidx.compose.material3.TextButton(onClick = {
+                                detachMultiWayEndpoints = !detachMultiWayEndpoints
+                                sketchView.setDetachMultiWayEndpoints(detachMultiWayEndpoints)
+                            }) { Text(getString(if (detachMultiWayEndpoints) R.string.sketch_endpoint_detach else R.string.sketch_endpoint_joined)) }
+                        }
+                    },
                     properties = { Properties() },
                     dialogs = { Settings(); FaceDistanceDialog() })
             }
@@ -600,7 +621,6 @@ class SketchActivity : AppCompatActivity() {
     }
 
     private fun applyDrawingSettings(grid: String, magnifier: String, automaticDimensions: Boolean) {
-        settingsVisible = false
         val gridValue = grid.toFloatOrNull()
         val magnifierValue = magnifier.toFloatOrNull()
         if (gridValue == null || gridValue !in SketchView.MIN_GRID_DISPLAY_STEP_MM..SketchView.MAX_GRID_DISPLAY_STEP_MM) {
@@ -610,6 +630,7 @@ class SketchActivity : AppCompatActivity() {
             toast(getString(R.string.sketch_settings_magnifier_invalid, SketchView.MIN_MAGNIFIER_ZOOM.toInt(),
                 SketchView.MAX_MAGNIFIER_ZOOM.toInt()))
         } else {
+            settingsVisible = false
             sketchView.setGridDisplayStepMm(gridValue)
             sketchView.setMagnifierZoom(magnifierValue)
             sketchView.setShowAutomaticDimensions(automaticDimensions)

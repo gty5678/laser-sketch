@@ -24,7 +24,7 @@ class DrawingSettingsDialogInstrumentedTest {
         var dismissed = 0
         compose.setContent { MaterialTheme { if (visible.value) {
             DrawingSettingsDialog("100", "2.6", true, DrawingSettingsLabels("Settings fixture", "Grid fixture", "Grid hint",
-                "Magnifier fixture", "Magnifier hint", "Apply fixture", "Cancel fixture", "Automatic dimensions fixture"),
+                "Magnifier fixture", "Magnifier hint", "Apply fixture", "Cancel fixture", "Automatic dimensions fixture", "Invalid grid", "Invalid magnifier"),
                 { grid, magnifier, automatic -> applied += Triple(grid, magnifier, automatic); visible.value = false },
                 { dismissed++; visible.value = false })
         } } }
@@ -33,7 +33,12 @@ class DrawingSettingsDialogInstrumentedTest {
         compose.onNodeWithText("Automatic dimensions fixture").assertIsOn().performClick().assertIsOff()
         compose.runOnIdle { assertEquals(emptyList<Triple<String, String, Boolean>>(), applied) }
         compose.onNodeWithText("Apply fixture").performClick()
-        compose.runOnIdle { assertEquals(listOf(Triple("250.25", "", false)), applied); visible.value = true }
+        compose.onNodeWithText("Invalid magnifier").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Grid fixture").assertTextContains("250.25")
+        compose.runOnIdle { assertEquals(0, applied.size) }
+        compose.onNodeWithContentDescription("Magnifier fixture").performTextReplacement("3")
+        compose.onNodeWithText("Apply fixture").performClick()
+        compose.runOnIdle { assertEquals(listOf(Triple("250.25", "3", false)), applied); visible.value = true }
         compose.onNodeWithContentDescription("Grid fixture").assertTextContains("100")
         compose.onNodeWithText("Automatic dimensions fixture").assertIsOn().performClick()
         compose.onNodeWithText("Cancel fixture").performClick()

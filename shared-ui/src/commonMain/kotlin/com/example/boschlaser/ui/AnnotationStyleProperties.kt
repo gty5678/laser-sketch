@@ -19,14 +19,15 @@ fun AnnotationStyleProperties(textSize: Int?, whiteBackground: Boolean, thicknes
     require(labels.sizes.size == 3 && labels.thicknesses.size == 3)
     @Composable
     fun choices(title: String, names: List<String>, selected: Int, onChoice: (Int) -> Unit) {
-        Row(Modifier.padding(horizontal = 6.dp), verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(title, style = MaterialTheme.typography.bodyMedium)
-            names.forEachIndexed { index, name ->
-                FilterChip(selected = selected == index, onClick = { onChoice(index) }, label = { Text(name) },
-                    modifier = Modifier.semantics { contentDescription = "$title $name" },
-                    colors = FilterChipDefaults.filterChipColors(selectedContainerColor = MaterialTheme.colorScheme.primary,
-                        selectedLabelColor = MaterialTheme.colorScheme.onPrimary))
+        Column(Modifier.fillMaxWidth()) {
+            Text(title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                names.forEachIndexed { index, name ->
+                    FilterChip(selected = selected == index, onClick = { onChoice(index) }, label = { Text(name) },
+                        modifier = Modifier.semantics { contentDescription = "$title $name" },
+                        colors = FilterChipDefaults.filterChipColors(selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                            selectedLabelColor = MaterialTheme.colorScheme.primary))
+                }
             }
         }
     }

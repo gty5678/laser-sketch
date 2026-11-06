@@ -8,6 +8,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -145,10 +149,10 @@ fun SketchPropertySheet(
                     }
                 }
             }
-        }, color = style.background, shadowElevation = style.elevation) {
+        }, color = style.background, shape = MaterialTheme.shapes.large, shadowElevation = style.elevation) {
         Column(Modifier.padding(start = style.horizontalPadding, end = style.horizontalPadding,
-            top = style.topPadding, bottom = style.bottomPadding)) {
-            Text(title, modifier = Modifier.fillMaxWidth(), style = TextStyle(color = style.titleColor, fontSize = style.titleSize))
+            top = style.topPadding, bottom = style.bottomPadding), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(title, modifier = Modifier.fillMaxWidth(), style = TextStyle(color = style.titleColor, fontSize = style.titleSize, fontWeight = FontWeight.SemiBold))
             content()
         }
     }

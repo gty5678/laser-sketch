@@ -45,6 +45,7 @@ fun SketchScreen(
     gridSnap: @Composable () -> Unit,
     properties: @Composable () -> Unit,
     dialogs: @Composable () -> Unit,
+    guidance: @Composable () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Box(modifier.fillMaxSize()) {
@@ -54,6 +55,7 @@ fun SketchScreen(
             Column(Modifier.padding(top = topInset)) {
                 toolbar()
                 Box(Modifier.fillMaxWidth().height(style.editToolbarHeight)) { editToolbar() }
+                guidance()
             }
         }
         Layout(modifier = Modifier.fillMaxSize().padding(bottom = bottomInset + style.bottomMargin),

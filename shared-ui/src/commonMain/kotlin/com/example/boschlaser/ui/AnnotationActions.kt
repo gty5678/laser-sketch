@@ -1,10 +1,7 @@
 package com.example.boschlaser.ui
 
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.MaterialTheme
@@ -15,11 +12,11 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 
-/** The finish button stays centered; deletion keeps its original 64 dp lower position. */
+/** Both actions use the same centered position in their respective modes. */
 @Composable
 fun AnnotationActions(showFinish: Boolean, showDelete: Boolean, finishLabel: String, deleteLabel: String,
     onFinish: () -> Unit, onDelete: () -> Unit, finishIcon: @Composable () -> Unit, deleteIcon: @Composable () -> Unit) {
-    Box(Modifier.width(52.dp).height(180.dp)) {
+    Box(Modifier.size(52.dp)) {
         if (showFinish) {
             FloatingActionButton(onClick = onFinish, shape = CircleShape,
                 modifier = Modifier.align(Alignment.Center).size(52.dp).semantics { contentDescription = finishLabel },
@@ -28,7 +25,7 @@ fun AnnotationActions(showFinish: Boolean, showDelete: Boolean, finishLabel: Str
         }
         if (showDelete) {
             FloatingActionButton(onClick = onDelete, shape = CircleShape,
-                modifier = Modifier.align(Alignment.Center).offset(y = 64.dp).size(52.dp)
+                modifier = Modifier.align(Alignment.Center).size(52.dp)
                     .semantics { contentDescription = deleteLabel },
                 containerColor = MaterialTheme.colorScheme.error, contentColor = MaterialTheme.colorScheme.onError,
                 content = deleteIcon)

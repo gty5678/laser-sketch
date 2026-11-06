@@ -16,13 +16,15 @@ import android.os.Bundle
 import android.provider.MediaStore
 import android.view.inputmethod.InputMethodManager
 import android.widget.FrameLayout
-import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.lightColorScheme
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.viewinterop.AndroidView
@@ -75,7 +77,7 @@ class AnnotationActivity : AppCompatActivity() {
     }
 
     private lateinit var annotationView: ImageAnnotationView
-    private lateinit var hintText: TextView
+    private var annotationHint by mutableStateOf("")
     internal val pageState by lazy { AnnotationPageState(quantityUnits(false), quantityUnits(true)) }
     private var cameraUri: Uri? = null
     private var currentImageUri: Uri? = null
@@ -101,7 +103,7 @@ class AnnotationActivity : AppCompatActivity() {
             }
             loadImage(uri)
         } else {
-            hintText.text = getString(R.string.annotation_no_image_selected)
+            annotationHint = getString(R.string.annotation_no_image_selected)
         }
     }
 
@@ -154,6 +156,7 @@ class AnnotationActivity : AppCompatActivity() {
 
     override fun onPause() {
         if (::annotationView.isInitialized) annotationView.cancelGesture()
+        pageState.cancelMeasurementWait()
         saveProject()
         super.onPause()
     }
@@ -279,15 +282,11 @@ class AnnotationActivity : AppCompatActivity() {
             }
         }
 
-        hintText = TextView(this).apply {
-            text = getString(R.string.annotation_initial_hint)
-            textSize = 13f
-            setPadding(dp(10), dp(5), dp(10), dp(7))
-        }
+        annotationHint = getString(R.string.annotation_initial_hint)
 
         annotationView = ImageAnnotationView(this).apply {
             onMessage = { notice ->
-                hintText.text = notice.text
+                annotationHint = notice.text
                 if (notice.showToast) toast(notice.text)
             }
             onSelectionChanged = { selection -> showSelection(selection) }
@@ -304,7 +303,8 @@ class AnnotationActivity : AppCompatActivity() {
                 AnnotationActions(pageState.mode != AnnotationMode.MOVE,
                     pageState.mode == AnnotationMode.MOVE && (pageState.properties.selection != null),
                     getString(R.string.annotation_finish), getString(R.string.annotation_delete_selected),
-                    onFinish = { setEditorMode(AnnotationMode.MOVE) },
+                    onFinish = { if (pageState.mode == AnnotationMode.AREA) annotationView.finishArea()
+                        else setEditorMode(AnnotationMode.MOVE, preserveSelection = true) },
                     onDelete = { if (!annotationView.deleteSelected()) toast(getString(R.string.annotation_selection_required)) },
                     finishIcon = { Icon(painterResource(R.drawable.ic_confirm), null) },
                     deleteIcon = { Icon(painterResource(R.drawable.ic_delete), null) })
@@ -331,7 +331,7 @@ class AnnotationActivity : AppCompatActivity() {
         }
 
         val root = FrameLayout(this).apply {
-            setPadding(0, dp(8), 0, dp(10))
+            setPadding(0, 0, 0, dp(10))
             setBackgroundColor(Color.WHITE)
         }
         root.addView(ComposeView(this).apply {
@@ -340,7 +340,10 @@ class AnnotationActivity : AppCompatActivity() {
                 AnnotationScreen(colorResource(R.color.white),
                     dimensionResource(R.dimen.annotation_actions_end_margin),
                     dimensionResource(R.dimen.annotation_properties_margin),
-                    toolbar = { ImageToolbar() }, placementOptions = { PlacementModeOptions() },
+                    toolbar = { ImageToolbar() }, placementOptions = { if (pageState.mode != AnnotationMode.MOVE) PlacementModeOptions() },
+                    status = { androidx.compose.material3.Text(if (pageState.waitingForMeasurement) getString(R.string.annotation_waiting_measurement) else annotationHint,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                        style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     canvas = { AndroidView(factory = { annotationView }, modifier = Modifier.fillMaxSize()) },
                     actions = { ImageActionsOverlay() },
                     properties = {
@@ -349,9 +352,20 @@ class AnnotationActivity : AppCompatActivity() {
                             QuantityProperties(false)
                             LabelProperties()
                             QuantityProperties(true)
+                            if (pageState.properties.dimension != null) {
+                                androidx.compose.material3.TextButton(onClick = { pageState.toggleMeasurementWait() }) {
+                                    androidx.compose.material3.Text(getString(if (pageState.waitingForMeasurement)
+                                        R.string.annotation_waiting_measurement else R.string.annotation_wait_measurement))
+                                }
+                            }
                             RecentValues()
                             Colors()
                             StyleProperties()
+                            if (pageState.properties.areaMark != null) {
+                                androidx.compose.material3.TextButton(onClick = { annotationView.insertSelectedAreaPoint() }) {
+                                    androidx.compose.material3.Text(getString(R.string.annotation_insert_area_point))
+                                }
+                            }
                             DeleteAreaPoint()
                         }
                     })
@@ -391,14 +405,15 @@ class AnnotationActivity : AppCompatActivity() {
                 getString(if (area) R.string.annotation_area_input else R.string.annotation_distance_input),
                 getString(if (area) R.string.annotation_area_unit else R.string.annotation_distance_unit), properties.dismissFocus,
                 onValue = { pageState.updateQuantity(area, it, unit, commit) },
-                onUnit = { selected -> if (value != null) pageState.updateQuantity(area, value, selected, commit) })
+                onUnit = { selected -> if (!pageState.convertUnit(area, selected, commit)) toast(getString(R.string.annotation_unit_invalid)) })
         }
     }
 
     private fun setEditorMode(mode: AnnotationMode, preserveSelection: Boolean = false) {
+        pageState.cancelMeasurementWait()
         pageState.mode = mode
         annotationView.setMode(mode, preserveSelection)
-        hintText.text = when (mode) {
+        annotationHint = when (mode) {
             AnnotationMode.MOVE -> getString(R.string.annotation_move_mode_hint)
             AnnotationMode.DIMENSION -> getString(R.string.annotation_dimension_mode_hint)
             AnnotationMode.TEXT -> getString(R.string.annotation_text_mode_hint)
@@ -410,12 +425,12 @@ class AnnotationActivity : AppCompatActivity() {
     private fun handleAnnotationCreated(mode: AnnotationMode) {
         if (!pageState.completePlacement(mode)) return
         setEditorMode(AnnotationMode.MOVE, preserveSelection = true)
-        hintText.text = getString(R.string.annotation_single_placement_completed_hint)
+        annotationHint = getString(R.string.annotation_single_placement_completed_hint)
     }
 
     private fun selectMarkColor(color: Int) {
         if (pageState.updateColor(color, annotationView::updateSelectedColor)) {
-            hintText.text = getString(R.string.annotation_color_changed)
+            annotationHint = getString(R.string.annotation_color_changed)
         }
     }
 
@@ -443,7 +458,7 @@ class AnnotationActivity : AppCompatActivity() {
     private fun handleMeasurementSnapshot(records: List<MeasurementRecord>) {
         val value = pageState.receiveMeasurements(records)
         annotationView.defaultDimensionLabel = pageState.defaultDimensionLabel
-        if (value != null && pageState.properties.dimension != null) applyMeasurementToSelected(value, automatic = true)
+        if (value != null && pageState.consumeMeasurementWait()) applyMeasurementToSelected(value, automatic = true)
     }
 
     private fun applyRecentMeasurement(index: Int) {
@@ -459,10 +474,10 @@ class AnnotationActivity : AppCompatActivity() {
         val text = formatAnnotationMillimeters(value)
         if (!pageState.applyMeasurement(value, annotationView::updateSelectedLabel)) return
         if (automatic) {
-            hintText.text = getString(R.string.annotation_latest_measurement_applied, text)
+            annotationHint = getString(R.string.annotation_latest_measurement_applied, text)
             toast(getString(R.string.annotation_dimension_updated, text))
         } else {
-            hintText.text = getString(R.string.annotation_measurement_applied, text)
+            annotationHint = getString(R.string.annotation_measurement_applied, text)
         }
     }
 
@@ -479,7 +494,7 @@ class AnnotationActivity : AppCompatActivity() {
             toast(getString(R.string.annotation_photo_required))
             return
         }
-        hintText.text = getString(R.string.annotation_share_preparing)
+        annotationHint = getString(R.string.annotation_share_preparing)
         Thread {
             val sharedUri = runCatching {
                 val directory = File(cacheDir, "shared").apply { mkdirs() }
@@ -501,13 +516,13 @@ class AnnotationActivity : AppCompatActivity() {
                     }
                     try {
                         startActivity(shareIntent)
-                        hintText.text = getString(R.string.annotation_share_select_wechat)
+                        annotationHint = getString(R.string.annotation_share_select_wechat)
                     } catch (_: ActivityNotFoundException) {
-                        hintText.text = getString(R.string.annotation_share_wechat_missing)
+                        annotationHint = getString(R.string.annotation_share_wechat_missing)
                         toast(getString(R.string.annotation_share_install_wechat))
                     }
                 }.onFailure {
-                    hintText.text = getString(R.string.annotation_share_generation_error, it.message)
+                    annotationHint = getString(R.string.annotation_share_generation_error, it.message)
                     toast(getString(R.string.annotation_share_generation_failed))
                 }
             }
@@ -519,7 +534,7 @@ class AnnotationActivity : AppCompatActivity() {
             toast(getString(R.string.annotation_photo_required))
             return
         }
-        hintText.text = getString(R.string.annotation_gallery_saving)
+        annotationHint = getString(R.string.annotation_gallery_saving)
         Thread {
             var imageUri: Uri? = null
             val saved = runCatching {
@@ -542,10 +557,10 @@ class AnnotationActivity : AppCompatActivity() {
             if (saved.isFailure) imageUri?.let { contentResolver.delete(it, null, null) }
             runOnUiThread {
                 saved.onSuccess {
-                    hintText.text = getString(R.string.annotation_gallery_saved_hint)
+                    annotationHint = getString(R.string.annotation_gallery_saved_hint)
                     toast(getString(R.string.annotation_gallery_saved))
                 }.onFailure {
-                    hintText.text = getString(R.string.annotation_gallery_error, it.message)
+                    annotationHint = getString(R.string.annotation_gallery_error, it.message)
                     toast(getString(R.string.annotation_gallery_failed))
                 }
             }
@@ -560,7 +575,7 @@ class AnnotationActivity : AppCompatActivity() {
     }
 
     private fun openGallery() {
-        hintText.text = getString(R.string.annotation_choose_photo_hint)
+        annotationHint = getString(R.string.annotation_choose_photo_hint)
         galleryLauncher.launch(
             Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                 addCategory(Intent.CATEGORY_OPENABLE)
@@ -582,7 +597,7 @@ class AnnotationActivity : AppCompatActivity() {
         projectLoaded = false
         annotationView.isEnabled = false
         showSelection(null)
-        hintText.text = getString(R.string.project_photo_loading)
+        annotationHint = getString(R.string.project_photo_loading)
         imageJob = measurementScope.launch {
             var bitmap: Bitmap? = null
             var transferred = false
@@ -612,7 +627,7 @@ class AnnotationActivity : AppCompatActivity() {
                 projectLoaded = true
                 loadingNewImage = false
                 annotationView.isEnabled = true
-                hintText.text = getString(R.string.project_photo_created)
+                annotationHint = getString(R.string.project_photo_created)
             } catch (failure: CancellationException) { throw failure }
             catch (_: Exception) {
                 loadingNewImage = false
@@ -621,7 +636,7 @@ class AnnotationActivity : AppCompatActivity() {
                 annotationView.isEnabled = true
                 currentImageUri = null
                 projectServices.acknowledgeError()
-                hintText.text = getString(R.string.project_photo_read_failed)
+                annotationHint = getString(R.string.project_photo_read_failed)
                 toast(getString(R.string.project_photo_read_failed))
             } finally { if (!transferred) bitmap?.recycle() }
         }
@@ -632,7 +647,7 @@ class AnnotationActivity : AppCompatActivity() {
         loadingNewImage = false
         projectLoaded = false
         annotationView.isEnabled = false
-        hintText.text = getString(R.string.project_photo_opening)
+        annotationHint = getString(R.string.project_photo_opening)
         imageJob = measurementScope.launch {
             var bitmap: Bitmap? = null
             var transferred = false
@@ -646,7 +661,7 @@ class AnnotationActivity : AppCompatActivity() {
                 transferred = true
                 projectLoaded = true
                 annotationView.isEnabled = true
-                hintText.text = getString(R.string.project_photo_opened, photo.project.manifest.name)
+                annotationHint = getString(R.string.project_photo_opened, photo.project.manifest.name)
             } catch (failure: CancellationException) { throw failure }
             catch (_: Exception) { projectServices.acknowledgeError(); toast(getString(R.string.project_open_failed)); finish() }
             finally { if (!transferred) bitmap?.recycle() }
@@ -659,7 +674,7 @@ class AnnotationActivity : AppCompatActivity() {
         ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
             // AppCompat already accounts for the ActionBar height.
-            view.setPadding(0, bars.top + dp(8), 0, max(dp(10), bars.bottom))
+            view.setPadding(0, bars.top, 0, max(dp(10), bars.bottom))
             insets
         }
         ViewCompat.requestApplyInsets(root)

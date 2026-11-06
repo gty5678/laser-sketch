@@ -12,8 +12,8 @@
     <string name="column_rotation_invalid">角度请输入有效数字</string>
     <string name="annotation_move_mode_hint">移动模式：点按选中标注，拖动主体移动；拖动控制点调整形状</string>
     <string name="annotation_angle_mode_hint">角度模式：依次点按三个位置创建角度标注</string>
-    <string name="annotation_area_mode_hint">面积模式：依次点按三个位置创建并自动闭合</string>
-    <string name="annotation_area_created_hint">面积已自动闭合；切换到移动模式可调整或添加控制点</string>
+    <string name="annotation_area_mode_hint">面积模式：连续点选顶点，点击完成闭合</string>
+    <string name="annotation_area_created_hint">面积已闭合；切换到移动模式可调整或添加控制点</string>
     <string name="annotation_area_point_added">已在边线中间添加控制点</string>
     <string name="annotation_area_point_add_again">再次点击同一条边，在边线正中间添加控制点</string>
     <string name="annotation_finish">完成标注</string>
@@ -259,8 +259,8 @@
     <string name="sketch_project_missing">草稿文件不存在</string>
     <string name="home_photos">图片标注文件</string>
     <string name="home_sketches">平面草稿</string>
-    <string name="home_add_photo">添加图片尺寸标注</string>
-    <string name="home_add_sketch">添加平面草稿</string>
+    <string name="home_add_photo">拍照标注</string>
+    <string name="home_add_sketch">画草图</string>
     <string name="home_add_symbol">+</string>
     <string name="sketch_tool_dimension">尺寸标注</string>
     <string name="sketch_dimension_hint">依次选两条平行参考线，也可选择同一面墙的两端，再放置尺寸线；墙长修改时先选端固定、后选端移动</string>
@@ -285,4 +285,17 @@
     <string name="sketch_door_sliding">推拉门</string>
     <string name="sketch_door_opening">门洞</string>
     <string name="sketch_openings_overlap_warning">门窗洞口有重叠，请检查位置；本次操作已保留</string>
+    <string name="annotation_wait_measurement">接收下一次测量</string>
+    <string name="annotation_waiting_measurement">等待测量填入此尺寸 · 点击取消</string>
+    <string name="annotation_unit_invalid">请先输入有效数字，再切换单位</string>
+    <string name="annotation_area_pending">已放置 %1$d 个点，继续点选；至少三个点后点击完成闭合</string>
+    <string name="annotation_area_minimum">至少放置三个点才能闭合面积</string>
+    <string name="annotation_insert_area_point">在所选顶点的下一条边添加顶点</string>
+    <string name="sketch_wall_edit_preview_hint">按住第二面墙预览，虚线为移除段；移动选择保留侧，抬手应用</string>
+    <string name="sketch_wall_chain_hint">抬手确定端点；可连续画墙，完成退出</string>
+    <string name="sketch_selection_gestures_hint">拖动墙身沿法线移动；双指缩放，空白处拖动平移</string>
+    <string name="sketch_endpoint_detach">三墙以上节点：拆开此端 · 点击切换</string>
+    <string name="sketch_endpoint_joined">三墙以上节点：保持连接移动 · 点击切换</string>
+    <string name="sketch_fixed_reference">固定</string>
+    <string name="sketch_moving_reference">移动</string>
 </resources>

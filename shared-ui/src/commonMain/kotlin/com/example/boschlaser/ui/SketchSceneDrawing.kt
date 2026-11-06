@@ -33,6 +33,8 @@ data class SketchSceneStyle(
     val invalidDimensionLabel: String = "",
     val dimension: DimensionDrawingStyle = DimensionDrawingStyle(),
     val formatDimensionValue: ((Double) -> String)? = null,
+    val fixedReferenceLabel: String = "",
+    val movingReferenceLabel: String = "",
 )
 
 data class SketchSceneOptions(
@@ -60,6 +62,13 @@ internal fun DrawScope.drawSketchScene(document: SketchDocument, state: EditorSt
     drawSketchWallNetwork(document, viewport, style.wall, geometryCache)
     (selection as? Selection.Wall)?.let { document.walls[it.id] }?.let {
         drawSketchWallControls(it, viewport, true, style.selectedControls)
+        val selectedLine = com.example.boschlaser.shared.geometry.WallGeometry.referenceLine(it)
+        document.walls.values.filter { other -> other.id != it.id && (
+            Geometry.distanceToSegment(other.start, selectedLine) < .1 ||
+            Geometry.distanceToSegment(other.end, selectedLine) < .1 ||
+            Geometry.distanceToSegment(it.start, com.example.boschlaser.shared.geometry.WallGeometry.referenceLine(other)) < .1 ||
+            Geometry.distanceToSegment(it.end, com.example.boschlaser.shared.geometry.WallGeometry.referenceLine(other)) < .1)
+        }.forEach { connected -> drawSketchWallControls(connected, viewport, false, style.controls) }
     }
     document.columns.values.forEach {
         drawSketchColumn(it, viewport, selection == Selection.Column(it.id),
@@ -79,6 +88,13 @@ internal fun DrawScope.drawSketchScene(document: SketchDocument, state: EditorSt
             style.formatDimensionValue ?: formatWallLength, editable)
     }
     if (!options.showGrid) return
+    state.wallEditRemovedParts.forEach { removed ->
+        val start = viewport.worldToScreen(removed.start)
+        val end = viewport.worldToScreen(removed.end)
+        drawLine(style.selectedControls.line, Offset(start.x.toFloat(), start.y.toFloat()),
+            Offset(end.x.toFloat(), end.y.toFloat()), style.selectedControls.widthPx,
+            pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(8f, 8f)))
+    }
     if (state.tool == ToolType.DIMENSION) {
         // Expose otherwise invisible center axes only while choosing references.
         WallDimensionGeometry.references(document).forEach { reference ->
@@ -100,12 +116,14 @@ internal fun DrawScope.drawSketchScene(document: SketchDocument, state: EditorSt
         ?.let { listOf(it.first, it.second) }
         ?: (state.preview as? SketchPreview.Dimension)?.dimension?.let { listOf(it.first, it.second) }
         ?: listOfNotNull(state.dimensionFirst)
-    dimensionReferences.forEach { reference ->
+    dimensionReferences.forEachIndexed { index, reference ->
         WallDimensionGeometry.face(document, reference)?.let { edge ->
             val start = viewport.worldToScreen(edge.start)
             val end = viewport.worldToScreen(edge.end)
             drawLine(style.selectedControls.line, Offset(start.x.toFloat(), start.y.toFloat()),
                 Offset(end.x.toFloat(), end.y.toFloat()), style.selectedControls.widthPx * 2)
+            drawSketchWallLabel(WallLengthLabelLayout((start + end) * .5, 0.0),
+                if (index == 0) style.fixedReferenceLabel else style.movingReferenceLabel, measurer, style.label)
         }
     }
     if (state.tool == ToolType.WALL || selection is Selection.Wall) {

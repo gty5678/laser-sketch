@@ -545,7 +545,9 @@ class SketchView @JvmOverloads constructor(
     }, defaultDoorWidth.toDouble(), defaultWindowWidth.toDouble(), placementDoorStyle)
 
     private fun sceneDrawingStyle(density: Density): SketchSceneStyle =
-        androidSketchDrawingStyle(context, density, COLUMN_ROTATION_HANDLE_RADIUS_DP * density.density)
+        androidSketchDrawingStyle(context, density, COLUMN_ROTATION_HANDLE_RADIUS_DP * density.density).copy(
+            fixedReferenceLabel = context.getString(R.string.sketch_fixed_reference),
+            movingReferenceLabel = context.getString(R.string.sketch_moving_reference))
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (!isEnabled) return false
@@ -587,12 +589,25 @@ class SketchView @JvmOverloads constructor(
         return true
     }
 
+    fun setDetachMultiWayEndpoints(detach: Boolean) { editor.detachMultiWayEndpoints = detach }
+
     private fun handleWallPick(event: MotionEvent) {
-        if (event.actionMasked != MotionEvent.ACTION_UP) return
         val point = Viewport(scale.toDouble(), Vec2(offsetX.toDouble(), offsetY.toDouble()))
             .screenToWorld(Vec2(event.x.toDouble(), event.y.toDouble()))
-        val update = editor.pickWallEdit(point, 20.0 / scale.toDouble()) ?: return
+        if (event.actionMasked == MotionEvent.ACTION_CANCEL) {
+            editor.cancelEdit()
+            requestRender()
+            return
+        }
+        if (event.actionMasked == MotionEvent.ACTION_DOWN || event.actionMasked == MotionEvent.ACTION_MOVE) {
+            editor.previewWallEdit(point, 20.0 / scale.toDouble())
+            requestRender()
+            return
+        }
+        if (event.actionMasked != MotionEvent.ACTION_UP) return
+        val update = editor.pickWallEdit(point, 20.0 / scale.toDouble())
         requestRender()
+        if (update == null) return
         notifySelection()
         onWallEditUpdated?.invoke(update)
         if (update.documentChanged) onStateChanged?.invoke()

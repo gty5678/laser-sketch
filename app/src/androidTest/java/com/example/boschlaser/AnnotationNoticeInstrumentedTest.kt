@@ -13,7 +13,7 @@ import org.junit.runner.RunWith
 class AnnotationNoticeInstrumentedTest {
     @get:org.junit.Rule val foregroundHost: org.junit.rules.TestRule = ForegroundTestHostRule()
 
-    @Test fun creationMessagesCarryExplicitToastPolicyAndKeepOriginalPromptTiming() {
+    @Test fun creationMessagesCarryExplicitToastPolicyAndAreaPointCounts() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         instrumentation.runOnMainSync {
             val context = instrumentation.targetContext
@@ -31,10 +31,9 @@ class AnnotationNoticeInstrumentedTest {
                 }
                 view.setMode(AnnotationMode.AREA)
                 for (point in listOf(PhotoPoint(.2, .2), PhotoPoint(.8, .2), PhotoPoint(.8, .8))) tap(point)
-                assertEquals(listOf(true, false, false), notices.map { it.showToast })
-                assertEquals(listOf(context.getString(R.string.annotation_area_first_point_hint),
-                    context.getString(R.string.annotation_area_second_point_hint),
-                    context.getString(R.string.annotation_area_created_hint)), notices.map { it.text })
+                assertEquals(listOf(false, false, false), notices.map { it.showToast })
+                assertEquals((1..3).map { context.getString(R.string.annotation_area_pending, it) }, notices.map { it.text })
+                assertTrue(view.finishArea())
                 notices.clear()
                 view.setMode(AnnotationMode.ANGLE)
                 for (point in listOf(PhotoPoint(.2, .2), PhotoPoint(.5, .5), PhotoPoint(.8, .2))) tap(point)

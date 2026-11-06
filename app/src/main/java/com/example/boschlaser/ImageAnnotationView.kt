@@ -254,6 +254,7 @@ class ImageAnnotationView @JvmOverloads constructor(
     fun undo(): Boolean {
         if (!editor.undo()) return false
         clearSelection()
+        notifySelectionChanged()
         requestRender()
         return true
     }
@@ -270,6 +271,28 @@ class ImageAnnotationView @JvmOverloads constructor(
         clearPreview()
         notifySelectionChanged()
         notifyMessage(context.getString(R.string.annotation_deleted_hint))
+        requestRender()
+        return true
+    }
+
+    fun finishArea(): Boolean {
+        if (!editor.finishArea(UUID.randomUUID().toString(), context.getColor(R.color.annotation_color_red))) {
+            notifyMessage(context.getString(R.string.annotation_area_minimum), showToast = true)
+            return false
+        }
+        notifySelectionChanged()
+        requestRender()
+        notifyMessage(context.getString(R.string.annotation_area_created_hint))
+        onAnnotationCreated?.invoke(AnnotationMode.AREA)
+        return true
+    }
+    fun insertSelectedAreaPoint(): Boolean {
+        val target = editor.state.selection ?: return false
+        val area = editor.renderDocument.annotations[target.annotationId] as? AreaAnnotation ?: return false
+        val edge = target.pointIndex ?: 0
+        if (!edit(InsertAreaMidpointCommand(area.id, edge))) return false
+        editor.select(AnnotationSelectionTarget(area.id, edge + 1))
+        notifySelectionChanged()
         requestRender()
         return true
     }
@@ -568,16 +591,9 @@ class ImageAnnotationView @JvmOverloads constructor(
                 return true
             }
             MotionEvent.ACTION_UP -> {
-                val result = editor.placeAreaPoint(normalizedPhotoPoint(event.x, event.y),
-                    UUID.randomUUID().toString(), context.getColor(R.color.annotation_color_red))
-                when (result) {
-                    is AnnotationPlacementResult.Pending -> notifyMessage(if (result.pointCount == 1)
-                        context.getString(R.string.annotation_area_first_point_hint) else context.getString(R.string.annotation_area_second_point_hint), showToast = result.pointCount == 1)
-                    is AnnotationPlacementResult.Created -> notifyMessage(context.getString(R.string.annotation_area_created_hint))
-                    AnnotationPlacementResult.Rejected -> Unit
-                }
+                editor.appendAreaPoint(normalizedPhotoPoint(event.x, event.y))
+                notifyMessage(context.getString(R.string.annotation_area_pending, editor.state.creation.areaPoints.size))
                 notifySelectionChanged()
-                if (result is AnnotationPlacementResult.Created) onAnnotationCreated?.invoke(AnnotationMode.AREA)
                 requestRender()
                 return true
             }

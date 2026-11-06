@@ -8,6 +8,27 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AnnotationPageStateTest {
+    @Test fun measurementReceptionRequiresExplicitOneShotWaitAndSelectionChangesCancelIt() {
+        val state = state()
+        state.showSelection(dimension)
+        assertFalse(state.consumeMeasurementWait())
+        state.toggleMeasurementWait()
+        assertTrue(state.waitingForMeasurement)
+        assertTrue(state.consumeMeasurementWait())
+        assertFalse(state.consumeMeasurementWait())
+        state.toggleMeasurementWait()
+        state.showSelection(text)
+        assertFalse(state.consumeMeasurementWait())
+    }
+    @Test fun unitSwitchConvertsAndRejectedSwitchKeepsTheOriginalDraft() {
+        val state = state()
+        state.showSelection(dimension)
+        assertTrue(state.convertUnit(false, 1) { it == "1.2 m" })
+        assertEquals("1.2", state.properties.distance?.text)
+        assertFalse(state.convertUnit(false, 0) { false })
+        assertEquals("1.2", state.properties.distance?.text)
+        assertEquals(1, state.properties.distanceUnit)
+    }
     private fun state() = AnnotationPageState(listOf("mm", "m", "cm"), listOf("m²", "cm²", "mm²"))
     private val dimension = AnnotationSelection.Dimension(DimensionMark(.1f, .2f, .8f, .2f, "1200 mm", -1, 1))
     private val text = AnnotationSelection.Text(TextMark(.4f, .4f, "Original", -1, 1, true))

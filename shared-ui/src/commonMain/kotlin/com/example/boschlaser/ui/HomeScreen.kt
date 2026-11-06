@@ -47,7 +47,7 @@ fun HomeScreen(
     Box(modifier.fillMaxSize().systemBarsPadding()) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())
             .padding(start = 16.dp, top = 8.dp, end = 16.dp, bottom = 104.dp)) {
-            Button(onClick = onImport, modifier = Modifier.fillMaxWidth()) { Text(labels.importProject) }
+            TextButton(onClick = onImport, modifier = Modifier.align(Alignment.End)) { Text(labels.importProject) }
             Text(labels.photos, Modifier.padding(top = 18.dp, bottom = 6.dp), style = MaterialTheme.typography.titleLarge)
             photos()
             Text(labels.sketches, Modifier.padding(top = 18.dp, bottom = 6.dp), style = MaterialTheme.typography.titleLarge)
@@ -56,16 +56,16 @@ fun HomeScreen(
         }
         if (showDevice) Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth()
             .padding(start = 16.dp, end = 16.dp, bottom = 96.dp)) { device() }
-        Row(Modifier.align(Alignment.BottomCenter).padding(bottom = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            FloatingActionButton(onClick = onAddSketch, modifier = Modifier.size(64.dp)
+        Row(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(start = 12.dp, end = 88.dp, bottom = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ExtendedFloatingActionButton(onClick = onAddSketch, modifier = Modifier.weight(1f)
                 .semantics { contentDescription = labels.addSketch }, shape = CircleShape,
                 containerColor = style.sketchAction, contentColor = style.actionContent) {
-                Text(labels.addSymbol, style = MaterialTheme.typography.headlineLarge)
+                Text(labels.addSketch, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
             }
-            FloatingActionButton(onClick = onAddPhoto, modifier = Modifier.size(64.dp)
+            ExtendedFloatingActionButton(onClick = onAddPhoto, modifier = Modifier.weight(1f)
                 .semantics { contentDescription = labels.addPhoto }, shape = CircleShape,
                 containerColor = style.photoAction, contentColor = style.actionContent) {
-                Text(labels.addSymbol, style = MaterialTheme.typography.headlineLarge)
+                Text(labels.addPhoto, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
             }
         }
         FloatingActionButton(onClick = onToggleDevice, modifier = Modifier.align(Alignment.BottomEnd)

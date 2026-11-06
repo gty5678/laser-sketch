@@ -25,10 +25,10 @@
     <color name="annotation_empty_hint_text">#444444</color>
     <color name="annotation_label_background">#E1FFFFFF</color>
     <color name="annotation_magnifier_background">#202225</color>
-    <color name="annotation_properties_background">#F5FFFFFF</color>
+    <color name="annotation_properties_background">#FFFFFFFF</color>
     <color name="annotation_properties_handle">#AAAEB2</color>
     <color name="sketch_toolbar_background">#FAFFFFFF</color>
-    <color name="sketch_properties_background">#F8FFFFFF</color>
+    <color name="sketch_properties_background">#FFFFFFFF</color>
     <color name="sketch_properties_title">#191919</color>
     <color name="sketch_wall_fill">#F5F5F2</color>
     <color name="sketch_wall_outline">#1C1F20</color>

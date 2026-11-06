@@ -1,10 +1,14 @@
 package com.example.boschlaser.ui
 
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.ui.unit.dp
+
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
@@ -20,14 +24,14 @@ fun AnnotationLabelProperties(text: TextFieldValue?, angle: TextFieldValue?, tex
     degree: String, dismissFocusSignal: Int, onText: (TextFieldValue) -> Unit, onAngle: (TextFieldValue) -> Unit) {
     val focus = LocalFocusManager.current
     LaunchedEffect(dismissFocusSignal) { focus.clearFocus(force = true) }
-    Column {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (text != null) {
-            OutlinedTextField(value = text, onValueChange = onText, singleLine = true,
+            OutlinedTextField(value = text, onValueChange = onText, singleLine = true, shape = MaterialTheme.shapes.medium,
                 modifier = Modifier.fillMaxWidth().semantics { contentDescription = textHint },
                 placeholder = { Text(textHint) }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text))
         }
         if (angle != null) {
-            OutlinedTextField(value = angle, onValueChange = onAngle, singleLine = true,
+            OutlinedTextField(value = angle, onValueChange = onAngle, singleLine = true, shape = MaterialTheme.shapes.medium,
                 modifier = Modifier.fillMaxWidth().semantics { contentDescription = angleHint },
                 placeholder = { Text(angleHint) }, suffix = { Text(degree) },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))

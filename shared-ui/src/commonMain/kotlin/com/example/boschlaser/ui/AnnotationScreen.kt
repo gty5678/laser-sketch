@@ -23,11 +23,13 @@ fun AnnotationScreen(
     canvas: @Composable () -> Unit,
     actions: @Composable () -> Unit,
     properties: @Composable () -> Unit,
+    status: @Composable () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Column(modifier.fillMaxSize().background(background)) {
         toolbar()
         placementOptions()
+        status()
         Box(Modifier.fillMaxWidth().weight(1f)) {
             Box(Modifier.fillMaxSize()) { canvas() }
             Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(propertyMargin)) { properties() }

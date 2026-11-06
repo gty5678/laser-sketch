@@ -7,6 +7,27 @@ import com.example.boschlaser.shared.model.*
 import kotlin.test.*
 
 class WallEditSessionTest {
+    @Test fun secondPickPreviewDoesNotCommitAndCancellationRestoresTheOriginal() {
+        val original = document(horizontal, vertical)
+        val editor = SketchEditor(original)
+        editor.startWallEdit(WallEditOperation.TRIM)
+        editor.pickWallEdit(horizontal.id, Vec2(1900.0, 0.0))
+        assertTrue(editor.previewWallEdit(Vec2(1000.0, -500.0), 20.0))
+        assertNotEquals(original, editor.renderDocument)
+        assertEquals(2, editor.state.wallEditRemovedParts.size)
+        assertEquals(original, editor.document)
+        assertFalse(editor.canUndo)
+        editor.cancelEdit()
+        assertEquals(original, editor.renderDocument)
+        assertTrue(editor.state.wallEditRemovedParts.isEmpty())
+        assertTrue(editor.previewWallEdit(Vec2(1000.0, -500.0), 20.0))
+        val preview = editor.renderDocument
+        assertTrue(editor.pickWallEdit(Vec2(1000.0, -500.0), 20.0)!!.documentChanged)
+        assertEquals(preview, editor.document)
+        assertTrue(editor.undo())
+        assertEquals(original, editor.document)
+        assertFalse(editor.canUndo)
+    }
     private val horizontal = Wall("horizontal", Vec2(0.0, 0.0), Vec2(2000.0, 0.0))
     private val vertical = Wall("vertical", Vec2(1000.0, -1000.0), Vec2(1000.0, 1000.0))
     private fun document(vararg walls: Wall) = SketchDocument(walls = walls.associateBy { it.id })

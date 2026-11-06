@@ -9,6 +9,27 @@ import com.example.boschlaser.shared.tool.PointerContext
 import kotlin.test.*
 
 class SelectionGestureTest {
+    @Test fun multiWayEndpointModeCanPreserveTheWholeConnectionOrDetachOnlyTheSelectedWall() {
+        val walls = listOf(Wall("a", Vec2(0.0, 0.0), Vec2(2000.0, 0.0)),
+            Wall("b", Vec2(0.0, 0.0), Vec2(0.0, 2000.0)),
+            Wall("c", Vec2(0.0, 0.0), Vec2(-2000.0, 0.0)))
+        val initial = SketchDocument(walls = walls.associateBy { it.id })
+        for (detach in listOf(true, false)) {
+            val editor = SketchEditor(initial)
+            editor.detachMultiWayEndpoints = detach
+            editor.select(Selection.Wall("a"))
+            editor.pointerDown(Vec2(0.0, 0.0), context(Vec2(0.0, 0.0)))
+            editor.pointerMove(Vec2(100.0, 100.0), context(Vec2(100.0, 100.0)))
+            assertTrue(editor.pointerUp(Vec2(100.0, 100.0), context(Vec2(100.0, 100.0))).documentChanged)
+            assertEquals(Vec2(100.0, 100.0), editor.document.walls.getValue("a").start)
+            assertEquals(if (detach) Vec2(0.0, 0.0) else Vec2(100.0, 100.0), editor.document.walls.getValue("b").start)
+            assertEquals(if (detach) Vec2(0.0, 0.0) else Vec2(100.0, 100.0), editor.document.walls.getValue("c").start)
+            assertTrue(editor.undo())
+            assertEquals(initial, editor.document)
+            assertFalse(editor.canUndo)
+        }
+    }
+
     @Test fun slowWallDragAccumulatesMotionAndKeepsTheFullDisplacement() {
         val wall = Wall("wall", Vec2(0.0, 0.0), Vec2(2000.0, 0.0))
         val editor = SketchEditor(SketchDocument(walls = mapOf(wall.id to wall)))
@@ -41,6 +62,39 @@ class SelectionGestureTest {
         assertEquals(wall, editor.document.walls.getValue(wall.id))
         assertFalse(editor.canUndo)
     }
+    @Test fun slowColumnDragEscapesCornerSnapAndMatchesOneMove() {
+        val horizontal = Wall("horizontal", Vec2(0.0, 0.0), Vec2(2000.0, 0.0), 200.0)
+        val vertical = Wall("vertical", Vec2(0.0, 0.0), Vec2(0.0, 2000.0), 200.0)
+        val column = RectColumn("column", Vec2(200.0, 200.0), 200.0, 200.0)
+        val initial = SketchDocument(walls = mapOf(horizontal.id to horizontal, vertical.id to vertical),
+            columns = mapOf(column.id to column))
+        fun moveContext(point: Vec2) = context(point).copy(columnSnapTolerance = 30.0)
+        // Grab away from the center: movement must preserve the original finger offset.
+        val start = column.center + Vec2(20.0, 10.0)
+        val editor = SketchEditor(initial)
+        editor.pointerDown(start, moveContext(start))
+        assertEquals(SelectionGestureTarget.Column(column.id), editor.state.selectionGesture?.target)
+        for (step in 1..10) {
+            val point = start + Vec2(step * 5.0, step * 5.0)
+            editor.pointerMove(point, moveContext(point))
+            if (step == 2) assertEquals(column.center, editor.renderDocument.columns.getValue(column.id).center)
+        }
+        val end = start + Vec2(50.0, 50.0)
+        assertEquals(Vec2(250.0, 250.0), editor.renderDocument.columns.getValue(column.id).center)
+        val singleMove = SketchEditor(initial)
+        singleMove.pointerDown(start, moveContext(start))
+        singleMove.pointerMove(end, moveContext(end))
+        assertEquals(singleMove.renderDocument, editor.renderDocument)
+        assertEquals(initial, editor.document)
+        assertTrue(editor.pointerUp(end, moveContext(end)).documentChanged)
+        assertTrue(editor.undo())
+        assertEquals(initial, editor.document)
+        assertFalse(editor.canUndo)
+        singleMove.cancelPointer()
+        assertEquals(initial, singleMove.renderDocument)
+        assertFalse(singleMove.canUndo)
+    }
+
     private fun context(point: Vec2, rotation: String? = null) =
         PointerContext(point, 10.0, 10.0, 10.0, 10.0, 10.0, 0.0, rotationHandleColumnId = rotation)
     private fun column(id: String, x: Double) = RectColumn(id, Vec2(x, 300.123456789), 100.0, 100.0)

@@ -1,5 +1,8 @@
 package com.example.boschlaser.ui
 
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.ui.unit.dp
+
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
@@ -20,8 +23,8 @@ fun AnnotationQuantityProperty(value: TextFieldValue?, unit: Int, units: List<St
     val focus = LocalFocusManager.current
     LaunchedEffect(dismissFocusSignal, value == null) { expanded = false; focus.clearFocus(force = true) }
     if (value != null) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(value = value, onValueChange = onValue, singleLine = true,
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            OutlinedTextField(value = value, onValueChange = onValue, singleLine = true, shape = MaterialTheme.shapes.medium,
                 modifier = Modifier.weight(2f).semantics { contentDescription = hint },
                 placeholder = { Text(hint) }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
             Box(Modifier.weight(.8f)) {

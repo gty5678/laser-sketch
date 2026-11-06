@@ -51,13 +51,42 @@ class SketchEditor(initial: SketchDocument = SketchDocument(), historyLimit: Int
         setTool(ToolType.SELECT)
         state = state.copy(selection = null, wallEditSession = WallEditSession(operation))
     }
-    fun stopWallEdit() { state = state.copy(wallEditSession = null) }
+    var detachMultiWayEndpoints: Boolean = true
+    fun previewWallEdit(point: Vec2, tolerance: Double): Boolean {
+        cancelEdit()
+        val session = state.wallEditSession ?: return false
+        val first = session.first ?: return false
+        val second = pickWallForEdit(point, tolerance) ?: return false
+        val plan = when (session.operation) {
+            WallEditOperation.TRIM -> com.example.boschlaser.shared.command.TrimWallCommand(first.wallId, first.point, second, point).plan(document)
+            WallEditOperation.EXTEND -> com.example.boschlaser.shared.command.ExtendWallCommand(first.wallId, second, first.point).plan(document)
+        }
+        val command = plan.command ?: return false
+        val updated = command.apply(document) ?: return false
+        val removed = document.walls.values.flatMap { before ->
+            val after = updated.walls[before.id] ?: return@flatMap emptyList()
+            val line = com.example.boschlaser.shared.geometry.Segment2(before.start, before.end)
+            buildList {
+                if (before.start != after.start && com.example.boschlaser.shared.geometry.Geometry.parameter(after.start, line) in 0.0..1.0)
+                    add(com.example.boschlaser.shared.geometry.Segment2(before.start, after.start))
+                if (before.end != after.end && com.example.boschlaser.shared.geometry.Geometry.parameter(after.end, line) in 0.0..1.0)
+                    add(com.example.boschlaser.shared.geometry.Segment2(after.end, before.end))
+            }
+        }
+        state = state.copy(wallEditRemovedParts = removed)
+        return preview(command)
+    }
+    fun stopWallEdit() { cancelEdit(); state = state.copy(wallEditSession = null) }
     fun pickWallEdit(point: Vec2, tolerance: Double): WallEditUpdate? {
         if (state.wallEditSession == null) return null
+        cancelEdit()
         val wallId = pickWallForEdit(point, tolerance) ?: return null
         return applyWallEditPick(wallId, point)
     }
-    fun pickWallEdit(wallId: String, point: Vec2): WallEditUpdate? = applyWallEditPick(wallId, point)
+    fun pickWallEdit(wallId: String, point: Vec2): WallEditUpdate? {
+        cancelEdit()
+        return applyWallEditPick(wallId, point)
+    }
     fun resumeWallChain(point: Vec2) { wallTool.resume(this, point) }
     fun pointerDown(point: Vec2, context: PointerContext) = tools.getValue(state.tool).pointerDown(this, point, context)
     fun pointerMove(point: Vec2, context: PointerContext) = tools.getValue(state.tool).pointerMove(this, point, context)
@@ -108,6 +137,7 @@ class SketchEditor(initial: SketchDocument = SketchDocument(), historyLimit: Int
         return changed
     }
     fun cancelEdit() {
+        state = state.copy(wallEditRemovedParts = emptyList())
         preview = null
         clearSelectionGesture()
         select(state.selection)

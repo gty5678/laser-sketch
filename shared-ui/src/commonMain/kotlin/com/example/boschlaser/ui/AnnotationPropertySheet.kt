@@ -5,6 +5,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -104,7 +106,8 @@ fun AnnotationPropertySheet(
         .onSizeChanged { height = it.height.toFloat() }
         .graphicsLayer { translationY = offset; this.alpha = alpha },
         color = style.background, shape = RoundedCornerShape(style.cornerRadius), shadowElevation = style.elevation) {
-        Column(Modifier.padding(horizontal = style.horizontalPadding, vertical = style.verticalPadding)) {
+        Column(Modifier.padding(horizontal = style.horizontalPadding, vertical = style.verticalPadding),
+            verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Box(Modifier.fillMaxWidth().height(style.handleAreaHeight).testTag("annotation-property-handle")
                 .semantics { contentDescription = handleLabel }
                 .onGloballyPositioned { handleCoordinates = it }

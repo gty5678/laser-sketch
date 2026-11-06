@@ -22,10 +22,10 @@
     <dimen name="annotation_hit_area_edge">28dp</dimen>
     <dimen name="annotation_actions_end_margin">12dp</dimen>
     <dimen name="annotation_properties_margin">10dp</dimen>
-    <dimen name="annotation_properties_horizontal_padding">12dp</dimen>
+    <dimen name="annotation_properties_horizontal_padding">16dp</dimen>
     <dimen name="annotation_properties_vertical_padding">10dp</dimen>
     <dimen name="annotation_properties_elevation">10dp</dimen>
-    <dimen name="annotation_properties_corner_radius">14dp</dimen>
+    <dimen name="annotation_properties_corner_radius">16dp</dimen>
     <dimen name="annotation_properties_handle_area_height">24dp</dimen>
     <dimen name="annotation_properties_handle_width">42dp</dimen>
     <dimen name="annotation_properties_handle_height">4dp</dimen>
@@ -47,7 +47,7 @@
     <dimen name="sketch_properties_horizontal_padding">16dp</dimen>
     <dimen name="sketch_properties_top_padding">12dp</dimen>
     <dimen name="sketch_properties_bottom_padding">14dp</dimen>
-    <dimen name="sketch_properties_elevation">14dp</dimen>
+    <dimen name="sketch_properties_elevation">10dp</dimen>
     <dimen name="sketch_properties_dismiss_minimum">48dp</dimen>
     <!-- Canvas strokes retain physical-pixel sizes across viewport zoom. -->
     <dimen name="sketch_wall_stroke">2px</dimen>

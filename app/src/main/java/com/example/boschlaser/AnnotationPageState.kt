@@ -42,7 +42,25 @@ internal class AnnotationPageState(private val distanceUnits: List<String>, priv
     val recentMeasurementLabels get() = latestMeasurements.map { "${formatAnnotationMillimeters(it)} mm" }
     val defaultDimensionLabel get() = recentMeasurementLabels.firstOrNull().orEmpty()
 
+    var waitingForMeasurement by mutableStateOf(false)
+        private set
+    fun toggleMeasurementWait() { waitingForMeasurement = properties.dimension != null && !waitingForMeasurement }
+    fun cancelMeasurementWait() { waitingForMeasurement = false }
+    fun consumeMeasurementWait(): Boolean {
+        val apply = waitingForMeasurement && properties.dimension != null
+        waitingForMeasurement = false
+        return apply
+    }
+    fun convertUnit(area: Boolean, unit: Int, commit: (String) -> Boolean): Boolean {
+        val value = (if (area) properties.area else properties.distance) ?: return false
+        val oldUnit = if (area) properties.areaUnit else properties.distanceUnit
+        val units = if (area) areaUnits else distanceUnits
+        val converted = AnnotationQuantityLabel.convert(value.text, oldUnit, unit, units) ?: return false
+        return updateQuantity(area, converted.asField(), unit, commit)
+    }
+
     fun showSelection(selection: AnnotationSelection?) {
+        cancelMeasurementWait()
         val distance = (selection as? AnnotationSelection.Dimension)?.mark?.label
             ?.let { AnnotationQuantityLabel.parse(it, distanceUnits) }
         val area = (selection as? AnnotationSelection.Area)?.mark?.label

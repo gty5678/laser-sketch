@@ -18,7 +18,7 @@ import org.junit.runner.RunWith
 class AnnotationActionsInstrumentedTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
     @After fun finishScreen() { finishAndCloseScenario(compose.activityRule.scenario) }
-    @Test fun callbacksVisibilityAndLowerDeletePositionFollowHostState() {
+    @Test fun callbacksAndCenteredPositionFollowHostState() {
         val finish = mutableStateOf(true)
         val delete = mutableStateOf(false)
         val actions = mutableListOf<String>()
@@ -28,12 +28,12 @@ class AnnotationActionsInstrumentedTest {
         } }
         compose.onNodeWithContentDescription("Delete fixture").assertDoesNotExist()
         compose.onNodeWithContentDescription("Finish fixture").performClick()
-        compose.runOnIdle { delete.value = true }
         val finishBounds = compose.onNodeWithContentDescription("Finish fixture").fetchSemanticsNode().boundsInRoot
+        compose.runOnIdle { finish.value = false; delete.value = true }
         val deleteBounds = compose.onNodeWithContentDescription("Delete fixture").fetchSemanticsNode().boundsInRoot
         assertEquals(finishBounds.left, deleteBounds.left, 1f)
         assertEquals(finishBounds.width, finishBounds.height, 1f)
-        assertEquals(finishBounds.height * 64f / 52f, deleteBounds.top - finishBounds.top, 1f)
+        assertEquals(finishBounds.center.y, deleteBounds.center.y, 1f)
         compose.onNodeWithContentDescription("Delete fixture").performClick()
         compose.runOnIdle { assertEquals(listOf("finish", "delete"), actions); finish.value = false; delete.value = false }
         compose.onNodeWithContentDescription("Finish fixture").assertDoesNotExist()

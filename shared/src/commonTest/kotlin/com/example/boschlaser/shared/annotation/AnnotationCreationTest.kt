@@ -4,6 +4,27 @@ import com.example.boschlaser.shared.geometry.Vec2
 import kotlin.test.*
 
 class AnnotationCreationTest {
+    @Test fun explicitAreaClosureKeepsAllPointsAndIsAtomicAndUndoable() {
+        val editor = AnnotationEditor()
+        editor.setMode(AnnotationMode.AREA)
+        editor.appendAreaPoint(PhotoPoint(.1, .1))
+        editor.appendAreaPoint(PhotoPoint(.9, .1))
+        assertFalse(editor.finishArea("area", -1))
+        assertFalse(editor.canUndo)
+        editor.appendAreaPoint(PhotoPoint(.9, .9))
+        editor.appendAreaPoint(PhotoPoint(.1, .9))
+        val pending = editor.state.creation.areaPoints
+        assertFalse(editor.finishArea("", -1))
+        assertEquals(pending, editor.state.creation.areaPoints)
+        assertTrue(editor.document.annotations.isEmpty())
+        assertTrue(editor.finishArea("area", -1))
+        assertEquals(pending, editor.document.annotations.getValue("area").points)
+        assertTrue(editor.undo())
+        assertFalse(editor.canUndo)
+        assertTrue(editor.document.annotations.isEmpty())
+        assertTrue(editor.redo())
+        assertEquals(pending, editor.document.annotations.getValue("area").points)
+    }
     private val start = PhotoPoint(.123456789123, .234567891234)
     private val second = PhotoPoint(.876543219876, .765432198765)
     private val third = PhotoPoint(.7, .2)

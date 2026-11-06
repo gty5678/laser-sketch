@@ -3,6 +3,17 @@ package com.example.boschlaser.shared.annotation
 import kotlin.test.*
 
 class AnnotationQuantityLabelTest {
+    @Test fun unitConversionPreservesPhysicalQuantityAndRejectsInvalidNumbers() {
+        val distance = listOf("mm", "m", "cm")
+        assertEquals("1", AnnotationQuantityLabel.convert("1000", 0, 1, distance))
+        assertEquals("1250", AnnotationQuantityLabel.convert("1.25", 1, 0, distance))
+        assertEquals("-12.5", AnnotationQuantityLabel.convert("-125", 0, 2, distance))
+        assertEquals("10000", AnnotationQuantityLabel.convert("1", 0, 1, listOf("m²", "cm²", "mm²")))
+        assertEquals("", AnnotationQuantityLabel.convert("", 0, 1, distance))
+        for (value in listOf("label", "NaN", "Infinity", "1e309")) assertNull(AnnotationQuantityLabel.convert(value, 0, 1, distance))
+        assertNull(AnnotationQuantityLabel.convert("1e308", 1, 0, distance))
+        assertNull(AnnotationQuantityLabel.convert("1", -1, 0, distance))
+    }
     private val distance = listOf("mm", "m", "cm")
     @Test fun parsingPreservesLegacyDisplayWithoutChangingTheStoredLabel() {
         assertEquals(AnnotationQuantityLabel.Draft("12.5", 2), AnnotationQuantityLabel.parse(" 12.5 cm ", distance))

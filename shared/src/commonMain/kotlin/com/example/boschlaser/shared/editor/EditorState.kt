@@ -35,6 +35,7 @@ data class SelectionGesture(
     val target: SelectionGestureTarget,
     val lastWorld: Vec2,
     val lastScreen: Vec2,
+    val startWorld: Vec2 = lastWorld,
 )
 
 data class DimensionGesture(val startScreen: Vec2, val lastScreen: Vec2, val startWorld: Vec2, val previewBefore: SketchPreview.Dimension?,
@@ -50,6 +51,7 @@ data class EditorState(
     val dragging: Boolean = false,
     val selectionGesture: SelectionGesture? = null,
     val wallEditSession: WallEditSession? = null,
+    val wallEditRemovedParts: List<Segment2> = emptyList(),
     val dimensionFirst: com.example.boschlaser.shared.model.DimensionReference? = null,
     val dimensionGesture: DimensionGesture? = null,
 )

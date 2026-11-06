@@ -71,6 +71,18 @@ class AnnotationEditor(initial: AnnotationDocument = AnnotationDocument(), priva
         state = state.copy(selection = AnnotationSelectionTarget(id), creation = state.creation.copy(anglePoints = emptyList()))
         return AnnotationPlacementResult.Created(id)
     }
+    fun appendAreaPoint(point: PhotoPoint): Boolean {
+        if (state.mode != AnnotationMode.AREA) return false
+        state = state.copy(creation = state.creation.copy(areaPoints = state.creation.areaPoints + point.clamped()))
+        return true
+    }
+    fun finishArea(id: String, colorArgb: Int): Boolean {
+        val points = state.creation.areaPoints
+        if (state.mode != AnnotationMode.AREA || points.size < 3 || id.isBlank() || id in document.annotations) return false
+        if (!execute(AddAnnotationCommand(AreaAnnotation(id, points, "", colorArgb)))) return false
+        state = state.copy(selection = AnnotationSelectionTarget(id), creation = state.creation.copy(areaPoints = emptyList()))
+        return true
+    }
     fun placeAreaPoint(point: PhotoPoint, id: String, colorArgb: Int): AnnotationPlacementResult {
         if (state.mode != AnnotationMode.AREA) return AnnotationPlacementResult.Rejected
         val points = state.creation.areaPoints + point.clamped()
