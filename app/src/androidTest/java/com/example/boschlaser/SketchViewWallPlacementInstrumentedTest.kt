@@ -15,6 +15,43 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class SketchViewWallPlacementInstrumentedTest {
     @Test
+    fun drawingControlLineOnlyChangesNextWallInContinuousChain() {
+        if (Looper.myLooper() == null) Looper.prepare()
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val view = SketchView(context).apply {
+            setGridSnapEnabled(false)
+            setMode(SketchMode.WALL)
+        }
+        for (point in listOf(SketchPoint(0f, 0f), SketchPoint(1000f, 0f))) {
+            handleWall(view, MotionEvent.ACTION_DOWN, point)
+            handleWall(view, MotionEvent.ACTION_UP, point)
+        }
+        val document = view.snapshotDocument()
+        val anchor = view.editorState().wallAnchor
+        val first = view.snapshotState().walls.single()
+        for (line in listOf(SketchWallControlLine.INNER, SketchWallControlLine.OUTER)) {
+            view.setDrawingWallControlLine(line)
+            assertEquals(document, view.snapshotDocument())
+            assertEquals(anchor, view.editorState().wallAnchor)
+        }
+        assertEquals(false, view.setDrawingWallThickness(49.0))
+        assertEquals(false, view.setDrawingWallThickness(Double.NaN))
+        assertEquals(true, view.setDrawingWallThickness(300.0))
+        assertEquals(document, view.snapshotDocument())
+        assertEquals(anchor, view.editorState().wallAnchor)
+        handleWall(view, MotionEvent.ACTION_DOWN, SketchPoint(2000f, 0f))
+        handleWall(view, MotionEvent.ACTION_UP, SketchPoint(2000f, 0f))
+        val walls = view.snapshotState().walls
+        assertEquals(2, walls.size)
+        assertEquals(first, walls.first())
+        assertEquals(300f, walls.last().thickness, .001f)
+        assertEquals(SketchWallControlLine.OUTER, walls.last().controlLine)
+        val (start, end) = wallControlLinePoints(walls.last())
+        assertEquals(SketchPoint(1000f, 0f), start)
+        assertEquals(SketchPoint(2000f, 0f), end)
+    }
+
+    @Test
     fun continuousWallPlacementInheritsChangedControlLine() {
         if (Looper.myLooper() == null) Looper.prepare()
         val context = InstrumentationRegistry.getInstrumentation().targetContext

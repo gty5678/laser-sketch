@@ -24,6 +24,41 @@ import org.junit.runner.RunWith
 class SketchWallDrawingInstrumentedTest {
     @get:org.junit.Rule val foregroundHost: org.junit.rules.TestRule = ForegroundTestHostRule()
 
+    @Test fun differentFillsMeetAtMiterAndThroughWallStaysContinuousRegardlessOfOrder() {
+        InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            val horizontal = Wall("horizontal", Vec2(0.0, 0.0), Vec2(1000.0, 0.0), 200.0,
+                fill = WallFill.BLACK)
+            val vertical = Wall("vertical", Vec2(0.0, 0.0), Vec2(0.0, 1000.0), 200.0,
+                fill = WallFill.BLANK)
+            val branch = vertical.copy(start = Vec2(500.0, 0.0), end = Vec2(500.0, 1000.0))
+            val bitmap = Bitmap.createBitmap(320, 320, Bitmap.Config.ARGB_8888)
+            try {
+                fun render(walls: List<Wall>) {
+                    val canvas = Canvas(bitmap).apply { drawColor(Color.LTGRAY) }
+                    AndroidCanvasDrawing().draw(canvas, Density(1f)) {
+                        drawSketchWallNetwork(SketchDocument(walls = walls.associateBy { it.id }),
+                            Viewport(.2, Vec2(50.0, 50.0)),
+                            WallDrawingStyle(androidx.compose.ui.graphics.Color.Gray,
+                                androidx.compose.ui.graphics.Color.Black, 1f))
+                    }
+                }
+                for (walls in listOf(listOf(horizontal, vertical), listOf(vertical, horizontal))) {
+                    render(walls)
+                    assertEquals(Color.BLACK, bitmap.getPixel(64, 56))
+                    assertEquals(Color.WHITE, bitmap.getPixel(56, 64))
+                    // Outer miter supplement belongs to both materials across the diagonal.
+                    assertEquals(Color.BLACK, bitmap.getPixel(44, 36))
+                    assertEquals(Color.WHITE, bitmap.getPixel(36, 44))
+                }
+                for (walls in listOf(listOf(horizontal, branch), listOf(branch, horizontal))) {
+                    render(walls)
+                    assertEquals(Color.BLACK, bitmap.getPixel(150, 50))
+                    assertEquals(Color.WHITE, bitmap.getPixel(150, 85))
+                }
+            } finally { bitmap.recycle() }
+        }
+    }
+
     @Test fun controlsFollowTheReferenceLineForEveryAlignment() {
         InstrumentationRegistry.getInstrumentation().runOnMainSync {
             val bitmap = Bitmap.createBitmap(160, 100, Bitmap.Config.ARGB_8888)

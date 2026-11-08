@@ -147,7 +147,7 @@ internal fun DrawScope.drawSketchScene(document: SketchDocument, state: EditorSt
             if (Geometry.length(preview.line) < 20.0) {
                 drawSketchWallStart(preview.line.start, viewport, style.controls.point, style.previewCross, style.previewCrossWidthPx)
             } else {
-                val wall = Wall("preview", preview.line.start, preview.line.end, placement.wallThickness, placement.alignment)
+                val wall = Wall("preview", preview.line.start, preview.line.end, placement.wallThickness, placement.alignment, fill = placement.wallFill)
                 drawSketchWallBody(wall, document.walls.values, viewport, style.selectedWall)
                 drawSketchWallControls(wall, viewport, true, style.selectedControls)
             }

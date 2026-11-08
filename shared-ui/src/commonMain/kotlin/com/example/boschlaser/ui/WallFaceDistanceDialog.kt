@@ -20,7 +20,8 @@ import androidx.compose.ui.text.input.TextFieldValue
 /** A focused numeric entry above the keyboard; the host owns validation and the atomic edit. */
 @Composable
 fun WallFaceDistanceDialog(initialValue: String, title: String, hint: String, valueLabel: String,
-    applyLabel: String, cancelLabel: String, errorLabel: String, onApply: (String) -> Boolean, onDismiss: () -> Unit) {
+    applyLabel: String, cancelLabel: String, errorLabel: String, onApply: (String) -> Boolean, onDismiss: () -> Unit,
+    recentMeasurements: List<String> = emptyList(), recentMeasurementsLabel: String = "") {
     var value by remember { mutableStateOf(TextFieldValue(initialValue, TextRange(0, initialValue.length))) }
     var invalid by remember { mutableStateOf(false) }
     val focus = remember { FocusRequester() }
@@ -39,6 +40,15 @@ fun WallFaceDistanceDialog(initialValue: String, title: String, hint: String, va
                 modifier = Modifier.focusRequester(focus).semantics { contentDescription = valueLabel },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { submit() }))
+            if (recentMeasurements.isNotEmpty()) {
+                Text(recentMeasurementsLabel)
+                recentMeasurements.take(3).forEach { measurement ->
+                    TextButton(onClick = {
+                        value = TextFieldValue(measurement, TextRange(0, measurement.length))
+                        invalid = false
+                    }) { Text("$measurement mm") }
+                }
+            }
         }
     }, confirmButton = { TextButton(onClick = { submit() }) { Text(applyLabel) } },
         dismissButton = { TextButton(onClick = onDismiss) { Text(cancelLabel) } })

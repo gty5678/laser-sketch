@@ -1,8 +1,7 @@
 package com.example.boschlaser.ui
 
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -18,9 +17,11 @@ fun SketchToolbar(selected: ToolType, tools: List<SketchToolItem>, backLabel: St
     onBack: () -> Unit, onSettings: () -> Unit, onTool: (ToolType) -> Unit,
     backIcon: @Composable () -> Unit, settingsIcon: @Composable () -> Unit, toolIcon: @Composable (ToolType) -> Unit) {
     Surface {
-        Row(Modifier.horizontalScroll(rememberScrollState())) {
+        Row(Modifier.fillMaxWidth()) {
             IconButton(onClick = onBack, modifier = Modifier.semantics { contentDescription = backLabel }) { backIcon() }
-            SketchToolButtons(selected, tools, onTool, toolIcon)
+            ScrollableTools(Modifier.weight(1f)) {
+                SketchToolButtons(selected, tools, onTool, toolIcon)
+            }
             IconButton(onClick = onSettings, modifier = Modifier.semantics { contentDescription = settingsLabel }) { settingsIcon() }
         }
     }

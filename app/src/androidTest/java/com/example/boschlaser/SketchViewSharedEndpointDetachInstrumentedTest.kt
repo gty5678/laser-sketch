@@ -14,11 +14,12 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class SketchViewSharedEndpointDetachInstrumentedTest {
     @Test
-    fun twoWallEndpointsMoveTogether() {
+    fun twoWallEndpointsMoveTogetherWhenEnabled() {
         val joint = SketchPoint(500f, 500f)
         val horizontal = SketchWall(id = "horizontal", start = joint, end = SketchPoint(1000f, 500f))
         val selected = SketchWall(id = "selected", start = joint, end = SketchPoint(500f, 1000f))
         val view = newView(listOf(horizontal, selected), selected.id)
+        view.setDetachMultiWayEndpoints(false)
 
         dragSharedEndpoint(view, joint, SketchPoint(650f, 500f))
 
@@ -47,6 +48,27 @@ class SketchViewSharedEndpointDetachInstrumentedTest {
 
         assertTrue(view.undo())
         assertEquals(joint, view.snapshotState().walls.single { it.id == selected.id }.start)
+    }
+
+    @Test
+    fun twoAndThreeWallJunctionsRespectTheSameSwitch() {
+        val joint = SketchPoint(500f, 500f)
+        val selected = SketchWall(id = "selected", start = joint, end = SketchPoint(500f, 1000f))
+        val others = listOf(
+            SketchWall(id = "horizontal", start = joint, end = SketchPoint(1000f, 500f)),
+            SketchWall(id = "diagonal", start = joint, end = SketchPoint(100f, 100f)))
+        val target = SketchPoint(650f, 500f)
+        for (count in 1..2) for (detach in listOf(true, false)) {
+            val original = listOf(selected) + others.take(count)
+            val view = newView(original, selected.id)
+            view.setDetachMultiWayEndpoints(detach)
+            dragSharedEndpoint(view, joint, target)
+            val walls = view.snapshotState().walls.associateBy { it.id }
+            assertEquals(target, walls.getValue(selected.id).start)
+            others.take(count).forEach { assertEquals(if (detach) joint else target, walls.getValue(it.id).start) }
+            assertTrue(view.undo())
+            assertEquals(original, view.snapshotState().walls)
+        }
     }
 
     private fun newView(walls: List<SketchWall>, selectedWallId: String): SketchView {

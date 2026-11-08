@@ -6,6 +6,7 @@ import com.example.boschlaser.shared.model.Wall
 
 /** Canvas-owned derived geometry. Retains only the current wall map and two display widths. */
 internal class SketchWallGeometryCache {
+    val paths = SketchWallPathCache<SketchWallPaths>()
     private var walls: Map<String, Wall>? = null
     private var minimumThickness = Double.POSITIVE_INFINITY
     private val entries = mutableMapOf<Double, List<List<Vec2>>>()

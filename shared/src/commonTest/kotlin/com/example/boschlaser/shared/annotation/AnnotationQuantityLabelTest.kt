@@ -14,6 +14,15 @@ class AnnotationQuantityLabelTest {
         assertNull(AnnotationQuantityLabel.convert("1e308", 1, 0, distance))
         assertNull(AnnotationQuantityLabel.convert("1", -1, 0, distance))
     }
+    @Test fun decimalUnitChangesDoNotExposeBinaryRoundingAndRoundTripExactly() {
+        val units = listOf("mm", "cm", "m")
+        assertEquals("12.575", AnnotationQuantityLabel.convert("125.75", 0, 1, units))
+        assertEquals("125.75", AnnotationQuantityLabel.convert("12.575", 1, 0, units))
+        assertEquals("0.00000125", AnnotationQuantityLabel.convert("1.25e-3", 0, 2, units))
+        assertEquals("-1250", AnnotationQuantityLabel.convert("-1.25", 2, 0, units))
+        assertEquals("0", AnnotationQuantityLabel.convert("-0.0", 2, 0, units))
+        assertEquals("2575", AnnotationQuantityLabel.convert("25.75", 0, 1, listOf("cm²", "mm²")))
+    }
     private val distance = listOf("mm", "m", "cm")
     @Test fun parsingPreservesLegacyDisplayWithoutChangingTheStoredLabel() {
         assertEquals(AnnotationQuantityLabel.Draft("12.5", 2), AnnotationQuantityLabel.parse(" 12.5 cm ", distance))

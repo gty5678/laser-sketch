@@ -17,7 +17,7 @@ fun PlacementOptions(visible: Boolean, continuous: Boolean, label: String, singl
         if (visible) {
             Row(Modifier.fillMaxSize().padding(horizontal = 10.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                Text(label, style = MaterialTheme.typography.bodySmall)
                 FilterChip(selected = !continuous, onClick = { onChange(false) }, label = { Text(singleLabel) },
                     modifier = Modifier.semantics { contentDescription = singleLabel },
                     colors = FilterChipDefaults.filterChipColors(selectedContainerColor = MaterialTheme.colorScheme.primary,

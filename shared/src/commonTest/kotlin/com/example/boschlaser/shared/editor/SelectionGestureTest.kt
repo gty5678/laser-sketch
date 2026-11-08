@@ -14,7 +14,8 @@ class SelectionGestureTest {
             Wall("b", Vec2(0.0, 0.0), Vec2(0.0, 2000.0)),
             Wall("c", Vec2(0.0, 0.0), Vec2(-2000.0, 0.0)))
         val initial = SketchDocument(walls = walls.associateBy { it.id })
-        for (detach in listOf(true, false)) {
+        for (count in 2..3) for (detach in listOf(true, false)) {
+            val initial = initial.copy(walls = walls.take(count).associateBy { it.id })
             val editor = SketchEditor(initial)
             editor.detachMultiWayEndpoints = detach
             editor.select(Selection.Wall("a"))
@@ -23,7 +24,7 @@ class SelectionGestureTest {
             assertTrue(editor.pointerUp(Vec2(100.0, 100.0), context(Vec2(100.0, 100.0))).documentChanged)
             assertEquals(Vec2(100.0, 100.0), editor.document.walls.getValue("a").start)
             assertEquals(if (detach) Vec2(0.0, 0.0) else Vec2(100.0, 100.0), editor.document.walls.getValue("b").start)
-            assertEquals(if (detach) Vec2(0.0, 0.0) else Vec2(100.0, 100.0), editor.document.walls.getValue("c").start)
+            if (count == 3) assertEquals(if (detach) Vec2(0.0, 0.0) else Vec2(100.0, 100.0), editor.document.walls.getValue("c").start)
             assertTrue(editor.undo())
             assertEquals(initial, editor.document)
             assertFalse(editor.canUndo)

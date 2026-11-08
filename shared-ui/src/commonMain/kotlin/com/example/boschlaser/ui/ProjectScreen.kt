@@ -2,6 +2,8 @@ package com.example.boschlaser.ui
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -10,7 +12,7 @@ import androidx.compose.ui.unit.dp
 
 /** Text is localized by the host; this screen never owns storage, platform images or an editor. */
 data class ProjectCardState(val id: String, val name: String, val updatedLabel: String)
-data class ProjectLabels(val empty: String, val actions: String, val rename: String, val delete: String, val export: String)
+data class ProjectLabels(val empty: String, val actions: String, val rename: String, val delete: String, val export: String, val more: String = export)
 
 @Composable
 fun ProjectScreen(
@@ -22,16 +24,18 @@ fun ProjectScreen(
     onExport: (String) -> Unit,
     thumbnail: @Composable (String) -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        if (projects.isEmpty()) Text(labels.empty, style = MaterialTheme.typography.bodySmall)
-        projects.chunked(2).forEach { pair ->
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                pair.forEach { project ->
-                    key(project.id) {
-                        ProjectCard(project, labels, Modifier.weight(1f), onOpen, onRename, onDelete, onExport, thumbnail)
-                    }
-                }
-                if (pair.size == 1) Spacer(Modifier.weight(1f))
+    if (projects.isEmpty()) {
+        Text(labels.empty, style = MaterialTheme.typography.bodySmall)
+        return
+    }
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val cardWidth = (maxWidth - 20.dp) / 2
+        LazyRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            items(projects, key = { it.id }) { project ->
+                ProjectCard(project, labels, Modifier.width(cardWidth), onOpen, onRename, onDelete, onExport, thumbnail)
             }
         }
     }

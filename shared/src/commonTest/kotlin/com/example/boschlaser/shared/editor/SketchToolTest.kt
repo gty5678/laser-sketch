@@ -100,6 +100,7 @@ class SketchToolTest {
         val first = Wall("first", Vec2(0.0, 0.0), Vec2(1000.0, 0.0))
         val second = Wall("second", Vec2(1000.0, 0.0), Vec2(1000.0, 1000.0))
         val editor = SketchEditor(SketchDocument(walls = linkedMapOf(first.id to first, second.id to second)))
+        editor.detachMultiWayEndpoints = false
         editor.select(Selection.Wall(first.id))
         editor.pointerDown(first.end, context(first.end))
         assertEquals(Selection.Wall(first.id), editor.state.selection)

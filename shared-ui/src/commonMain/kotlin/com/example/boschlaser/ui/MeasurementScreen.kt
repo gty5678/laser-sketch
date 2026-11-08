@@ -10,7 +10,7 @@ import androidx.compose.ui.unit.dp
 
 data class MeasurementRowState(val id: String, val text: String)
 data class MeasurementLabels(val current: String, val history: String, val measure: String,
-    val clear: String, val export: String, val empty: String, val delete: String)
+    val clear: String, val export: String, val empty: String, val delete: String, val undo: String = delete, val pendingDelete: String = delete)
 
 /** Newest first. Paging is display state only; callbacks always carry durable measurement IDs. */
 @Composable
@@ -25,8 +25,8 @@ fun MeasurementScreen(
     onExport: () -> Unit,
     onDelete: (String) -> Unit,
 ) {
-    var visibleCount by rememberSaveable { mutableStateOf(100) }
-    LaunchedEffect(rows.isEmpty()) { if (rows.isEmpty()) visibleCount = 100 }
+    var visibleCount by rememberSaveable { mutableStateOf(3) }
+    LaunchedEffect(rows.isEmpty()) { if (rows.isEmpty()) visibleCount = 3 }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(labels.current, style = MaterialTheme.typography.titleLarge)
         Text(distance, style = MaterialTheme.typography.headlineLarge)
@@ -39,9 +39,20 @@ fun MeasurementScreen(
         if (rows.isEmpty()) Text(labels.empty, style = MaterialTheme.typography.bodySmall)
         rows.take(visibleCount).forEach { row ->
             key(row.id) {
-                Row {
-                    SelectionContainer(Modifier.weight(1f)) { Text(row.text, style = MaterialTheme.typography.bodyMedium) }
-                    TextButton(onClick = { onDelete(row.id) }) { Text(labels.delete) }
+                var pending by remember { mutableStateOf(false) }
+                LaunchedEffect(pending) {
+                    if (pending) {
+                        kotlinx.coroutines.delay(5000)
+                        onDelete(row.id)
+                        pending = false
+                    }
+                }
+                Column {
+                    if (pending) Text(labels.pendingDelete, style = MaterialTheme.typography.bodySmall)
+                    Row {
+                        SelectionContainer(Modifier.weight(1f)) { Text(row.text, style = MaterialTheme.typography.bodyMedium) }
+                        TextButton(onClick = { pending = !pending }) { Text(if (pending) labels.undo else labels.delete) }
+                    }
                 }
             }
         }

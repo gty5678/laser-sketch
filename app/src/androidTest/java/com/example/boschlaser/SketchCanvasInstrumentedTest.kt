@@ -42,9 +42,12 @@ class SketchCanvasInstrumentedTest {
             style, SketchSceneOptions(100.0, rotationHandleOffsetPx = 32.0), Color.Yellow,
             MagnifierDrawingStyle(Color.White, Color(0x37000000), Color.Green))
         val snapshot = mutableStateOf(initial)
+        val canvasGeneration = mutableStateOf(0)
         compose.setContent {
             CompositionLocalProvider(LocalDensity provides Density(1f)) {
-                SketchCanvas({ snapshot.value }, { "${it.toInt()} mm" }, Modifier.size(400.dp, 300.dp).testTag("canvas"))
+                androidx.compose.runtime.key(canvasGeneration.value) {
+                    SketchCanvas({ snapshot.value }, { "${it.toInt()} mm" }, Modifier.size(400.dp, 300.dp).testTag("canvas"))
+                }
             }
         }
         fun pixel(x: Int, y: Int) = compose.onNodeWithTag("canvas").captureToImage().toPixelMap()[x, y]
@@ -61,5 +64,26 @@ class SketchCanvasInstrumentedTest {
         compose.runOnIdle { snapshot.value = snapshot.value.copy(magnifier = null) }
         assertEquals(Color.Yellow, pixel(88, 20))
         assertEquals(column, document.columns.getValue(column.id))
+
+        // A panned, cached network must match a newly built canvas, including hatch phase,
+        // mixed-material corners, opening cutouts and the second magnifier cache entry.
+        val first = Wall("first", Vec2(0.0, 0.0), Vec2(600.0, 0.0), 100.0, fill = WallFill.HATCH)
+        val second = Wall("second", first.end, Vec2(600.0, 500.0), 100.0, fill = WallFill.BLACK)
+        val door = Opening("door", first.id, 300.0, 100.0, OpeningType.DOOR)
+        compose.runOnIdle {
+            snapshot.value = initial.copy(document = SketchDocument(
+                walls = mapOf(first.id to first, second.id to second), openings = mapOf(door.id to door)),
+                viewport = Viewport(1.5, Vec2(0.0, 150.0)),
+                magnifier = SketchMagnifier(first.end, 2.6, 0.0))
+        }
+        compose.onNodeWithTag("canvas").captureToImage()
+        compose.runOnIdle { snapshot.value = snapshot.value.copy(viewport = Viewport(1.5, Vec2(-650.0, 160.0))) }
+        val cached = compose.onNodeWithTag("canvas").captureToImage().toPixelMap()
+        compose.runOnIdle { canvasGeneration.value++ }
+        val rebuilt = compose.onNodeWithTag("canvas").captureToImage().toPixelMap()
+        for (y in 0 until cached.height) for (x in 0 until cached.width) {
+            assertEquals("Cached pan pixel ($x, $y)", rebuilt[x, y], cached[x, y])
+        }
+
     }
 }

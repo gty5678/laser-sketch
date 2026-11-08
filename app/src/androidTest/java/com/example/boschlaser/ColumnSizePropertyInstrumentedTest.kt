@@ -35,4 +35,30 @@ class ColumnSizePropertyInstrumentedTest {
         compose.onNodeWithContentDescription("Depth fixture").assertDoesNotExist()
         compose.onNodeWithContentDescription("Width fixture").assertTextContains("500.25")
     }
+    @Test fun presetsFillBothDraftsAndCircleOnlyFillsDiameter() {
+        val width = mutableStateOf(TextFieldValue("350"))
+        val depth = mutableStateOf(TextFieldValue("450"))
+        val rectangle = mutableStateOf(true)
+        val submitted = mutableListOf<Pair<String, String>>()
+        compose.setContent { MaterialTheme {
+            ColumnSizeProperty(width.value, if (rectangle.value) depth.value else null, "Width fixture", "Depth fixture",
+                "Apply fixture", { width.value = it }, { depth.value = it }, { submitted += width.value.text to depth.value.text })
+        } }
+        for (size in listOf("300", "400", "500", "600")) {
+            compose.onNodeWithText("${size}×${size}").performClick().assertIsSelected()
+            compose.onNodeWithContentDescription("Width fixture").assertTextContains(size)
+            compose.onNodeWithContentDescription("Depth fixture").assertTextContains(size)
+        }
+        compose.runOnIdle {
+            assertEquals(listOf("300" to "300", "400" to "400", "500" to "500", "600" to "600"), submitted)
+            rectangle.value = false
+        }
+        compose.onNode(hasText("300") and isSelectable()).performClick().assertIsSelected()
+        compose.onNodeWithContentDescription("Width fixture").assertTextContains("300")
+        compose.runOnIdle {
+            assertEquals("600", depth.value.text)
+            assertEquals("300" to "600", submitted.last())
+        }
+    }
+
 }

@@ -38,6 +38,12 @@ class AnnotationStylePropertiesInstrumentedTest {
         compose.onNodeWithContentDescription("Size Large").assertDoesNotExist()
         compose.onNodeWithContentDescription("White background").assertDoesNotExist()
         compose.onNodeWithContentDescription("Width Thin").assertIsSelected()
+        val title = compose.onNodeWithText("Width").fetchSemanticsNode().boundsInRoot
+        val thin = compose.onNodeWithContentDescription("Width Thin").fetchSemanticsNode().boundsInRoot
+        val thick = compose.onNodeWithContentDescription("Width Thick").fetchSemanticsNode().boundsInRoot
+        assertEquals(title.center.y, thin.center.y, 1f)
+        assertEquals(thin.center.y, thick.center.y, 1f)
+        assertEquals(thin.right, compose.onNodeWithContentDescription("Width Medium").fetchSemanticsNode().boundsInRoot.left, 2f)
         compose.onNodeWithContentDescription("Width Thick").performClick().assertIsSelected()
         compose.runOnIdle { assertEquals(listOf("size2", "backgroundfalse", "thickness2"), actions); thickness.value = null }
         compose.onNodeWithContentDescription("Width Thick").assertDoesNotExist()

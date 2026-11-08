@@ -1,5 +1,7 @@
 package com.example.boschlaser
 
+import androidx.compose.ui.test.assertTextEquals
+
 import android.content.Intent
 import android.os.SystemClock
 import android.view.MotionEvent
@@ -26,6 +28,10 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.isSelectable
+import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertIsOff
@@ -187,7 +193,7 @@ class SketchActivityProjectInstrumentedTest {
             for ((style, label) in listOf(DoorStyle.DOUBLE to R.string.sketch_door_double,
                 DoorStyle.SLIDING to R.string.sketch_door_sliding, DoorStyle.OPENING to R.string.sketch_door_opening,
                 DoorStyle.SINGLE to R.string.sketch_door_single)) {
-                compose.onNodeWithText(context.getString(label)).performScrollTo().performClick()
+                compose.onNodeWithText(context.getString(label)).performClick()
                 compose.onNodeWithText(context.getString(label)).assertIsSelected()
                 expected = document.copy(openings = mapOf(door.id to door.copy(doorStyle = style)))
                 scenario.onActivity {
@@ -228,7 +234,9 @@ class SketchActivityProjectInstrumentedTest {
                 DoorStyle.OPENING to R.string.sketch_door_opening,
             )
             choices.forEachIndexed { index, (style, label) ->
-                compose.onNodeWithText(context.getString(label)).performScrollTo().performClick().assertIsSelected()
+                val currentLabel = if (index == 0) R.string.sketch_door_single else choices[index - 1].second
+                compose.onNodeWithContentDescription(context.getString(currentLabel)).performClick()
+                compose.onNode(hasText(context.getString(label)) and hasAnyAncestor(isDialog())).performClick()
                 scenario.onActivity {
                     assertEquals(expected, view(it).snapshotDocument())
                     val point = view(it).worldToScreen(Vec2(-2000.0 + index * 1200.0, 0.0))
@@ -247,7 +255,7 @@ class SketchActivityProjectInstrumentedTest {
         }
     }
 
-    @Test fun newlyPlacedColumnAllowsBothSizeEditsWhilePlacementContinues() {
+    @Test fun columnCreationSizeEditsOnlyAffectNextColumn() {
         val services = ProjectServices.get(context)
         val project = services.createSketch("Column placement sizes fixture").awaitResult()
         val scenario = ActivityScenario.launch<SketchActivity>(Intent(context, SketchActivity::class.java)
@@ -258,6 +266,8 @@ class SketchActivityProjectInstrumentedTest {
             compose.onNodeWithTag("sketch-canvas").performTouchInput { click(Offset(width * .65f, height * .45f)) }
             lateinit var placed: RectColumn
             scenario.onActivity { placed = view(it).snapshotDocument().columns.values.single() as RectColumn }
+            compose.onNodeWithTag("sketch-property-sheet").assertDoesNotExist()
+            compose.onNodeWithContentDescription(context.getString(R.string.sketch_creation_column_size, "400", "400")).performClick()
             val widthLabel = context.getString(R.string.sketch_column_width)
             val depthLabel = context.getString(R.string.sketch_column_depth)
             val applySize = context.getString(R.string.sketch_property_apply) + " " + widthLabel
@@ -268,7 +278,13 @@ class SketchActivityProjectInstrumentedTest {
             compose.onNodeWithContentDescription(depthLabel).performTextReplacement("800")
             compose.onNodeWithContentDescription(applySize).performClick()
             scenario.onActivity {
-                assertEquals(placed.copy(width = 550.0, depth = 800.0), view(it).snapshotDocument().columns[placed.id])
+                assertEquals(placed, view(it).snapshotDocument().columns[placed.id])
+                val point = view(it).worldToScreen(placed.center + Vec2(2000.0, 2000.0))
+                touch(view(it), MotionEvent.ACTION_DOWN, point)
+                touch(view(it), MotionEvent.ACTION_UP, point)
+                val next = view(it).snapshotDocument().columns.values.last() as RectColumn
+                assertEquals(550.0, next.width, 0.0)
+                assertEquals(800.0, next.depth, 0.0)
             }
         } finally {
             finishAndCloseScenario(scenario)
@@ -410,6 +426,46 @@ class SketchActivityProjectInstrumentedTest {
         }
     }
 
+    @Test fun doorAndWindowWidthsUseDismissibleSecondaryDialogs() {
+        for (type in OpeningType.entries) {
+            val services = ProjectServices.get(context)
+            val wall = Wall("dialog-wall", Vec2(0.0, 0.0), Vec2(4000.0, 0.0))
+            val opening = Opening("dialog-opening", wall.id, 1500.0, 500.0, type)
+            val original = SketchDocument(walls = mapOf(wall.id to wall), openings = mapOf(opening.id to opening))
+            val project = services.createSketch("Opening dialog fixture").awaitResult()
+            services.saveSketch(project.manifest.projectId, original, null).awaitResult()
+            val scenario = ActivityScenario.launch<SketchActivity>(Intent(context, SketchActivity::class.java)
+                .putExtra(SketchActivity.EXTRA_PROJECT_ID, project.manifest.projectId))
+            try {
+                awaitDocument(scenario, original)
+                scenario.onActivity { view(it).selectEntity(Selection.Opening(opening.id)) }
+                val input = context.getString(R.string.sketch_opening_width)
+                val summary = context.getString(R.string.sketch_creation_opening_width, "500")
+                compose.onNodeWithContentDescription(input).assertDoesNotExist()
+                compose.onNodeWithContentDescription(summary).performClick()
+                compose.onNodeWithContentDescription(input).performTextReplacement("999")
+                compose.onNodeWithText(context.getString(R.string.sketch_settings_cancel)).performClick()
+                scenario.onActivity { assertEquals(original, view(it).snapshotDocument()) }
+                compose.onNodeWithContentDescription(summary).performClick()
+                compose.onNodeWithContentDescription(input).assertTextEquals("500")
+                compose.onNodeWithContentDescription(input).performTextReplacement("750")
+                compose.onNodeWithContentDescription(context.getString(R.string.sketch_property_apply) + " " + input).performClick()
+                compose.onNodeWithContentDescription(input).assertDoesNotExist()
+                compose.onNodeWithContentDescription(context.getString(R.string.sketch_creation_opening_width, "750")).assertTextContains("750")
+                val expected = original.copy(openings = mapOf(opening.id to opening.copy(width = 750.0)))
+                scenario.onActivity {
+                    assertEquals(expected, view(it).snapshotDocument())
+                    assertTrue(view(it).undo())
+                    assertEquals(original, view(it).snapshotDocument())
+                }
+            } finally {
+                finishAndCloseScenario(scenario)
+                services.flush().awaitResult()
+                services.delete(project.manifest.projectId).awaitResult()
+            }
+        }
+    }
+
     @Test fun sharedOpeningWidthAppliesExplicitlyAndPreservesSemanticPrecision() {
         val services = ProjectServices.get(context)
         val wall = Wall("width-wall", Vec2(-1000.123456789, .987654321), Vec2(2000.987654321, .987654321), 240.5)
@@ -437,9 +493,13 @@ class SketchActivityProjectInstrumentedTest {
             }
             val label = context.getString(R.string.sketch_opening_width)
             val applyLabel = context.getString(R.string.sketch_property_apply) + " " + label
+            compose.onNodeWithContentDescription(label).assertDoesNotExist()
+            compose.onNodeWithContentDescription(context.getString(R.string.sketch_creation_opening_width, "500")).performClick()
             compose.onNodeWithContentDescription(label).performTextReplacement("750.123456789")
             scenario.onActivity { assertEquals(document, view(it).snapshotDocument()) }
             compose.onNodeWithContentDescription(applyLabel).performClick()
+            compose.onNodeWithContentDescription(label).assertDoesNotExist()
+            compose.onNodeWithContentDescription(context.getString(R.string.sketch_creation_opening_width, "750")).assertTextContains("750")
             val expected = document.copy(openings = mapOf(opening.id to opening.copy(width = 750.123456789)))
             scenario.onActivity { activity ->
                 val view = view(activity)
@@ -459,26 +519,32 @@ class SketchActivityProjectInstrumentedTest {
                 touch(view, MotionEvent.ACTION_UP, point)
                 assertEquals(opening.id, view.selectedOpening()?.id)
             }
+            compose.onNodeWithContentDescription(context.getString(R.string.sketch_creation_opening_width, "750")).performClick()
             for (invalid in listOf("", "99", "5000")) {
                 compose.onNodeWithContentDescription(label).performTextReplacement(invalid)
                 compose.onNodeWithContentDescription(applyLabel).performClick()
                 scenario.onActivity { assertEquals(expected, view(it).snapshotDocument()) }
             }
+            compose.onNodeWithText(context.getString(R.string.sketch_settings_cancel)).performClick()
             for ((type, tool) in listOf(SketchOpeningType.DOOR to R.string.sketch_tool_door,
                 SketchOpeningType.WINDOW to R.string.sketch_tool_window)) {
                 compose.onNodeWithContentDescription(context.getString(tool)).performClick()
                 var originalWidth = 0f
                 scenario.onActivity { originalWidth = view(it).placementOpeningWidth(type) }
+                compose.onNodeWithContentDescription(context.getString(R.string.sketch_creation_opening_width,
+                    formatSketchMillimeters(originalWidth.toDouble()))).performClick()
                 compose.onNodeWithContentDescription(label).performTextReplacement("1250.25")
                 scenario.onActivity { assertEquals(originalWidth, view(it).placementOpeningWidth(type), 0f) }
                 compose.onNodeWithContentDescription(applyLabel).performClick()
                 scenario.onActivity { assertEquals(1250.25f, view(it).placementOpeningWidth(type), 0f) }
+                compose.onNodeWithContentDescription(context.getString(R.string.sketch_creation_opening_width, "1250")).performClick()
                 compose.onNodeWithContentDescription(label).performTextReplacement("5001")
                 compose.onNodeWithContentDescription(applyLabel).performClick()
                 scenario.onActivity {
                     assertEquals(1250.25f, view(it).placementOpeningWidth(type), 0f)
                     assertEquals(expected, view(it).snapshotDocument())
                 }
+                compose.onNodeWithText(context.getString(R.string.sketch_settings_cancel)).performClick()
             }
             closeScenario()
             services.flush().awaitResult()
@@ -514,6 +580,15 @@ class SketchActivityProjectInstrumentedTest {
             val widthLabel = context.getString(R.string.sketch_column_width)
             val depthLabel = context.getString(R.string.sketch_column_depth)
             val applySize = context.getString(R.string.sketch_property_apply) + " " + widthLabel
+            compose.onNodeWithContentDescription(widthLabel).assertDoesNotExist()
+            compose.onNodeWithContentDescription(context.getString(R.string.column_rotation_angle)).assertDoesNotExist()
+            val sizeSummary = context.getString(R.string.sketch_creation_column_size, "300", "401")
+            compose.onNodeWithContentDescription(sizeSummary).performClick()
+            compose.onNodeWithContentDescription(widthLabel).performTextReplacement("999")
+            compose.onNodeWithText(context.getString(R.string.sketch_settings_cancel)).performClick()
+            scenario.onActivity { assertEquals(document, view(it).snapshotDocument()) }
+            compose.onNodeWithContentDescription(sizeSummary).performClick()
+            compose.onNodeWithContentDescription(widthLabel).assertTextEquals("300")
             compose.onNodeWithContentDescription(widthLabel).performTextReplacement("550.123456789")
             compose.onNodeWithContentDescription(depthLabel).performTextReplacement("")
             scenario.onActivity { assertEquals(document, view(it).snapshotDocument()) }
@@ -526,13 +601,18 @@ class SketchActivityProjectInstrumentedTest {
             scenario.onActivity { assertEquals(sizedDocument, view(it).snapshotDocument()) }
             val angleLabel = context.getString(R.string.column_rotation_angle)
             val applyAngle = context.getString(R.string.column_rotation_apply) + " " + angleLabel
+            compose.onNodeWithContentDescription(widthLabel).assertDoesNotExist()
+            compose.onNodeWithContentDescription(context.getString(R.string.sketch_creation_column_angle, "15")).performClick()
             compose.onNodeWithContentDescription(angleLabel).performTextReplacement("-30.125")
             compose.onNodeWithContentDescription(applyAngle).performClick()
             val rotatedDocument = sizedDocument.copy(columns = sizedDocument.columns +
                 (rectangle.id to resized.copy(rotationDegrees = 329.875)))
             scenario.onActivity { assertEquals(rotatedDocument, view(it).snapshotDocument()) }
+            compose.onNodeWithContentDescription(angleLabel).assertDoesNotExist()
+            compose.onNodeWithContentDescription(context.getString(R.string.sketch_creation_column_angle, "330")).performClick()
             compose.onNodeWithContentDescription(angleLabel).performTextReplacement("")
             compose.onNodeWithContentDescription(applyAngle).performClick()
+            compose.onNodeWithText(context.getString(R.string.sketch_settings_cancel)).performClick()
             scenario.onActivity {
                 assertEquals(rotatedDocument, view(it).snapshotDocument())
                 assertTrue(view(it).undo())
@@ -541,6 +621,9 @@ class SketchActivityProjectInstrumentedTest {
             select(circle)
             compose.onNodeWithContentDescription(depthLabel).assertDoesNotExist()
             compose.onNodeWithContentDescription(angleLabel).assertDoesNotExist()
+            compose.onNodeWithContentDescription(widthLabel).assertDoesNotExist()
+            compose.onNodeWithContentDescription(context.getString(R.string.sketch_creation_column_size, "501", "501")).performClick()
+            compose.onNodeWithContentDescription(depthLabel).assertDoesNotExist()
             compose.onNodeWithContentDescription(widthLabel).performTextReplacement("700.123456789")
             compose.onNodeWithContentDescription(applySize).performClick()
             val expected = sizedDocument.copy(columns = sizedDocument.columns +
@@ -568,8 +651,19 @@ class SketchActivityProjectInstrumentedTest {
             awaitDocument(scenario, document)
             scenario.onActivity { view(it).selectEntity(Selection.Wall(wall.id)) }
             val label = context.getString(R.string.sketch_wall_thickness)
+            val thicknessEntry = context.getString(R.string.sketch_drawing_wall_thickness, "241")
+            compose.onNodeWithText(context.getString(R.string.wall_control_line_label)).assertDoesNotExist()
+            val controlLabel = compose.onNodeWithText(context.getString(R.string.sketch_wall_properties)).fetchSemanticsNode().boundsInRoot
+            for (option in listOf(R.string.wall_control_line_center, R.string.wall_control_line_inner, R.string.wall_control_line_outer)) {
+                val bounds = compose.onNodeWithContentDescription(context.getString(R.string.wall_control_line_label) + " " + context.getString(option))
+                    .fetchSemanticsNode().boundsInRoot
+                assertEquals(controlLabel.center.y, bounds.center.y, 1f)
+                assertTrue(bounds.left >= controlLabel.right)
+            }
+            compose.onNodeWithText(thicknessEntry).performClick()
             compose.onNodeWithContentDescription(label).performTextReplacement("432.123456789")
             scenario.onActivity { assertEquals(document, view(it).snapshotDocument()) }
+            compose.onNodeWithText(context.getString(R.string.sketch_settings_cancel)).performClick()
             val density = context.resources.displayMetrics.density
             compose.onNodeWithTag("sketch-property-sheet").performTouchInput {
                 down(Offset(width / 2f, 8f * density))
@@ -584,6 +678,7 @@ class SketchActivityProjectInstrumentedTest {
                 view(it).selectEntity(Selection.Wall(wall.id))
             }
             compose.onNodeWithTag("sketch-property-sheet").assertExists()
+            compose.onNodeWithText(thicknessEntry).performClick()
             compose.onNodeWithContentDescription(label).assertTextContains("241")
             scenario.onActivity { assertEquals(document, view(it).snapshotDocument()) }
             closeScenario()
@@ -647,6 +742,7 @@ class SketchActivityProjectInstrumentedTest {
             scenario.onActivity { assertEquals(expected, view(it).snapshotDocument()) }
             val thicknessLabel = context.getString(R.string.sketch_wall_thickness)
             val applyThickness = context.getString(R.string.sketch_wall_thickness_apply) + " " + thicknessLabel
+            compose.onNodeWithText(context.getString(R.string.sketch_drawing_wall_thickness, "241")).performClick()
             compose.onNodeWithContentDescription(thicknessLabel).performTextReplacement("49")
             compose.onNodeWithContentDescription(applyThickness).performClick()
             scenario.onActivity { assertEquals(expected, view(it).snapshotDocument()) }
@@ -696,7 +792,7 @@ class SketchActivityProjectInstrumentedTest {
         val gridLabel = context.getString(R.string.sketch_settings_grid)
         val magnifierLabel = context.getString(R.string.sketch_settings_magnifier,
             SketchView.MIN_MAGNIFIER_ZOOM.toInt(), SketchView.MAX_MAGNIFIER_ZOOM.toInt())
-        fun open() { compose.onNodeWithContentDescription(context.getString(R.string.sketch_settings)).performScrollTo().performClick() }
+        fun open() { compose.onNodeWithContentDescription(context.getString(R.string.sketch_settings)).performClick() }
         fun assertSettings(grid: Float, magnifier: Float) {
             scenario.onActivity {
                 assertEquals(grid, view(it).gridDisplayStepMm(), 0f)
@@ -715,10 +811,13 @@ class SketchActivityProjectInstrumentedTest {
                 compose.onNodeWithContentDescription(gridLabel).performTextReplacement(grid)
                 compose.onNodeWithContentDescription(magnifierLabel).performTextReplacement(magnifier)
                 compose.onNodeWithText(context.getString(R.string.sketch_property_apply)).performClick()
-                compose.onNodeWithText(context.getString(R.string.sketch_settings_title)).assertDoesNotExist()
+                compose.onNodeWithText(context.getString(R.string.sketch_settings_title)).assertExists()
+                compose.onNodeWithContentDescription(gridLabel).assertTextContains(grid)
+                compose.onNodeWithContentDescription(magnifierLabel).assertTextContains(magnifier)
                 assertSettings(101.25f, 2.75f)
                 assertEquals(101.25f, preferences.getFloat(gridKey, 0f), 0f)
                 assertEquals(2.75f, preferences.getFloat(magnifierKey, 0f), 0f)
+                compose.onNodeWithText(context.getString(R.string.sketch_settings_cancel)).performClick()
             }
             open()
             compose.onNodeWithContentDescription(gridLabel).performTextReplacement("250.25")
@@ -817,6 +916,7 @@ class SketchActivityProjectInstrumentedTest {
             awaitDocument(scenario, document)
             scenario.onActivity { view(it).selectEntity(Selection.Wall(wall.id)) }
             compose.onNodeWithContentDescription(context.getString(R.string.sketch_wall_length)).assertDoesNotExist()
+            compose.onNodeWithText(context.getString(R.string.sketch_drawing_wall_thickness, "300")).performClick()
             compose.onNodeWithContentDescription(context.getString(R.string.sketch_wall_thickness))
                 .assertTextContains("300")
             scenario.onActivity {

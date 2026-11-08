@@ -1,5 +1,10 @@
 package com.example.boschlaser
 
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.onChildren
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertIsDisplayed
+
 import android.content.Intent
 import android.graphics.Bitmap
 import android.os.SystemClock
@@ -20,7 +25,6 @@ import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.onNodeWithTag
-import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextReplacement
@@ -70,6 +74,8 @@ class AnnotationActivityProjectInstrumentedTest {
                 val first = MeasurementRecord(CoreMeasurement("first", 1000.0, 1))
                 val second = MeasurementRecord(CoreMeasurement("second", 16777217.1, 2))
                 receive.invoke(activity, listOf(first))
+                assertEquals("Original", (annotationView.snapshotDocument().annotations.getValue(mark.id) as DimensionAnnotation).label)
+                activity.pageState.toggleMeasurementWait()
                 receive.invoke(activity, listOf(second, first))
                 assertEquals("16777217.1 mm", annotationView.defaultDimensionLabel)
                 assertEquals("16777217.1 mm", (annotationView.snapshotDocument().annotations.getValue(mark.id) as DimensionAnnotation).label)
@@ -83,6 +89,11 @@ class AnnotationActivityProjectInstrumentedTest {
                 annotationView.updateSelectedLabel("Another manual label")
                 val third = MeasurementRecord(CoreMeasurement("third", second.measurement.valueMm, 3))
                 receive.invoke(activity, listOf(third, second, first))
+                assertEquals("Another manual label", (annotationView.snapshotDocument().annotations.getValue(mark.id) as DimensionAnnotation).label)
+                activity.pageState.toggleMeasurementWait()
+                val fourth = MeasurementRecord(CoreMeasurement("fourth", second.measurement.valueMm, 4))
+                receive.invoke(activity, listOf(fourth, third, second, first))
+                assertFalse(activity.pageState.waitingForMeasurement)
                 assertEquals("16777217.1 mm", (annotationView.snapshotDocument().annotations.getValue(mark.id) as DimensionAnnotation).label)
             }
         } finally {
@@ -91,13 +102,14 @@ class AnnotationActivityProjectInstrumentedTest {
         }
     }
 
-    @Test fun swipingSharedPropertySheetKeepsSelectionDocumentAndUndoHistory() {
+    @Test fun propertyEditingOpensOnlyOnRequestAndClosingKeepsSelectionDocumentAndUndoHistory() {
         val scenario = ActivityScenario.launch<AnnotationActivity>(Intent(context, AnnotationActivity::class.java))
         val bitmap = Bitmap.createBitmap(400, 400, Bitmap.Config.ARGB_8888)
         val mark = DimensionAnnotation("sheet-target", PhotoPoint(.201234567891, .25), PhotoPoint(.801234567891, .25), "1234 mm", -65536)
         val document = AnnotationDocument(mapOf(mark.id to mark))
         try {
             compose.waitForIdle()
+            compose.onNodeWithContentDescription(context.getString(R.string.annotation_tool_move)).performClick()
             scenario.onActivity { activity ->
                 val annotationView = view(activity)
                 annotationView.setBitmap(bitmap)
@@ -107,11 +119,15 @@ class AnnotationActivityProjectInstrumentedTest {
                 touch(annotationView, MotionEvent.ACTION_DOWN, point)
                 touch(annotationView, MotionEvent.ACTION_UP, point)
             }
-            compose.onNodeWithTag("annotation-property-sheet").assertExists()
-            val handle = compose.onNodeWithTag("annotation-property-handle")
-            val density = handle.fetchSemanticsNode().boundsInRoot.height / 24f
-            handle.performTouchInput { down(center); moveBy(Offset(0f, 80f * density)); up() }
             compose.onNodeWithTag("annotation-property-sheet").assertDoesNotExist()
+            compose.onNodeWithTag("annotation-property-handle").assertDoesNotExist()
+            compose.onNodeWithTag("annotation-editing-panel").assertIsDisplayed()
+            compose.onNodeWithTag("annotation-secondary-toolbar").onChildren().assertCountEquals(0)
+            compose.onNodeWithContentDescription(context.getString(R.string.annotation_distance_input)).assertDoesNotExist()
+            compose.onNodeWithTag("annotation-dimension-menu").performScrollTo().performClick()
+            compose.onNodeWithContentDescription(context.getString(R.string.annotation_distance_input)).assertIsDisplayed()
+            compose.onNodeWithText(context.getString(R.string.annotation_finish)).performClick()
+            compose.onNodeWithContentDescription(context.getString(R.string.annotation_distance_input)).assertDoesNotExist()
             scenario.onActivity { activity ->
                 val annotationView = view(activity)
                 assertEquals(mark.id, annotationView.editorState().selection?.annotationId)
@@ -122,7 +138,7 @@ class AnnotationActivityProjectInstrumentedTest {
                 touch(annotationView, MotionEvent.ACTION_UP, point)
                 assertEquals(document, annotationView.snapshotDocument())
             }
-            compose.onNodeWithTag("annotation-property-sheet").assertExists()
+            compose.onNodeWithTag("annotation-dimension-menu").assertExists()
         } finally {
             finishAndCloseScenario(scenario)
             bitmap.recycle()
@@ -150,7 +166,10 @@ class AnnotationActivityProjectInstrumentedTest {
         }
         try {
             awaitDocument(scenario, mark.id)
-            compose.onNodeWithContentDescription(context.getString(R.string.annotation_tool_move)).performClick().assertIsOn()
+            compose.onNodeWithContentDescription(context.getString(R.string.annotation_tool_move)).assertIsOn()
+            scenario.onActivity { activity ->
+                assertEquals(AnnotationMode.MOVE, view(activity).editorState().mode)
+            }
             scenario.onActivity { activity ->
                 val view = view(activity)
                 val point = view.photoToScreen(PhotoPoint(.5, mark.start.y))
@@ -261,6 +280,8 @@ class AnnotationActivityProjectInstrumentedTest {
             services.flush().awaitResult()
             scenario.recreate()
             awaitDocument(scenario, anchor.id)
+            compose.onNodeWithContentDescription(context.getString(R.string.annotation_tool_move)).assertIsOn()
+            compose.onNodeWithContentDescription(context.getString(R.string.annotation_tool_dimension)).performClick()
             compose.onNodeWithContentDescription(context.getString(R.string.annotation_placement_continuous)).assertIsSelected()
             scenario.onActivity { assertEquals(3, view(it).snapshotDocument().annotations.values.count { it is DimensionAnnotation }) }
             compose.onNodeWithContentDescription(context.getString(R.string.annotation_finish)).performClick()
@@ -318,24 +339,32 @@ class AnnotationActivityProjectInstrumentedTest {
             compose.onNodeWithContentDescription(context.getString(R.string.annotation_tool_move)).performClick()
             select(text.position)
             scenario.onActivity { assertEquals(document, view(it).snapshotDocument()) }
+            compose.onNodeWithTag("annotation-label-menu").performClick()
             compose.onNodeWithContentDescription(context.getString(R.string.annotation_text_input)).performTextReplacement("Edited fixture")
             compose.onNodeWithContentDescription(context.getString(R.string.annotation_style_size) + " 大").performClick().assertIsSelected()
             compose.onNodeWithContentDescription(context.getString(R.string.annotation_style_background)).performClick().assertIsOff()
+            compose.onNodeWithText(context.getString(R.string.annotation_finish)).performClick()
+            compose.onNodeWithTag("annotation-colors-menu").performScrollTo().performClick()
             compose.onNodeWithContentDescription(context.getString(R.string.annotation_color_green)).performClick().assertIsSelected()
+            compose.onNodeWithText(context.getString(R.string.annotation_finish)).performClick()
             select(PhotoPoint((dimension.start.x + dimension.end.x) / 2, dimension.start.y))
             compose.onNodeWithContentDescription(context.getString(R.string.annotation_style_size) + " 大").assertDoesNotExist()
+            compose.onNodeWithTag("annotation-dimension-menu").performScrollTo().performClick()
             compose.onNodeWithContentDescription(context.getString(R.string.annotation_distance_unit)).performClick()
             compose.onNodeWithContentDescription(context.getString(R.string.annotation_distance_unit) + " mm").performClick()
             scenario.onActivity { assertEquals(dimension, view(it).snapshotDocument().annotations.getValue(dimension.id)) }
             compose.onNodeWithContentDescription(context.getString(R.string.annotation_distance_input)).performTextReplacement("125.75")
             compose.onNodeWithContentDescription(context.getString(R.string.annotation_distance_unit)).performClick()
             compose.onNodeWithText("cm").performClick()
-            compose.onNodeWithContentDescription(context.getString(R.string.annotation_style_thickness) + " 粗").performClick().assertIsSelected()
+            compose.onNodeWithText(context.getString(R.string.annotation_finish)).performClick()
+            compose.onNodeWithContentDescription(context.getString(R.string.annotation_style_thickness) + " 粗").performScrollTo().performClick().assertIsSelected()
+            compose.onNodeWithTag("annotation-colors-menu").performScrollTo().performClick()
             compose.onNodeWithContentDescription(context.getString(R.string.annotation_color_green)).assertIsNotSelected()
             compose.onNodeWithContentDescription(context.getString(R.string.annotation_color_blue)).performClick().assertIsSelected()
+            compose.onNodeWithText(context.getString(R.string.annotation_finish)).performClick()
             val expected = document.copy(annotations = mapOf(text.id to text.copy(text = "Edited fixture", sizePreset = 2, whiteBackground = false,
                 colorArgb = context.getColor(R.color.annotation_tool_active)),
-                dimension.id to dimension.copy(label = "125.75 cm", thicknessPreset = 2, colorArgb = context.getColor(R.color.annotation_color_blue))))
+                dimension.id to dimension.copy(label = "12.575 cm", thicknessPreset = 2, colorArgb = context.getColor(R.color.annotation_color_blue))))
             scenario.onActivity { assertEquals(expected, view(it).snapshotDocument()) }
             withPausedActivity(scenario) {
                 services.flush().awaitResult()
@@ -371,6 +400,7 @@ class AnnotationActivityProjectInstrumentedTest {
                 touch(view, MotionEvent.ACTION_UP, point)
                 assertEquals(document, view.snapshotDocument())
             }
+            compose.onNodeWithTag("annotation-label-menu").performClick()
             compose.onNodeWithContentDescription(context.getString(R.string.annotation_angle_input)).performTextReplacement("90.5")
             val expected = document.copy(annotations = mapOf(angle.id to angle.copy(label = "90.5")))
             scenario.onActivity { assertEquals(expected, view(it).snapshotDocument()) }
@@ -408,12 +438,13 @@ class AnnotationActivityProjectInstrumentedTest {
                 touch(view, MotionEvent.ACTION_UP, point)
                 assertEquals(document, view.snapshotDocument())
             }
+            compose.onNodeWithTag("annotation-label-menu").performClick()
             compose.onNodeWithContentDescription(context.getString(R.string.annotation_delete_area_point)).performClick()
             scenario.onActivity { assertEquals(document, view(it).snapshotDocument()) }
             compose.onNodeWithContentDescription(context.getString(R.string.annotation_area_input)).performTextReplacement("25.75")
             compose.onNodeWithContentDescription(context.getString(R.string.annotation_area_unit)).performClick()
             compose.onNodeWithText("mm²").performClick()
-            val expected = document.copy(annotations = mapOf(area.id to area.copy(label = "25.75 mm²")))
+            val expected = document.copy(annotations = mapOf(area.id to area.copy(label = "2575 mm²")))
             scenario.onActivity { assertEquals(expected, view(it).snapshotDocument()) }
             withPausedActivity(scenario) {
                 services.flush().awaitResult()

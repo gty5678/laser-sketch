@@ -5,6 +5,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.ui.Alignment
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -62,6 +64,7 @@ fun SketchPropertySheet(
     onDismiss: () -> Unit,
     onPresenceChanged: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
+    headerAccessory: @Composable () -> Unit = {},
     content: @Composable ColumnScope.() -> Unit,
 ) {
     var present by remember { mutableStateOf(visible) }
@@ -152,7 +155,10 @@ fun SketchPropertySheet(
         }, color = style.background, shape = MaterialTheme.shapes.large, shadowElevation = style.elevation) {
         Column(Modifier.padding(start = style.horizontalPadding, end = style.horizontalPadding,
             top = style.topPadding, bottom = style.bottomPadding), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(title, modifier = Modifier.fillMaxWidth(), style = TextStyle(color = style.titleColor, fontSize = style.titleSize, fontWeight = FontWeight.SemiBold))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(title, modifier = Modifier.weight(1f), style = TextStyle(color = style.titleColor, fontSize = style.titleSize, fontWeight = FontWeight.SemiBold))
+                headerAccessory()
+            }
             content()
         }
     }

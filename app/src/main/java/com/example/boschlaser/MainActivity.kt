@@ -70,14 +70,21 @@ class MainActivity : AppCompatActivity(), BoschBleManager.Listener {
         scheduleAutoReconnect(reconnectDelay())
     }
 
+    private enum class PermissionAction { SCAN, CONNECT_SAVED }
+    private var pendingPermissionAction: PermissionAction? = null
+
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
     ) { result ->
         if (result.values.all { it }) {
             updateDisconnectedControls()
             deviceUi = deviceUi.copy(status = getString(R.string.device_permission_granted))
-            startAutoReconnect()
+            val action = pendingPermissionAction
+            pendingPermissionAction = null
+            if (action != null) performPermissionAction(action) else startAutoReconnect()
         } else {
+            pendingPermissionAction = null
+            showDevice = true
             deviceUi = deviceUi.copy(status = getString(R.string.device_permission_needed))
         }
     }
@@ -120,12 +127,14 @@ class MainActivity : AppCompatActivity(), BoschBleManager.Listener {
     }
     override fun onSaveInstanceState(outState: Bundle) {
         pendingExportProjectId?.let { outState.putString("exportProjectId", it) }
+        pendingPermissionAction?.let { outState.putString("permissionAction", it.name) }
         super.onSaveInstanceState(outState)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         pendingExportProjectId = savedInstanceState?.getString("exportProjectId")
+        pendingPermissionAction = PermissionAction.entries.firstOrNull { it.name == savedInstanceState?.getString("permissionAction") }
         deviceUi = DeviceScreenState(getString(R.string.device_disconnected), getString(R.string.device_none_saved))
         title = "LaserSketch"
         buildInterface()
@@ -188,8 +197,8 @@ class MainActivity : AppCompatActivity(), BoschBleManager.Listener {
                         device = {
                             DeviceScreen(deviceUi, DeviceLabels(getString(R.string.device_title), getString(R.string.device_scan),
                                 getString(R.string.device_connect_saved), getString(R.string.device_disconnect)),
-                                onScan = { requirePermissionThen { autoReconnectEnabled = false; cancelAutoReconnect(); ble.scanAndConnect() } },
-                                onConnectSaved = { requirePermissionThen { autoReconnectEnabled = true; reconnectAttempt = 0; scheduleAutoReconnect(0) } },
+                                onScan = { requirePermissionThen(PermissionAction.SCAN) },
+                                onConnectSaved = { requirePermissionThen(PermissionAction.CONNECT_SAVED) },
                                 onDisconnect = { autoReconnectEnabled = false; cancelAutoReconnect(); ble.disconnect(); onDisconnected() })
                         },
                         deviceIcon = { Icon(painterResource(R.drawable.ic_device), contentDescription = null) },
@@ -231,7 +240,7 @@ class MainActivity : AppCompatActivity(), BoschBleManager.Listener {
     @Composable
     private fun ProjectList(sketch: Boolean) {
         val labels = ProjectLabels(getString(if (sketch) R.string.project_empty_sketch else R.string.project_empty_photo),
-            getString(R.string.project_actions), getString(R.string.project_rename), getString(R.string.project_delete), getString(R.string.project_export))
+            getString(R.string.project_actions), getString(R.string.project_rename), getString(R.string.project_delete), getString(R.string.project_export), getString(R.string.project_more))
         AndroidProjectList(projectServices, sketch, labels,
             updatedLabel = { getString(R.string.project_updated, SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(it))) },
             onOpen = { if (sketch) openSketchProject(it) else openAnnotationProject(it) },
@@ -391,8 +400,22 @@ class MainActivity : AppCompatActivity(), BoschBleManager.Listener {
         handler.removeCallbacks(reconnectTimeout)
     }
 
-    private fun requirePermissionThen(action: () -> Unit) {
-        if (hasPermissions()) action() else permissionLauncher.launch(requiredPermissions)
+    private fun performPermissionAction(action: PermissionAction) {
+        when (action) {
+            PermissionAction.SCAN -> {
+                autoReconnectEnabled = false
+                cancelAutoReconnect()
+                ble.scanAndConnect()
+            }
+            PermissionAction.CONNECT_SAVED -> startAutoReconnect()
+        }
+    }
+
+    private fun requirePermissionThen(action: PermissionAction) {
+        if (hasPermissions()) performPermissionAction(action) else {
+            pendingPermissionAction = action
+            permissionLauncher.launch(requiredPermissions)
+        }
     }
 
     private fun hasPermissions(): Boolean = requiredPermissions.all {

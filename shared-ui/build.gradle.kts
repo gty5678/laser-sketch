@@ -8,11 +8,13 @@ plugins {
 }
 
 val commonUiSources = fileTree("src/commonMain/kotlin") { include("**/*.kt") }
+val commonUiVectors = fileTree("src/commonMain/composeResources/drawable") { include("*.xml") }
 val checkSharedUiBoundaries by tasks.registering {
     group = "verification"
     description = "Reject Android, JVM and host imports in shared UI."
-    inputs.files(commonUiSources)
+    inputs.files(commonUiSources, commonUiVectors)
     val sources = commonUiSources
+    val vectors = commonUiVectors
     val moduleDirectory = projectDir
     doLast {
         val forbidden = Regex("""(?m)^\h*import\h+(android\.|java\.|javax\.|org\.json\.|com\.example\.boschlaser\.(?!shared\.|ui\.))""")
@@ -22,6 +24,8 @@ val checkSharedUiBoundaries by tasks.registering {
             }
         }
         check(violations.isEmpty()) { "Platform/host imports in shared UI:\n${violations.joinToString("\n")}" }
+        val platformColors = vectors.files.filter { Regex("@(?:android:|color/)").containsMatchIn(it.readText()) }
+        check(platformColors.isEmpty()) { "Android-only color references in shared vectors: ${platformColors.map { it.name }}" }
     }
 }
 
@@ -35,8 +39,12 @@ kotlin {
         compilerOptions { jvmTarget.set(JvmTarget.JVM_11) }
     }
     jvm { compilerOptions { jvmTarget.set(JvmTarget.JVM_11) } }
-    iosArm64()
-    iosSimulatorArm64()
+    listOf(iosArm64(), iosSimulatorArm64()).forEach { target ->
+        target.binaries.framework {
+            baseName = "LaserSketchUI"
+            isStatic = true
+        }
+    }
     sourceSets {
         commonMain.dependencies {
             api(project(":shared"))
@@ -45,7 +53,12 @@ kotlin {
             implementation(compose.foundation)
             implementation(compose.material3)
             implementation(compose.ui)
+            implementation(compose.components.resources)
         }
         commonTest.dependencies { implementation(kotlin("test")) }
     }
+}
+
+compose.resources {
+    packageOfResClass = "com.example.boschlaser.ui.resources"
 }

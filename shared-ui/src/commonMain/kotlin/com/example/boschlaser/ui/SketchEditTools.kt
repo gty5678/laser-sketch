@@ -32,11 +32,20 @@ fun SketchEditTools(joinActive: Boolean, extendActive: Boolean, joinLabel: Strin
 }
 
 @Composable
-fun GridSnapControl(enabled: Boolean, label: String, onChange: (Boolean) -> Unit) {
+fun GridSnapControl(enabled: Boolean, label: String, compact: Boolean = false, onChange: (Boolean) -> Unit) {
     Surface(shape = MaterialTheme.shapes.large) {
-        Row(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(label, modifier = Modifier.padding(top = 14.dp), style = MaterialTheme.typography.bodyMedium)
+        Row(Modifier.padding(horizontal = if (compact) 8.dp else 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(label, modifier = Modifier.padding(top = 14.dp), style = if (compact) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyMedium)
             Switch(checked = enabled, onCheckedChange = onChange, modifier = Modifier.semantics { contentDescription = label })
         }
+    }
+}
+
+@Composable
+fun SketchBottomControls(gridEnabled: Boolean, gridLabel: String, moveTogether: Boolean, nodeLabel: String,
+    onGridChange: (Boolean) -> Unit, onNodeChange: (Boolean) -> Unit) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        GridSnapControl(gridEnabled, gridLabel, compact = true, onChange = onGridChange)
+        GridSnapControl(moveTogether, nodeLabel, compact = true, onChange = onNodeChange)
     }
 }

@@ -29,7 +29,7 @@ internal fun SketchWall.toCoreWall(): Wall {
         WallAlignment.RIGHT -> thickness / 2.0
     }
     val reference = if (Geometry.length(center) < 1.0) center else Geometry.offset(center, offset)
-    return Wall(id, reference.start, reference.end, thickness.toDouble(), alignment, measuredLength?.toDouble())
+    return Wall(id, reference.start, reference.end, thickness.toDouble(), alignment, measuredLength?.toDouble(), fill)
 }
 
 internal fun Wall.toSketchWall(): SketchWall {
@@ -41,7 +41,7 @@ internal fun Wall.toSketchWall(): SketchWall {
         WallAlignment.RIGHT -> SketchWallControlLine.OUTER
     }
     return SketchWall(id, center.start.toSketchPoint(), center.end.toSketchPoint(), thickness.toFloat(),
-        measuredLength?.toFloat(), controlLine)
+        measuredLength?.toFloat(), controlLine, fill)
 }
 
 internal fun SketchState.toDocument(): SketchDocument {
@@ -57,8 +57,8 @@ internal fun SketchState.toDocument(): SketchDocument {
         columns = columns.associate { column ->
             column.id to when (column.type) {
                 SketchColumnType.RECTANGLE -> RectColumn(column.id, column.center.toVec2(),
-                    column.width.toDouble(), column.depth.toDouble(), column.rotationDegrees.toDouble())
-                SketchColumnType.CIRCLE -> CircularColumn(column.id, column.center.toVec2(), column.width.toDouble())
+                    column.width.toDouble(), column.depth.toDouble(), column.rotationDegrees.toDouble(), column.fill)
+                SketchColumnType.CIRCLE -> CircularColumn(column.id, column.center.toVec2(), column.width.toDouble(), column.fill)
             }
         },
     )
@@ -68,9 +68,9 @@ internal fun SketchDocument.toSketchState() = SketchState(
     walls = walls.values.map { it.toSketchWall() },
     columns = columns.values.map { column -> when (column) {
         is RectColumn -> SketchColumn(column.id, SketchColumnType.RECTANGLE, column.center.toSketchPoint(),
-            column.width.toFloat(), column.depth.toFloat(), column.rotationDegrees.toFloat())
+            column.width.toFloat(), column.depth.toFloat(), column.rotationDegrees.toFloat(), column.fill)
         is CircularColumn -> SketchColumn(column.id, SketchColumnType.CIRCLE, column.center.toSketchPoint(),
-            column.diameter.toFloat(), column.diameter.toFloat())
+            column.diameter.toFloat(), column.diameter.toFloat(), fill = column.fill)
     } },
     openings = openings.values.map { opening ->
         val host = walls.getValue(opening.hostWallId)
@@ -81,8 +81,8 @@ internal fun SketchDocument.toSketchState() = SketchState(
 )
 
 internal fun SketchColumn.toCoreColumn() = when (type) {
-    SketchColumnType.RECTANGLE -> RectColumn(id, center.toVec2(), width.toDouble(), depth.toDouble(), rotationDegrees.toDouble())
-    SketchColumnType.CIRCLE -> CircularColumn(id, center.toVec2(), width.toDouble())
+    SketchColumnType.RECTANGLE -> RectColumn(id, center.toVec2(), width.toDouble(), depth.toDouble(), rotationDegrees.toDouble(), fill)
+    SketchColumnType.CIRCLE -> CircularColumn(id, center.toVec2(), width.toDouble(), fill)
 }
 
 internal fun SketchOpening.toCoreOpening(wall: SketchWall) = Opening(

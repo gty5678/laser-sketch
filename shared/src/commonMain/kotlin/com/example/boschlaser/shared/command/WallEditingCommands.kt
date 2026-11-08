@@ -6,7 +6,6 @@ import com.example.boschlaser.shared.geometry.WallGeometry
 import com.example.boschlaser.shared.model.SketchDocument
 import com.example.boschlaser.shared.model.Wall
 import com.example.boschlaser.shared.topology.EndpointMove
-import com.example.boschlaser.shared.topology.SketchTopology
 import com.example.boschlaser.shared.topology.WallEditPlanner
 import kotlin.math.abs
 
@@ -61,9 +60,7 @@ data class ExtendWallCommand(val wallId: String, val targetWallId: String, val r
 data class MoveWallEndpointCommand(val wallId: String, val moveStart: Boolean, val point: Vec2, val detachMultiWay: Boolean = false) : SketchCommand {
     override fun apply(document: SketchDocument): SketchDocument? {
         val wall = document.walls[wallId] ?: return null
-        val old = if (moveStart) wall.start else wall.end
-        val count = SketchTopology(document).endpointsAt(old).map { it.wallId }.distinct().size
-        val changes = if (detachMultiWay && count >= 3) mapOf(wall.id to if (moveStart) wall.copy(start = point, measuredLength = null)
+        val changes = if (detachMultiWay) mapOf(wall.id to if (moveStart) wall.copy(start = point, measuredLength = null)
             else wall.copy(end = point, measuredLength = null))
         else WallEditPlanner.endpointChanges(document, listOf(EndpointMove(wall.id, moveStart, point)))
         return UpdateWallsCommand(changes).apply(document)

@@ -40,6 +40,16 @@ fun AnnotationStyleProperties(textSize: Int?, whiteBackground: Boolean, thicknes
                 Text(labels.background, style = MaterialTheme.typography.bodyMedium)
             }
         }
-        if (thickness != null) choices(labels.thickness, labels.thicknesses, thickness, onThickness)
+        if (thickness != null) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(labels.thickness, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            SingleChoiceSegmentedButtonRow(Modifier.weight(1f)) {
+                labels.thicknesses.forEachIndexed { index, name ->
+                    SegmentedButton(selected = thickness == index, onClick = { onThickness(index) },
+                        shape = SegmentedButtonDefaults.itemShape(index, labels.thicknesses.size),
+                        modifier = Modifier.semantics { contentDescription = "${labels.thickness} $name" }) { Text(name) }
+                }
+            }
+        }
     }
 }

@@ -120,7 +120,9 @@ class SelectTool : SketchTool {
                 val length = Geometry.length(line)
                 val offset = (Geometry.parameter(point, line) * length).coerceIn(opening.width / 2.0, length - opening.width / 2.0)
                 editor.preview(UpdateOpeningCommand(opening.copy(offset = offset)))
-                magnifier = null
+                val accepted = editor.renderDocument.openings.getValue(opening.id)
+                val centerLine = WallGeometry.build(editor.renderDocument.walls.getValue(accepted.hostWallId)).centerLine
+                magnifier = centerLine.start + Geometry.normalize(centerLine.end - centerLine.start) * accepted.offset
             }
             SelectionGestureTarget.Pan -> Unit
         }

@@ -34,12 +34,27 @@ class SketchColumnDrawingInstrumentedTest {
         return bitmap
     }
 
+    @Test fun whiteAndBlackColumnFillsUseTheSameGeometry() {
+        for (column in listOf<Column>(RectColumn("rect", Vec2(0.0, 0.0), 80.0, 40.0),
+            CircularColumn("circle", Vec2(0.0, 0.0), 80.0))) {
+            for (fill in ColumnFill.entries) {
+                val styled = when (column) {
+                    is RectColumn -> column.copy(fill = fill)
+                    is CircularColumn -> column.copy(fill = fill)
+                }
+                val bitmap = render(styled, rotation = false)
+                try { assertEquals(if (fill == ColumnFill.WHITE) Color.WHITE else Color.BLACK, bitmap.getPixel(160, 150)) }
+                finally { bitmap.recycle() }
+            }
+        }
+    }
+
     @Test fun rotatedBodyOutlineAndHandleKeepTheirExpectedPixelLocations() {
         val column = RectColumn("fixture", Vec2(0.0, 0.0), 80.0, 40.0, 90.0)
         val selected = render(column, rotation = true)
         val placement = render(column, rotation = false)
         try {
-            assertEquals(Color.GRAY, selected.getPixel(160, 180))
+            assertEquals(Color.BLACK, selected.getPixel(160, 180))
             assertEquals(Color.WHITE, selected.getPixel(160, 200))
             assertEquals(Color.GREEN, selected.getPixel(184, 170))
             assertEquals(Color.BLUE, selected.getPixel(212, 150))
@@ -52,10 +67,10 @@ class SketchColumnDrawingInstrumentedTest {
         val tiny = render(RectColumn("tiny", Vec2(0.0, 0.0), 50.0, 50.0), rotation = false, scale = .01)
         try {
             assertEquals(Color.BLUE, circle.getPixel(160, 150))
-            assertEquals(Color.GRAY, circle.getPixel(170, 150))
+            assertEquals(Color.BLACK, circle.getPixel(170, 150))
             assertEquals(Color.GREEN, circle.getPixel(194, 150))
             assertEquals(Color.WHITE, circle.getPixel(160, 88))
-            assertEquals(Color.GRAY, tiny.getPixel(164, 150))
+            assertEquals(Color.BLACK, tiny.getPixel(164, 150))
             assertEquals(Color.WHITE, tiny.getPixel(173, 150))
         } finally { circle.recycle(); tiny.recycle() }
     }
@@ -71,7 +86,7 @@ class SketchColumnDrawingInstrumentedTest {
                 val canvas = Canvas(bitmap).apply { drawColor(Color.WHITE) }
                 view.drawColumnFixture(canvas, preview, 1f, 80f, 150f, false)
                 assertEquals(Color.WHITE, bitmap.getPixel(80, 150))
-                assertEquals(Color.rgb(110, 116, 118), bitmap.getPixel(240, 150))
+                assertEquals(Color.BLACK, bitmap.getPixel(240, 150))
                 assertEquals(document, view.snapshotDocument())
             } finally { bitmap.recycle() }
         }

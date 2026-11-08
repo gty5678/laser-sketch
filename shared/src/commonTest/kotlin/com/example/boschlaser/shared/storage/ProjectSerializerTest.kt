@@ -11,17 +11,23 @@ import com.example.boschlaser.shared.model.*
 import kotlin.test.*
 
 class ProjectSerializerTest {
+    @Test fun removedGrayWallFillLoadsAsWhite() {
+        val files = ProjectSerializer.encode(fixture()).toMutableMap()
+        files["sketch.json"] = files.getValue("sketch.json").replace("\"HATCH\"", "\"GRAY\"")
+        assertEquals(WallFill.BLANK, ProjectSerializer.decode(files).sketch.walls.getValue("wall").fill)
+    }
+
     private fun emptyFiles() = linkedMapOf(
         "manifest.json" to """{"format":"LaserSketch","formatVersion":1,"projectId":"p","name":"Fixture","updatedAt":9007199254740993,"unit":"mm","assets":[]}""",
         "sketch.json" to """{"formatVersion":1,"walls":[],"openings":[],"columns":[],"bindings":[]}""",
         "measurements.json" to "[]", "annotations.json" to "[]",
     )
     private fun fixture(): Project {
-        val wall = Wall("wall", Vec2(0.123456789, -40.5), Vec2(5000.123456789, -40.5), 237.75, WallAlignment.LEFT, 5000.25)
-        val other = Wall("other", Vec2(40.5, 0.0), Vec2(40.5, 1000.0), alignment = WallAlignment.RIGHT)
+        val wall = Wall("wall", Vec2(0.123456789, -40.5), Vec2(5000.123456789, -40.5), 237.75, WallAlignment.LEFT, 5000.25, WallFill.HATCH)
+        val other = Wall("other", Vec2(40.5, 0.0), Vec2(40.5, 1000.0), alignment = WallAlignment.RIGHT, fill = WallFill.BLANK)
         val door = Opening("door", wall.id, 1500.125, 810.5, OpeningType.DOOR, true, true)
         val window = Opening("window", wall.id, 3500.5, 1000.0, OpeningType.WINDOW)
-        val rectangle = RectColumn("rectangle", Vec2(300.123, -200.5), 440.5, 380.0, 37.25)
+        val rectangle = RectColumn("rectangle", Vec2(300.123, -200.5), 440.5, 380.0, 37.25, ColumnFill.WHITE)
         val circle = CircularColumn("circle", Vec2(-450.25, 420.0), 390.125)
         val asset = ProjectAsset("photo", "assets/photo.png", "image/png", 2400, 1600)
         val point = PhotoPoint(0.123456789, 0.3)

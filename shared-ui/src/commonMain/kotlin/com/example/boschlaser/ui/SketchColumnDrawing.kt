@@ -50,12 +50,15 @@ fun DrawScope.drawSketchColumn(column: Column, viewport: Viewport, selected: Boo
     val center = layout.center.offset()
     val halfWidth = layout.halfWidth.toFloat()
     val halfDepth = layout.halfDepth.toFloat()
+    val fill = if (column.fill == com.example.boschlaser.shared.model.ColumnFill.WHITE) Color.White else Color.Black
     if (column is CircularColumn) {
-        drawCircle(style.fill, halfWidth, center)
+        drawCircle(fill, halfWidth, center)
+        drawCircle(Color.Black, halfWidth, center, style = Stroke(style.selectionWidthPx))
         if (selected) drawCircle(style.selection, halfWidth + 4f, center, style = Stroke(style.selectionWidthPx))
     } else {
         rotate(layout.rotationDegrees.toFloat(), center) {
-            drawRect(style.fill, center - Offset(halfWidth, halfDepth), Size(halfWidth * 2, halfDepth * 2))
+            drawRect(fill, center - Offset(halfWidth, halfDepth), Size(halfWidth * 2, halfDepth * 2))
+            drawRect(Color.Black, center - Offset(halfWidth, halfDepth), Size(halfWidth * 2, halfDepth * 2), style = Stroke(style.selectionWidthPx))
             if (selected) drawRect(style.selection, center - Offset(halfWidth + 4f, halfDepth + 4f),
                 Size((halfWidth + 4f) * 2, (halfDepth + 4f) * 2), style = Stroke(style.selectionWidthPx))
         }

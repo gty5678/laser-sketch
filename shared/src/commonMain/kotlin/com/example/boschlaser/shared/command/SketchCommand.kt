@@ -7,6 +7,7 @@ import com.example.boschlaser.shared.model.Column
 import com.example.boschlaser.shared.model.Opening
 import com.example.boschlaser.shared.model.SketchDocument
 import com.example.boschlaser.shared.model.Wall
+import com.example.boschlaser.shared.model.WallFill
 import com.example.boschlaser.shared.model.WallAnchor
 import com.example.boschlaser.shared.model.WallAlignment
 import com.example.boschlaser.shared.topology.EndpointMove
@@ -72,6 +73,25 @@ data class ChangeWallLengthCommand(val wallId: String, val length: Double, val f
         val changes = WallEditPlanner.endpointChanges(document,
             listOf(EndpointMove(wallId, moveStart, point, length)))
         return UpdateWallsCommand(changes, mapOf(wallId to fixedAnchor)).apply(document)
+    }
+}
+
+/** Visual-only change preserves geometry, openings and references verbatim. */
+data class ChangeColumnFillCommand(val columnId: String, val fill: com.example.boschlaser.shared.model.ColumnFill) : SketchCommand {
+    override fun apply(document: SketchDocument): SketchDocument? {
+        val column = document.columns[columnId] ?: return null
+        val updated = when (column) {
+            is com.example.boschlaser.shared.model.RectColumn -> column.copy(fill = fill)
+            is com.example.boschlaser.shared.model.CircularColumn -> column.copy(fill = fill)
+        }
+        return document.copy(columns = document.columns + (columnId to updated))
+    }
+}
+
+data class ChangeWallFillCommand(val wallId: String, val fill: WallFill) : SketchCommand {
+    override fun apply(document: SketchDocument): SketchDocument? {
+        val wall = document.walls[wallId] ?: return null
+        return document.copy(walls = document.walls + (wallId to wall.copy(fill = fill)))
     }
 }
 

@@ -5,6 +5,8 @@ plugins {
 
 android {
     buildFeatures { compose = true }
+    // Native Android adapters and Compose iOS use the same vector source files.
+    sourceSets.getByName("main").res.srcDir("../shared-ui/src/commonMain/composeResources")
     namespace = "com.example.boschlaser"
     compileSdk {
         version = release(37)
@@ -52,4 +54,40 @@ dependencies {
     androidTestImplementation(libs.androidx.compose.test)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(libs.androidx.junit)
+}
+
+// Connected tests share the app sandbox. Require an explicitly selected emulator so
+// test fixtures and runner cleanup cannot touch a developer's daily phone data.
+abstract class VerifyInstrumentationDevice : DefaultTask() {
+    @get:Input
+    abstract val adbPath: Property<String>
+
+    @get:Input
+    abstract val selectedSerial: Property<String>
+
+    @TaskAction
+    fun verify() {
+        val serial = selectedSerial.get()
+        check(serial.startsWith("emulator-")) {
+            "Instrumented tests require a disposable emulator. Set ANDROID_SERIAL=emulator-<port>; " +
+                "use the Android App Run/Debug configuration for daily testing with retained data."
+        }
+        val process = ProcessBuilder(adbPath.get(), "-s", serial, "shell", "getprop", "ro.kernel.qemu")
+            .redirectErrorStream(true).start()
+        val output = process.inputStream.bufferedReader().use { it.readText() }.trim()
+        check(process.waitFor() == 0 && output == "1") {
+            "The selected instrumentation target must be a running Android emulator."
+        }
+    }
+}
+
+val verifyInstrumentationDevice = tasks.register<VerifyInstrumentationDevice>("verifyInstrumentationDevice") {
+    adbPath.set(androidComponents.sdkComponents.adb.map { it.asFile.absolutePath })
+    selectedSerial.set(providers.environmentVariable("ANDROID_SERIAL").orElse(""))
+}
+
+tasks.configureEach {
+    if (name.startsWith("connected") && name.endsWith("AndroidTest")) {
+        dependsOn(verifyInstrumentationDevice)
+    }
 }

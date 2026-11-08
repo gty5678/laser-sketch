@@ -89,14 +89,21 @@ Add regression coverage for split BLE frames
 .\gradlew.bat :shared-ui:checkSharedUiBoundaries :shared-ui:jvmTest
 ```
 
-运行已连接设备或模拟器上的仪器测试：
+运行专用模拟器上的仪器测试（不要使用保存日常数据的手机或模拟器）：
 
 ```powershell
 adb devices
+$env:ANDROID_SERIAL = "emulator-5554" # 替换为专用模拟器的实际序号
 .\gradlew.bat :app:connectedDebugAndroidTest
 ```
 
 macOS/Linux 将 `.\gradlew.bat` 替换为 `./gradlew`。
+
+### 日常调试保留数据
+
+使用 Android Studio 的 Android App 配置（本项目为 `lasersketch`）运行或调试，保持 Clear app storage 关闭，使用同一份本机 debug 签名密钥。覆盖安装保留草稿、照片和测量记录；遇到签名冲突应停止安装并找回原密钥，不要选择卸载重装。
+
+`connectedDebugAndroidTest` 是自动仪器测试，不是日常运行入口。项目要求通过 `ANDROID_SERIAL` 明确选择专用模拟器，拒绝在真机上执行此任务；同时关闭 Gradle 测试结束后自动卸载 APK 的行为。测试自身仍会创建和删除夹具，所以不要在测试模拟器里存放需要保留的数据。macOS/Linux 使用 `ANDROID_SERIAL=emulator-5554 ./gradlew :app:connectedDebugAndroidTest`。Android Studio 直接运行单个仪器测试可能绕过该 Gradle 保护，也必须选择专用模拟器。BLE 真机人工验收继续通过 Android App 运行配置进行。
 
 最低验证建议：
 

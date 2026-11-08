@@ -4,6 +4,7 @@ import com.example.boschlaser.shared.geometry.Vec2
 
 /** Alignment locates the wall body relative to its stored reference line. */
 enum class WallAlignment { CENTER, LEFT, RIGHT }
+enum class WallFill { BLANK, HATCH, BLACK }
 enum class WallAnchor { START, END }
 
 data class Wall(
@@ -13,6 +14,7 @@ data class Wall(
     val thickness: Double = 240.0,
     val alignment: WallAlignment = WallAlignment.CENTER,
     val measuredLength: Double? = null,
+    val fill: WallFill = WallFill.BLANK,
 ) {
     init {
         require(id.isNotBlank())

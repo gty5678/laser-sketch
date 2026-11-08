@@ -32,15 +32,15 @@ object ProjectMigration {
             }
             val reference = Geometry.offset(center, offset)
             Wall(wall.string("id", "wall-$index"), reference.start, reference.end, thickness, alignment,
-                wall.optionalNumber("measuredLength"))
+                wall.optionalNumber("measuredLength"), WallFill.valueOf(wall.string("fill", "BLANK").let { if (it == "GRAY") "BLANK" else it }))
         }) { it.id }
         val columns = unique(data.items("columns").mapIndexed { index, column ->
             val id = column.string("id", "column-$index")
             val center = column.point("center")
             val width = column.number("width", 400.0)
             when (column.string("type", "RECTANGLE")) {
-                "RECTANGLE" -> RectColumn(id, center, width, column.number("depth", 400.0), column.number("rotationDegrees", 0.0))
-                "CIRCLE" -> CircularColumn(id, center, width)
+                "RECTANGLE" -> RectColumn(id, center, width, column.number("depth", 400.0), column.number("rotationDegrees", 0.0), ColumnFill.valueOf(column.string("fill", "BLACK")))
+                "CIRCLE" -> CircularColumn(id, center, width, ColumnFill.valueOf(column.string("fill", "BLACK")))
                 else -> invalid()
             }
         }) { it.id }

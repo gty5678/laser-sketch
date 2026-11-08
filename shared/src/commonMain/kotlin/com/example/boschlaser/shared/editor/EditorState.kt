@@ -61,8 +61,16 @@ data class PlacementSettings(
     val doorWidth: Double = 900.0,
     val windowWidth: Double = 1200.0,
     val doorStyle: com.example.boschlaser.shared.model.DoorStyle = com.example.boschlaser.shared.model.DoorStyle.SINGLE,
+    val columnWidth: Double = 400.0,
+    val columnDepth: Double = 400.0,
+    val columnRotation: Double = 0.0,
+    val columnFill: com.example.boschlaser.shared.model.ColumnFill = com.example.boschlaser.shared.model.ColumnFill.BLACK,
+    val wallFill: com.example.boschlaser.shared.model.WallFill = com.example.boschlaser.shared.model.WallFill.BLANK,
 ) {
     init {
+        require(columnWidth.isFinite() && columnWidth >= 50.0)
+        require(columnDepth.isFinite() && columnDepth >= 50.0)
+        require(columnRotation.isFinite())
         require(wallThickness.isFinite() && wallThickness in 50.0..1000.0)
         require(doorWidth.isFinite() && doorWidth in 100.0..5000.0)
         require(windowWidth.isFinite() && windowWidth in 100.0..5000.0)

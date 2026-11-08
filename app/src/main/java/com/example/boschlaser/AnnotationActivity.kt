@@ -10,6 +10,7 @@ import android.content.ContentValues
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import com.example.boschlaser.platform.AndroidPhotoCodec
 import android.net.Uri
 import android.os.Bundle
@@ -22,15 +23,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.*
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.*
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.res.dimensionResource
-import com.example.boschlaser.ui.AnnotationPropertySheet
-import com.example.boschlaser.ui.AnnotationPropertySheetStyle
 import com.example.boschlaser.ui.AnnotationScreen
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
@@ -40,7 +39,6 @@ import com.example.boschlaser.ui.AnnotationToolbar
 import com.example.boschlaser.ui.AnnotationToolItem
 import com.example.boschlaser.ui.PlacementOptions
 import com.example.boschlaser.ui.AnnotationActions
-import com.example.boschlaser.ui.RecentMeasurements
 import com.example.boschlaser.ui.AnnotationAreaPointAction
 import com.example.boschlaser.ui.AnnotationStyleProperties
 import com.example.boschlaser.ui.AnnotationStyleLabels
@@ -75,6 +73,9 @@ class AnnotationActivity : AppCompatActivity() {
         private const val STATE_PROJECT_ID = "annotation_project_id_state"
         private const val STATE_CONTINUOUS_PLACEMENT = "annotation_continuous_placement"
     }
+
+    private var correctionImage by mutableStateOf<Bitmap?>(null)
+    private var correctionResult: CompletableDeferred<com.example.boschlaser.shared.annotation.PhotoCorrection?>? = null
 
     private lateinit var annotationView: ImageAnnotationView
     private var annotationHint by mutableStateOf("")
@@ -291,7 +292,7 @@ class AnnotationActivity : AppCompatActivity() {
             }
             onSelectionChanged = { selection -> showSelection(selection) }
             onAnnotationCreated = { mode -> handleAnnotationCreated(mode) }
-            onCanvasTouched = { finishDistanceEditing() }
+            onCanvasTouched = { finishDistanceEditing(); pageState.dismissPanel() }
             onManipulationStarted = { dismissSelectionPanel() }
         }
         @Composable fun ImageActionsOverlay() {
@@ -313,7 +314,11 @@ class AnnotationActivity : AppCompatActivity() {
         @Composable fun RecentValues() {
             MaterialTheme(colorScheme = lightColorScheme(primary = colorResource(R.color.annotation_tool_active),
                 onPrimary = colorResource(R.color.white))) {
-                RecentMeasurements(pageState.recentMeasurementLabels, pageState.properties.dimension != null, ::applyRecentMeasurement)
+                pageState.recentMeasurementLabels.take(3).forEachIndexed { index, label ->
+                    androidx.compose.material3.TextButton(onClick = { applyRecentMeasurement(index) }) {
+                        androidx.compose.material3.Text(label)
+                    }
+                }
             }
         }
 
@@ -326,8 +331,56 @@ class AnnotationActivity : AppCompatActivity() {
                         ColorOption(resources.getColor(R.color.annotation_color_blue, theme), getString(R.string.annotation_color_blue)),
                         ColorOption(resources.getColor(R.color.annotation_color_orange, theme), getString(R.string.annotation_color_orange)),
                         ColorOption(resources.getColor(R.color.annotation_color_black, theme), getString(R.string.annotation_color_black)),
-                    ), ::selectMarkColor)
+                    ), com.example.boschlaser.ui.CustomColorLabels(
+                        getString(R.string.annotation_custom_color), getString(R.string.annotation_color_hex),
+                        getString(R.string.annotation_color_wheel), getString(R.string.annotation_color_brightness),
+                        getString(R.string.annotation_color_apply), getString(R.string.annotation_color_cancel)), ::selectMarkColor)
             }
+        }
+
+        @Composable fun SelectionTools() {
+            if (pageState.properties.text != null || pageState.properties.angle != null || pageState.properties.area != null) {
+                val isText = pageState.properties.text != null
+                val isArea = pageState.properties.area != null
+                val title = getString(when {
+                    isText -> R.string.annotation_tool_text
+                    isArea -> R.string.annotation_tool_area
+                    else -> R.string.annotation_tool_angle
+                })
+                val value = when {
+                    isText -> pageState.properties.text?.text.orEmpty()
+                    isArea -> pageState.properties.area?.text.orEmpty() + " " + quantityUnits(true)[pageState.properties.areaUnit]
+                    else -> pageState.properties.angle?.text.orEmpty() + getString(R.string.annotation_degree)
+                }
+                com.example.boschlaser.ui.AnnotationDimensionMenu(title, value, getString(R.string.annotation_finish),
+                    pageState.properties.resetKey, tag = "annotation-label-menu") {
+                    LabelProperties()
+                    QuantityProperties(true)
+                    if (isText) StyleProperties()
+                    if (isArea) {
+                        androidx.compose.material3.TextButton(onClick = { annotationView.insertSelectedAreaPoint() }) {
+                            androidx.compose.material3.Text(getString(R.string.annotation_insert_area_point))
+                        }
+                        DeleteAreaPoint()
+                    }
+                }
+            }
+            if (pageState.properties.dimension != null) {
+                com.example.boschlaser.ui.AnnotationDimensionMenu(getString(R.string.annotation_dimension_properties),
+                    pageState.properties.distance?.text.orEmpty() + " " + quantityUnits(false)[pageState.properties.distanceUnit],
+                    getString(R.string.annotation_finish), pageState.properties.resetKey) {
+                    QuantityProperties(false)
+                    androidx.compose.material3.TextButton(onClick = { pageState.toggleMeasurementWait() }) {
+                        androidx.compose.material3.Text(getString(if (pageState.waitingForMeasurement)
+                            R.string.annotation_waiting_measurement else R.string.annotation_wait_measurement))
+                    }
+                    RecentValues()
+                }
+            }
+            com.example.boschlaser.ui.AnnotationDimensionMenu(getString(R.string.annotation_style_color), "",
+                getString(R.string.annotation_finish), pageState.properties.resetKey,
+                tag = "annotation-colors-menu") { Colors() }
+            if (pageState.properties.dimension != null) Box(Modifier.width(260.dp)) { StyleProperties() }
         }
 
         val root = FrameLayout(this).apply {
@@ -337,36 +390,44 @@ class AnnotationActivity : AppCompatActivity() {
         root.addView(ComposeView(this).apply {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
             setContent {
+                val correcting = correctionImage
+                if (correcting != null) {
+                    val previewSource = remember(correcting) {
+                        val scale = minOf(1.0, 700.0 / maxOf(correcting.width, correcting.height))
+                        if (scale < 1) Bitmap.createScaledBitmap(correcting, maxOf(2, (correcting.width * scale).toInt()), maxOf(2, (correcting.height * scale).toInt()), true) else correcting
+                    }
+                    androidx.compose.ui.window.Dialog(onDismissRequest = {}, properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, dismissOnBackPress = false, dismissOnClickOutside = false)) {
+                        MaterialTheme { androidx.compose.material3.Surface(Modifier.fillMaxSize()) {
+                            com.example.boschlaser.ui.PhotoCorrectionScreen(correcting.asImageBitmap(),
+                                com.example.boschlaser.ui.PhotoCorrectionLabels(
+                                    getString(R.string.photo_correction_title), getString(R.string.photo_correction_hint),
+                                    getString(R.string.photo_correction_lens), getString(R.string.photo_correction_reset),
+                                    getString(R.string.photo_correction_original), getString(R.string.photo_correction_apply),
+                                    getString(R.string.photo_correction_error), getString(R.string.photo_correction_horizontal),
+                                    getString(R.string.photo_correction_vertical), getString(R.string.photo_correction_rotation)),
+                                render = { settings, maximum -> withContext(Dispatchers.Default) {
+                                    val result = correctBitmap(previewSource, settings, maximum)
+                                    result.asImageBitmap()
+                                } }, onDone = { correctionResult?.complete(it) })
+                        } }
+                    }
+                }
                 AnnotationScreen(colorResource(R.color.white),
                     dimensionResource(R.dimen.annotation_actions_end_margin),
                     dimensionResource(R.dimen.annotation_properties_margin),
-                    toolbar = { ImageToolbar() }, placementOptions = { if (pageState.mode != AnnotationMode.MOVE) PlacementModeOptions() },
+                    toolbar = { ImageToolbar() }, placementOptions = {
+                        com.example.boschlaser.ui.AnnotationSecondaryToolbar(scrollable = false) {
+                            if (pageState.mode != AnnotationMode.MOVE) PlacementModeOptions()
+                        }
+                    },
                     status = { androidx.compose.material3.Text(if (pageState.waitingForMeasurement) getString(R.string.annotation_waiting_measurement) else annotationHint,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                        modifier = Modifier.height(22.dp).padding(horizontal = 8.dp, vertical = 2.dp),
                         style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     canvas = { AndroidView(factory = { annotationView }, modifier = Modifier.fillMaxSize()) },
                     actions = { ImageActionsOverlay() },
                     properties = {
-                        AnnotationPropertySheet(pageState.properties.visible, pageState.properties.resetKey, pageState.properties.animateDismiss,
-                            getString(R.string.annotation_properties_dismiss), propertySheetStyle(), ::dismissSelectionPanel) {
-                            QuantityProperties(false)
-                            LabelProperties()
-                            QuantityProperties(true)
-                            if (pageState.properties.dimension != null) {
-                                androidx.compose.material3.TextButton(onClick = { pageState.toggleMeasurementWait() }) {
-                                    androidx.compose.material3.Text(getString(if (pageState.waitingForMeasurement)
-                                        R.string.annotation_waiting_measurement else R.string.annotation_wait_measurement))
-                                }
-                            }
-                            RecentValues()
-                            Colors()
-                            StyleProperties()
-                            if (pageState.properties.areaMark != null) {
-                                androidx.compose.material3.TextButton(onClick = { annotationView.insertSelectedAreaPoint() }) {
-                                    androidx.compose.material3.Text(getString(R.string.annotation_insert_area_point))
-                                }
-                            }
-                            DeleteAreaPoint()
+                        if (pageState.mode == AnnotationMode.MOVE && pageState.properties.visible && pageState.properties.selection != null) {
+                            com.example.boschlaser.ui.AnnotationEditingPanel { SelectionTools() }
                         }
                     })
             }
@@ -375,16 +436,6 @@ class AnnotationActivity : AppCompatActivity() {
         applyWindowInsets(root)
         updateRecentMeasurements(availableMeasurements())
     }
-
-    @Composable
-    private fun propertySheetStyle() = AnnotationPropertySheetStyle(
-        colorResource(R.color.annotation_properties_background), colorResource(R.color.annotation_properties_handle),
-        dimensionResource(R.dimen.annotation_properties_horizontal_padding), dimensionResource(R.dimen.annotation_properties_vertical_padding),
-        dimensionResource(R.dimen.annotation_properties_elevation), dimensionResource(R.dimen.annotation_properties_corner_radius),
-        dimensionResource(R.dimen.annotation_properties_handle_area_height), dimensionResource(R.dimen.annotation_properties_handle_width),
-        dimensionResource(R.dimen.annotation_properties_handle_height), dimensionResource(R.dimen.annotation_properties_handle_corner_radius),
-        dimensionResource(R.dimen.annotation_properties_dismiss_threshold), dimensionResource(R.dimen.annotation_properties_exit_extra_distance),
-    )
 
     private fun showSelection(selection: AnnotationSelection?) {
         pageState.showSelection(selection)
@@ -602,11 +653,17 @@ class AnnotationActivity : AppCompatActivity() {
             var bitmap: Bitmap? = null
             var transferred = false
             try {
-                val jpeg = withContext(Dispatchers.IO) {
-                    val decoded = AndroidPhotoCodec.read(contentResolver, uri)
-                    bitmap = decoded
-                    AndroidPhotoCodec.jpeg(decoded)
+                bitmap = withContext(Dispatchers.IO) { AndroidPhotoCodec.read(contentResolver, uri) }
+                val result = CompletableDeferred<com.example.boschlaser.shared.annotation.PhotoCorrection?>()
+                correctionResult = result
+                correctionImage = bitmap
+                val settings = try { result.await() } finally { correctionImage = null; correctionResult = null }
+                if (settings != null) {
+                    val original = requireNotNull(bitmap)
+                    bitmap = withContext(Dispatchers.Default) { correctBitmap(original, settings, 3000) }
+                    original.recycle()
                 }
+                val jpeg = withContext(Dispatchers.IO) { AndroidPhotoCodec.jpeg(requireNotNull(bitmap)) }
                 val image = requireNotNull(bitmap)
                 val date = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date())
                 val project = projectServices.createAnnotation(getString(R.string.project_photo_default_name, date), jpeg, image.width, image.height, newProjectId).await()
@@ -623,6 +680,7 @@ class AnnotationActivity : AppCompatActivity() {
                 currentPhotoAssetId = document.photoAssetId
                 annotationView.setBitmap(storedImage)
                 annotationView.restoreDocument(document)
+                setEditorMode(AnnotationMode.DIMENSION)
                 transferred = true
                 projectLoaded = true
                 loadingNewImage = false
@@ -658,6 +716,7 @@ class AnnotationActivity : AppCompatActivity() {
                 currentPhotoAssetId = photo.assetId
                 annotationView.setBitmap(requireNotNull(bitmap))
                 annotationView.restoreDocument(photo.project.annotations.getValue(photo.assetId))
+                setEditorMode(AnnotationMode.MOVE)
                 transferred = true
                 projectLoaded = true
                 annotationView.isEnabled = true
@@ -666,6 +725,18 @@ class AnnotationActivity : AppCompatActivity() {
             catch (_: Exception) { projectServices.acknowledgeError(); toast(getString(R.string.project_open_failed)); finish() }
             finally { if (!transferred) bitmap?.recycle() }
         }
+    }
+
+    private suspend fun correctBitmap(image: Bitmap, settings: com.example.boschlaser.shared.annotation.PhotoCorrection, maximum: Int): Bitmap {
+        val correctionContext = currentCoroutineContext()
+        val scale = minOf(1.0, maximum.toDouble() / maxOf(image.width, image.height))
+        val source = if (scale < 1) Bitmap.createScaledBitmap(image, maxOf(2, (image.width * scale).toInt()), maxOf(2, (image.height * scale).toInt()), true) else image
+        try {
+            val pixels = IntArray(source.width * source.height)
+            source.getPixels(pixels, 0, source.width, 0, 0, source.width, source.height)
+            val result = com.example.boschlaser.shared.annotation.correctPhoto(pixels, source.width, source.height, settings, maximum, checkCancelled = { correctionContext.ensureActive() })
+            return Bitmap.createBitmap(result.pixels, result.width, result.height, Bitmap.Config.ARGB_8888)
+        } finally { if (source !== image) source.recycle() }
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()

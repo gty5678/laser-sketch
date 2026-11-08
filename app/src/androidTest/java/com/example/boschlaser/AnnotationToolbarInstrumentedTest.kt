@@ -38,9 +38,9 @@ class AnnotationToolbarInstrumentedTest {
                 compose.onNodeWithContentDescription(other.name).assertIsOff()
             }
         }
-        compose.onNodeWithContentDescription("Back fixture").performScrollTo().performClick()
-        compose.onNodeWithContentDescription("Share fixture").performScrollTo().performClick()
-        compose.onNodeWithContentDescription("Save fixture").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("Back fixture").assertIsDisplayed().performClick()
+        compose.onNodeWithContentDescription("Share fixture").assertIsDisplayed().performClick()
+        compose.onNodeWithContentDescription("Save fixture").assertIsDisplayed().performClick()
         compose.runOnIdle {
             assertEquals(AnnotationMode.entries.toList(), modes)
             assertEquals(listOf("back", "share", "save"), actions)

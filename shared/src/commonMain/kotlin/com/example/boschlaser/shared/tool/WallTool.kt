@@ -41,7 +41,7 @@ class WallTool : SketchTool {
         var changed = false
         if (hadAnchor && Geometry.length(line) >= 100.0) {
             val settings = editor.placement
-            val wall = Wall(editor.nextId(), line.start, line.end, settings.wallThickness, settings.alignment)
+            val wall = Wall(editor.nextId(), line.start, line.end, settings.wallThickness, settings.alignment, fill = settings.wallFill)
             changed = editor.execute(AddWallCommand(wall))
             if (changed) { starts.addLast(line.start); editor.select(Selection.Wall(wall.id)) }
         }

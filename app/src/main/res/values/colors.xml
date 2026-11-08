@@ -30,7 +30,7 @@
     <color name="sketch_toolbar_background">#FAFFFFFF</color>
     <color name="sketch_properties_background">#FFFFFFFF</color>
     <color name="sketch_properties_title">#191919</color>
-    <color name="sketch_wall_fill">#F5F5F2</color>
+    <color name="sketch_wall_fill">#555555</color>
     <color name="sketch_wall_outline">#1C1F20</color>
     <color name="sketch_opening_symbol">#1D5E91</color>
     <color name="sketch_column_fill">#6E7476</color>

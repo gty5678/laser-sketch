@@ -1,5 +1,12 @@
 package com.example.boschlaser.ui
 
+import androidx.compose.runtime.key
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.setValue
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalContext
@@ -18,7 +25,7 @@ internal fun AndroidMeasurements(service: MeasurementService, canMeasure: Boolea
     val records by service.records.collectAsStateWithLifecycle()
     val labels = MeasurementLabels(context.getString(R.string.measurement_current), context.getString(R.string.measurement_history),
         context.getString(R.string.measurement_measure), context.getString(R.string.measurement_clear), context.getString(R.string.measurement_export),
-        context.getString(R.string.measurement_empty), context.getString(R.string.measurement_delete))
+        context.getString(R.string.measurement_empty), context.getString(R.string.measurement_delete), context.getString(R.string.editor_undo), context.getString(R.string.measurement_pending_delete))
     val rows = records.asReversed().map { record ->
         val item = record.measurement
         val operation = record.legacyOperation ?: context.getString(when (item.operation) {
@@ -33,5 +40,13 @@ internal fun AndroidMeasurements(service: MeasurementService, canMeasure: Boolea
     }
     val distance = records.lastOrNull()?.measurement?.valueMm?.let { context.getString(R.string.measurement_distance, "%.1f".format(Locale.US, it)) }
         ?: context.getString(R.string.measurement_distance_empty)
-    MeasurementScreen(rows, distance, canMeasure, labels, { context.getString(R.string.measurement_more, it) }, onMeasure, onClear, onExport, onDelete)
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    var session by remember { mutableIntStateOf(0) }
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { session++ }
+    key(session) {
+        MeasurementScreen(rows, distance, canMeasure, labels, { context.getString(R.string.measurement_more, it) },
+            onMeasure, onClear, onExport, onDelete = { id ->
+                if (lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) onDelete(id)
+            })
+    }
 }

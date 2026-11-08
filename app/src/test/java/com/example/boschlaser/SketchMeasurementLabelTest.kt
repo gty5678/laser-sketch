@@ -13,6 +13,12 @@ class SketchMeasurementLabelTest {
         assertEquals("0", formatSketchMillimeters(-0.5))
     }
 
+    @Test fun bluetoothMillimetersHideFloatingPointTails() {
+        assertEquals("1234", formatSketchMillimeters(1234.0000000000002))
+        assertEquals("1234", formatSketchMillimeters(1233.9999999999998))
+        assertEquals("1235", formatSketchMillimeters(1234.6))
+    }
+
     @Test fun fractionalDoubleInputDoesNotRoundThroughFloat() {
         assertEquals("16777217", formatSketchMillimeters(16777216.5))
         assertEquals("16777216", formatSketchMillimeters(16777216.4999))

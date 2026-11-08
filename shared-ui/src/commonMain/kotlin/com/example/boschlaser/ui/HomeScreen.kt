@@ -45,17 +45,18 @@ fun HomeScreen(
     modifier: Modifier = Modifier,
 ) {
     Box(modifier.fillMaxSize().systemBarsPadding()) {
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())
-            .padding(start = 16.dp, top = 8.dp, end = 16.dp, bottom = 104.dp)) {
-            TextButton(onClick = onImport, modifier = Modifier.align(Alignment.End)) { Text(labels.importProject) }
-            Text(labels.photos, Modifier.padding(top = 18.dp, bottom = 6.dp), style = MaterialTheme.typography.titleLarge)
-            photos()
-            Text(labels.sketches, Modifier.padding(top = 18.dp, bottom = 6.dp), style = MaterialTheme.typography.titleLarge)
-            sketches()
-            measurements()
+        Column(Modifier.fillMaxSize().padding(bottom = 96.dp)) {
+            Column(Modifier.weight(1f).verticalScroll(rememberScrollState())
+                .padding(start = 16.dp, top = 8.dp, end = 16.dp, bottom = 8.dp)) {
+                TextButton(onClick = onImport, modifier = Modifier.align(Alignment.End)) { Text(labels.importProject) }
+                Text(labels.photos, Modifier.padding(top = 18.dp, bottom = 6.dp), style = MaterialTheme.typography.titleLarge)
+                photos()
+                Text(labels.sketches, Modifier.padding(top = 18.dp, bottom = 6.dp), style = MaterialTheme.typography.titleLarge)
+                sketches()
+                measurements()
+            }
+            if (showDevice) Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) { device() }
         }
-        if (showDevice) Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth()
-            .padding(start = 16.dp, end = 16.dp, bottom = 96.dp)) { device() }
         Row(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(start = 12.dp, end = 88.dp, bottom = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             ExtendedFloatingActionButton(onClick = onAddSketch, modifier = Modifier.weight(1f)
                 .semantics { contentDescription = labels.addSketch }, shape = CircleShape,

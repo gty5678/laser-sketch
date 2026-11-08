@@ -1,5 +1,7 @@
 package com.example.boschlaser
 
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -21,6 +23,27 @@ class ProjectScreenInstrumentedTest {
         finishAndCloseScenario(compose.activityRule.scenario)
     }
     private val labels = ProjectLabels("Empty fixture", "Actions", "Rename", "Delete", "Export")
+    @Test fun largeCatalogScrollsHorizontallyWithoutLoadingMore() {
+        val composed = mutableSetOf<String>()
+        var opened: String? = null
+        compose.setContent {
+            MaterialTheme {
+                androidx.compose.foundation.layout.Column(androidx.compose.ui.Modifier.verticalScroll(rememberScrollState())) {
+                    ProjectScreen((1..14).map { ProjectCardState("$it", "Project $it", "Time") },
+                        labels.copy(more = "More fixture"), { opened = it }, {}, {}, {}, { composed += it })
+                }
+            }
+        }
+        compose.onNodeWithText("Project 1").assertIsDisplayed()
+        compose.runOnIdle { org.junit.Assert.assertFalse("14" in composed) }
+        compose.onNodeWithText("More fixture").assertDoesNotExist()
+        compose.onNode(hasScrollToIndexAction()).performScrollToIndex(13)
+        compose.onNodeWithText("Project 14").assertIsDisplayed().performClick()
+        compose.runOnIdle { assertEquals("14", opened) }
+        compose.onNode(hasScrollToIndexAction()).performScrollToIndex(0)
+        compose.onNodeWithText("Project 1").assertIsDisplayed()
+    }
+
     @Test fun cardAndMenuActionsUseStableProjectIdentity() {
         val actions = mutableListOf<Pair<String, String>>()
         compose.setContent {

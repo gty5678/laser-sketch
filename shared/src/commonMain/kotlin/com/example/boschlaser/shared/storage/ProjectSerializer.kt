@@ -86,7 +86,7 @@ object ProjectSerializer {
         } }))
         put("walls", JsonArray(project.sketch.walls.values.map { wall -> buildJsonObject {
             put("id", wall.id); put("start", point(wall.start.x, wall.start.y)); put("end", point(wall.end.x, wall.end.y))
-            put("thickness", wall.thickness); put("alignment", wall.alignment.name)
+            put("thickness", wall.thickness); put("alignment", wall.alignment.name); put("fill", wall.fill.name)
             wall.measuredLength?.let { put("measuredLength", it) }
         } }))
         put("openings", JsonArray(project.sketch.openings.values.map { opening -> buildJsonObject {
@@ -96,7 +96,7 @@ object ProjectSerializer {
             if (opening.doorStyle != DoorStyle.SINGLE) put("doorStyle", opening.doorStyle.name)
         } }))
         put("columns", JsonArray(project.sketch.columns.values.map { column -> buildJsonObject {
-            put("id", column.id); put("center", point(column.center.x, column.center.y))
+            put("fill", column.fill.name); put("id", column.id); put("center", point(column.center.x, column.center.y))
             when (column) {
                 is RectColumn -> { put("type", "RECTANGLE"); put("width", column.width); put("depth", column.depth); put("rotationDegrees", column.rotationDegrees) }
                 is CircularColumn -> { put("type", "CIRCLE"); put("diameter", column.diameter) }
@@ -153,9 +153,10 @@ object ProjectSerializer {
         return ProjectAsset(data.string("id"), data.string("path"), data.string("mimeType"), data.optionalInt("pixelWidth"), data.optionalInt("pixelHeight"))
     }
     private fun wall(data: JsonObject): Wall {
-        data.keys("id", "start", "end", "thickness", "alignment", "measuredLength")
+        data.keys("id", "start", "end", "thickness", "alignment", "measuredLength", "fill")
         return Wall(data.string("id"), data.vector("start"), data.vector("end"), data.double("thickness"),
-            WallAlignment.valueOf(data.string("alignment")), data.optionalDouble("measuredLength"))
+            WallAlignment.valueOf(data.string("alignment")), data.optionalDouble("measuredLength"),
+            data.optionalString("fill")?.let { WallFill.valueOf(if (it == "GRAY") "BLANK" else it) } ?: WallFill.BLANK)
     }
     private fun opening(data: JsonObject): Opening {
         data.keys("id", "hostWallId", "offset", "width", "type", "flipped", "hingeFlipped", "doorStyle")
@@ -165,12 +166,12 @@ object ProjectSerializer {
     }
     private fun column(data: JsonObject): Column = when (data.string("type")) {
         "RECTANGLE" -> {
-            data.keys("id", "type", "center", "width", "depth", "rotationDegrees")
-            RectColumn(data.string("id"), data.vector("center"), data.double("width"), data.double("depth"), data.double("rotationDegrees"))
+            data.keys("id", "type", "center", "width", "depth", "rotationDegrees", "fill")
+            RectColumn(data.string("id"), data.vector("center"), data.double("width"), data.double("depth"), data.double("rotationDegrees"), data.optionalString("fill")?.let { ColumnFill.valueOf(it) } ?: ColumnFill.BLACK)
         }
         "CIRCLE" -> {
-            data.keys("id", "type", "center", "diameter")
-            CircularColumn(data.string("id"), data.vector("center"), data.double("diameter"))
+            data.keys("id", "type", "center", "diameter", "fill")
+            CircularColumn(data.string("id"), data.vector("center"), data.double("diameter"), data.optionalString("fill")?.let { ColumnFill.valueOf(it) } ?: ColumnFill.BLACK)
         }
         else -> fail(ProjectFormatFailure.INVALID_DATA)
     }

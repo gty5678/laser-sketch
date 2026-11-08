@@ -27,14 +27,17 @@ class SketchViewColumnMoveInstrumentedTest {
         val column = SketchColumn(id = "column", type = SketchColumnType.RECTANGLE,
             center = SketchPoint(600f, 600f), width = 100f, depth = 100f)
         view.restoreState(SketchState(walls = walls, columns = listOf(column)))
-        val start = SketchPoint(612.5f, 612.5f)
+        // At the default 0.12 viewport scale, the wall endpoint has a 200 mm hit radius.
+        // Grab the column's far corner so this exercises column movement rather than that endpoint.
+        val start = SketchPoint(650f, 650f)
         view.sendWorldPointer(android.view.MotionEvent.ACTION_DOWN, start)
+        assertEquals(Selection.Column(column.id), view.editorState().selection)
         for (step in 1..40) {
             view.sendWorldPointer(android.view.MotionEvent.ACTION_MOVE,
                 SketchPoint(start.x + step * 12.5f, start.y + step * 12.5f))
         }
         assertPointEquals(SketchPoint(1100f, 1100f), view.snapshotState().columns.single().center)
-        view.sendWorldPointer(android.view.MotionEvent.ACTION_CANCEL, SketchPoint(1112.5f, 1112.5f))
+        view.sendWorldPointer(android.view.MotionEvent.ACTION_CANCEL, SketchPoint(1150f, 1150f))
         assertPointEquals(column.center, view.snapshotState().columns.single().center)
     }
 

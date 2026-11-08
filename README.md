@@ -225,3 +225,7 @@ Application ID 暂时保留为 `com.example.boschlaser`，以避免更换包名�
 测量历史已接入共享仓库，SQLite 兼容升级与验证范围见 [测量仓库](docs/measurement-repository.md)。
 
 项目支持 `.lsk` 交换：在首页导入独立副本，在草图或照片项目菜单导出完整工程；系统文件选择器决定读取和保存位置。导入不会覆盖本机项目，格式与边界见 [项目格式](docs/project-format.md)。
+
+## Android / iOS 双端开发
+
+Android 与 iOS 共用 Kotlin 核心、Compose 界面组件、绘制场景和矢量图标。iOS 工程为 `iosApp/LaserSketch.xcodeproj`，已接入草图属性与尺寸驱动、照片标注、`.lsk` 工程交换、系统分享及 CoreBluetooth 测距适配。用 `./scripts/check-mobile.sh` 同时验证两个应用，详细命令和实际验收边界见 [双端开发说明](docs/ios-migration.md)。iOS 模拟器无需个人签名；真机运行需在 Xcode 配置自己的开发团队，蓝牙还需 iPhone 与 Bosch GLM 联调。选择照片使用系统 PHPicker；保存相册申请添加照片权限，蓝牙连接申请 Bluetooth 权限。

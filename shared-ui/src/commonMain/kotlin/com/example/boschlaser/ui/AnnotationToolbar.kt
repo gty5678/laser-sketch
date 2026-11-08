@@ -1,8 +1,7 @@
 package com.example.boschlaser.ui
 
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.IconToggleButton
@@ -34,18 +33,19 @@ fun AnnotationToolbar(
     toolIcon: @Composable (AnnotationMode) -> Unit,
 ) {
     Surface {
-        Row(Modifier.horizontalScroll(rememberScrollState())) {
+        Row(Modifier.fillMaxWidth()) {
             IconButton(onClick = onBack, modifier = Modifier.semantics { contentDescription = backLabel }, content = backIcon)
-            tools.forEach { tool ->
-                IconToggleButton(checked = selected == tool.mode, onCheckedChange = { onTool(tool.mode) },
-                    modifier = Modifier.semantics { contentDescription = tool.label },
-                    colors = IconButtonDefaults.iconToggleButtonColors(
-                        checkedContainerColor = MaterialTheme.colorScheme.primary,
-                        checkedContentColor = MaterialTheme.colorScheme.onPrimary)) { toolIcon(tool.mode) }
+            ScrollableTools(Modifier.weight(1f)) {
+                tools.forEach { tool ->
+                    IconToggleButton(checked = selected == tool.mode, onCheckedChange = { onTool(tool.mode) },
+                        modifier = Modifier.semantics { contentDescription = tool.label },
+                        colors = IconButtonDefaults.iconToggleButtonColors(
+                            checkedContainerColor = MaterialTheme.colorScheme.primary,
+                            checkedContentColor = MaterialTheme.colorScheme.onPrimary)) { toolIcon(tool.mode) }
+                }
             }
             IconButton(onClick = onShare, modifier = Modifier.semantics { contentDescription = shareLabel }, content = shareIcon)
             IconButton(onClick = onSave, modifier = Modifier.semantics { contentDescription = saveLabel }, content = saveIcon)
         }
-
     }
 }

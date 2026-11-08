@@ -62,11 +62,12 @@ class WallEditingCommandsTest {
         assertEquals(door, scene.openings.getValue(door.id))
     }
     @Test
-    fun twoWallEndpointDragFollowsButThreeWayDragCanDetachOnlySelectedWall() {
+    fun endpointDragCanDetachFromBothTwoAndThreeWallJunctions() {
         val connected = vertical.copy(start = horizontal.end)
         val point = Vec2(2200.0, 200.0)
         val pair = MoveWallEndpointCommand(horizontal.id, false, point, detachMultiWay = true).apply(document(horizontal, connected))!!
-        assertEquals(point, pair.walls.getValue(connected.id).start)
+        assertEquals(connected, pair.walls.getValue(connected.id))
+        assertEquals(point, pair.walls.getValue(horizontal.id).end)
         val third = horizontal.copy(id = "third", start = horizontal.end, end = Vec2(3000.0, 1000.0))
         val detached = MoveWallEndpointCommand(horizontal.id, false, point, detachMultiWay = true).apply(document(horizontal, connected, third))!!
         assertEquals(point, detached.walls.getValue(horizontal.id).end)

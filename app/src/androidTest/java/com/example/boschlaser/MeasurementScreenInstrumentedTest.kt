@@ -22,7 +22,7 @@ class MeasurementScreenInstrumentedTest {
     @After fun finishScreen() {
         finishAndCloseScenario(compose.activityRule.scenario)
     }
-    private val labels = MeasurementLabels("Current fixture", "History fixture", "Measure", "Clear", "Export", "Empty fixture", "Delete")
+    private val labels = MeasurementLabels("Current fixture", "History fixture", "Measure", "Clear", "Export", "Empty fixture", "Delete", "Undo", "Pending delete")
     @Test fun emptyDisconnectedScreenDisablesDeviceAndHistoryActions() {
         compose.setContent { MaterialTheme { MeasurementScreen(emptyList(), "Empty distance", false, labels, { "More $it" }, {}, {}, {}, {}) } }
         compose.onNodeWithText(labels.measure).assertIsNotEnabled()
@@ -43,6 +43,9 @@ class MeasurementScreenInstrumentedTest {
         compose.onNodeWithText(labels.clear).performClick()
         compose.onNodeWithText(labels.export).performClick()
         compose.onAllNodesWithText(labels.delete)[0].performClick()
+        compose.runOnIdle { assertEquals(listOf("measure", "clear", "export"), actions) }
+        compose.onNodeWithText(labels.undo).assertIsDisplayed()
+        compose.mainClock.advanceTimeBy(5001)
         compose.runOnIdle { assertEquals(listOf("measure", "clear", "export", "new-id"), actions) }
     }
     @Test fun pagingShowsOlderRecordsWithoutChangingTheDocument() {
@@ -55,9 +58,9 @@ class MeasurementScreenInstrumentedTest {
             }
         }
         compose.onNodeWithText("Fixture 100").assertDoesNotExist()
-        compose.onNodeWithText("More 1").performScrollTo().performClick()
+        compose.onNodeWithText("More 98").performScrollTo().performClick()
         compose.onNodeWithText("Fixture 100").assertExists()
-        compose.onNodeWithText("More 1").assertDoesNotExist()
+        compose.onNodeWithText("More 98").assertDoesNotExist()
         assertEquals(101, rows.size)
     }
     @Test fun androidHostKeepsDoubleMillimetersAndDeletesByIdForTimestampCollisions() {
@@ -76,6 +79,8 @@ class MeasurementScreenInstrumentedTest {
         }
         compose.onNodeWithText(context.getString(R.string.measurement_distance, "16777217.5")).assertIsDisplayed()
         compose.onAllNodesWithText(context.getString(R.string.measurement_delete))[0].performClick()
+        compose.runOnIdle { assertEquals(null, deletedId) }
+        compose.mainClock.advanceTimeBy(5001)
         compose.runOnIdle { assertEquals("newer", deletedId) }
         kotlinx.coroutines.runBlocking { service.delete(requireNotNull(deletedId)) }
         compose.onNodeWithText(context.getString(R.string.measurement_distance, "101.1")).assertIsDisplayed()

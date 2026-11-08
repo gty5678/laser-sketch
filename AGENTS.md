@@ -4,7 +4,7 @@
 
 ## 项目概览
 
-LaserSketch 的 Android 宿主使用 Kotlin、共享 Compose 项目列表、草图与照片标注 Canvas，共享核心位于 Kotlin Multiplatform `:shared` 模块。它通过 BLE 连接 Bosch GLM 测距设备，并提供测量历史、平面草稿和图片标注功能。当前迁移状态见 `docs/architecture.md`。 当前实施范围仅为 Android；共享层用于后续跨平台准备，本轮不编写或验收 iOS 宿主与适配。
+LaserSketch 的 Android 宿主使用 Kotlin、共享 Compose 项目列表、草图与照片标注 Canvas，共享核心位于 Kotlin Multiplatform `:shared` 模块。它通过 BLE 连接 Bosch GLM 测距设备，并提供测量历史、平面草稿和图片标注功能。当前迁移状态见 `docs/architecture.md`。 当前按用户要求逐步扩展 Android / iOS 两个应用；iOS 阶段与验收范围见 `docs/ios-migration.md`，不得将 iOS 预览功能子集声明为完整功能对齐。
 
 - Gradle 项目名：`LaserSketch`
 - 应用模块：`:app`
@@ -35,6 +35,9 @@ LaserSketch 的 Android 宿主使用 Kotlin、共享 Compose 项目列表、草�
 - `app/src/test/`：不依赖 Android 运行时的 JVM 单元测试。
 - `shared-ui/src/commonMain/`：共享 Compose 界面；仅依赖共享核心，平台图片、权限、文件和生命周期适配在 Android 宿主。
 - `shared/src/commonMain/`：平台无关语义模型、几何、编辑文档、命令与协议；不能依赖 Android、Java 或 Compose。
+- `iosApp/LaserSketch.xcodeproj`：iOS SwiftUI 宿主与 Xcode 构建/测试入口；平台适配位于 `shared-ui/src/iosMain/`，当前双端状态见 `docs/ios-migration.md`。
+- `shared-ui/src/commonMain/composeResources/drawable/`：两端图标的唯一矢量源；Android R.drawable 继续从同一目录读取。不要新增仅 Android 可解析的系统颜色引用。
+- `scripts/check-mobile.sh` / `scripts/test-ios.sh`：macOS 双端检查与隔离模拟器 UI 测试入口。
 - `shared/src/commonTest/`：共享核心测试，通过 `:shared:jvmTest` 在本机执行。
 - `app/src/androidTest/`：需要设备或模拟器的 Android 仪器测试。
 
@@ -47,7 +50,7 @@ LaserSketch 的 Android 宿主使用 Kotlin、共享 Compose 项目列表、草�
 5. 对墙、门窗、柱等模型的修改要维护几何不变量，包括共享端点、宿主关系、实际长度/位置和原子失败；操作失败时不得留下部分状态。
 6. BLE 代码必须处理权限、扫描/连接状态、回调时序和 Activity 生命周期。不要在日志、测试或提交内容中写入真实设备标识或用户测量数据。
 7. 持久化格式变更要考虑现有本地数据兼容性。除非需求明确允许迁移或清除数据，不要随意改变包名、文件布局、JSON 字段含义或 SQLite 结构。
-8. UI 文案应放在 `app/src/main/res/values/strings.xml`，颜色和主题值应放在资源文件中；不要在 Kotlin 中新增可见文案或重复的样式常量。
+8. Android UI 文案应放在 `app/src/main/res/values/strings.xml`；iOS 文案放在 `iosApp/LaserSketch/*.lproj/Localizable.strings`，颜色和主题值应放在资源文件中；不要在 Kotlin 中新增可见文案或重复的样式常量。
 9. 保持当前 Kotlin 风格：4 空格缩进、清晰命名、尽量缩小可见性。不要只为格式统一而大范围重排现有文件。
 10. 不要提交生成物或本机配置，包括 `.gradle/`、`.gradle-local/`、`.android/`、`.idea/`、`build/`、`local.properties`、APK/AAB、密钥和日志。
 
@@ -73,7 +76,9 @@ macOS/Linux 对应使用 `./gradlew`。不要依赖系统安装的 Gradle。
 - 触控、Canvas 绘制、墙体/门窗/柱交互：运行相关仪器测试；条件允许时运行完整 `:app:connectedDebugAndroidTest`。
 - BLE 行为：除自动化测试外，在真实 Android 12+ 设备和目标 Bosch GLM 设备上验证权限拒绝/授予、扫描、连接、测量和重连。
 
-仪器测试需要已启动的模拟器或已连接设备，可先检查：
+仪器测试只允许在专用、可丢弃的模拟器上运行，并通过 `ANDROID_SERIAL` 显式选择；不得在保存日常草稿、照片或测量数据的手机上执行。macOS/Linux 示例：`ANDROID_SERIAL=emulator-5554 ./gradlew :app:connectedDebugAndroidTest`。日常真机 Run/Debug 必须保留数据，禁止卸载、清除数据或签名冲突后自动重装。BLE 真机人工验收使用普通应用运行配置。
+
+可先检查模拟器：
 
 ```powershell
 adb devices

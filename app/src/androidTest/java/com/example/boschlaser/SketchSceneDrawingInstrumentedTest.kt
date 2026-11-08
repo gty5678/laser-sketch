@@ -64,7 +64,7 @@ class SketchSceneDrawingInstrumentedTest {
         val state = EditorState(tool = ToolType.WALL, selection = Selection.Wall(wall.id),
             preview = SketchPreview.Wall(Segment2(Vec2(0.0, 1000.0), Vec2(3000.0, 1000.0))))
         render(document, state, false) { bitmap, formatted ->
-            assertEquals(Color.GRAY, bitmap.getPixel(170, 50))
+            assertEquals(Color.WHITE, bitmap.getPixel(170, 50))
             assertEquals(Color.WHITE, bitmap.getPixel(170, 150))
             assertTrue(formatted.isEmpty())
         }
@@ -78,7 +78,7 @@ class SketchSceneDrawingInstrumentedTest {
         val state = EditorState(tool = ToolType.WALL,
             preview = SketchPreview.Wall(Segment2(Vec2(0.0, 1000.0), Vec2(3000.0, 1000.0))))
         render(document, state, true, PlacementSettings(wallThickness = 200.0, alignment = WallAlignment.LEFT)) { bitmap, formatted ->
-            assertEquals(Color.GRAY, bitmap.getPixel(170, 160))
+            assertEquals(Color.WHITE, bitmap.getPixel(170, 160))
             assertEquals(Color.GREEN, bitmap.getPixel(170, 150))
             assertEquals(Color.WHITE, bitmap.getPixel(170, 140))
             assertTrue(formatted.isEmpty())
@@ -92,9 +92,9 @@ class SketchSceneDrawingInstrumentedTest {
         val document = SketchDocument(columns = mapOf(column.id to column))
         render(document, EditorState(tool = ToolType.RECT_COLUMN, preview = SketchPreview.Column(preview)), true) { bitmap, formatted ->
             assertEquals(Color.GREEN, bitmap.getPixel(220, 150))
-            assertEquals(Color.GRAY, bitmap.getPixel(245, 150))
+            assertEquals(Color.BLACK, bitmap.getPixel(245, 150))
             assertEquals(Color.WHITE, bitmap.getPixel(260, 150))
-            assertEquals(Color.GRAY, bitmap.getPixel(120, 50))
+            assertEquals(Color.BLACK, bitmap.getPixel(120, 50))
             assertTrue(formatted.isEmpty())
         }
         assertEquals(column, document.columns.getValue(column.id))
@@ -119,7 +119,7 @@ class SketchSceneDrawingInstrumentedTest {
         }
         render(document, EditorState(selection = Selection.Dimension(dimension.id)), true) { bitmap, formatted ->
             assertEquals(listOf(2800.0), formatted)
-            assertEquals("Selected dimensions must not add a movement arrow over the wall", Color.GRAY, bitmap.getPixel(328, 150))
+            assertEquals("Selected dimensions must not add a movement arrow over the wall", Color.WHITE, bitmap.getPixel(328, 150))
         }
         render(document.copy(dimensions = emptyMap()), EditorState(tool = ToolType.DIMENSION,
             preview = SketchPreview.Dimension(dimension)), false) { bitmap, formatted ->

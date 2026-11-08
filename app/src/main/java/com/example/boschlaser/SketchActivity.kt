@@ -8,6 +8,7 @@ import com.example.boschlaser.shared.command.WallEditStatus
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.collect
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import android.os.Bundle
 import android.view.ViewConfiguration
 import android.widget.FrameLayout
@@ -15,6 +16,9 @@ import android.widget.Toast
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import com.example.boschlaser.ui.CreationPropertyTools
+import com.example.boschlaser.ui.DrawingWallTools
+import androidx.compose.material3.AlertDialog
 import com.example.boschlaser.ui.WallControlLinePicker
 import com.example.boschlaser.ui.DrawingSettingsDialog
 import com.example.boschlaser.ui.DrawingSettingsLabels
@@ -24,6 +28,8 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.viewinterop.AndroidView
@@ -49,7 +55,7 @@ import com.example.boschlaser.ui.SketchToolbar
 import com.example.boschlaser.ui.SketchToolItem
 import com.example.boschlaser.ui.SketchToolButtons
 import com.example.boschlaser.ui.SketchEditTools
-import com.example.boschlaser.ui.GridSnapControl
+import com.example.boschlaser.ui.SketchBottomControls
 import com.example.boschlaser.ui.EditorActions
 import com.example.boschlaser.ui.SelectionActions
 import com.example.boschlaser.ui.SelectionActionTarget
@@ -74,7 +80,6 @@ class SketchActivity : AppCompatActivity() {
     private var propertyPanelResetKey by mutableIntStateOf(0)
     private var animatePropertyDismiss by mutableStateOf(false)
     private var propertySelection by mutableStateOf<SketchSelection?>(null)
-    private var openingPlacementType by mutableStateOf<SketchOpeningType?>(null)
     private var propertyPanelVisible by mutableStateOf(false)
     private var hasSelection by mutableStateOf(false)
     private var selectionActionTarget by mutableStateOf(SelectionActionTarget.NONE)
@@ -87,6 +92,13 @@ class SketchActivity : AppCompatActivity() {
     private var settingsAutomaticDimensions = true
     private var detachMultiWayEndpoints by mutableStateOf(true)
     private var currentMode by mutableStateOf(SketchMode.SELECT)
+    private var creationProperty by mutableStateOf<Int?>(null)
+    private var creationSettingsRevision by mutableIntStateOf(0)
+    private var drawingColumnFill by mutableStateOf(com.example.boschlaser.shared.model.ColumnFill.BLACK)
+    private var drawingFill by mutableStateOf(com.example.boschlaser.shared.model.WallFill.BLANK)
+    private var drawingThickness by mutableStateOf(240f)
+    private var drawingThicknessVisible by mutableStateOf(false)
+    private var drawingControlLine by mutableStateOf(SketchWallControlLine.CENTER)
     private var wallEditSession by mutableStateOf<WallEditSession?>(null)
     private val joinWallsActive get() = wallEditSession?.operation == WallEditOperation.TRIM
     private val extendWallActive get() = wallEditSession?.operation == WallEditOperation.EXTEND
@@ -152,7 +164,11 @@ class SketchActivity : AppCompatActivity() {
 
     private fun buildInterface() {
         sketchView = SketchView(this).apply {
-            onSelectionChanged = { if (!joinWallsActive && !extendWallActive) showSelection(it) }
+            onSelectionChanged = {
+                drawingControlLine = wallControlLine()
+                drawingThickness = drawingWallThickness()
+                if (!joinWallsActive && !extendWallActive) showSelection(it)
+            }
             onStateChanged = {
                 val document = snapshotDocument()
                 val previous = previousOpeningDocument
@@ -215,31 +231,76 @@ class SketchActivity : AppCompatActivity() {
 
         @Composable fun EditToolbar() {
             MaterialTheme(colorScheme = lightColorScheme(primary = colorResource(R.color.sketch_tool_active))) {
-                SketchEditTools(joinWallsActive, extendWallActive,
-                    getString(if (joinWallsActive) R.string.sketch_join_cancel else R.string.sketch_join),
-                    getString(if (extendWallActive) R.string.sketch_extend_cancel else R.string.sketch_extend),
-                    onJoin = { if (joinWallsActive) stopWallJoinMode() else startWallJoinMode() },
-                    onExtend = { if (extendWallActive) stopWallExtendMode() else startWallExtendMode() },
-                    joinIcon = { Icon(painterResource(R.drawable.ic_join_walls), contentDescription = null) },
-                    extendIcon = { Icon(painterResource(R.drawable.ic_extend_wall), contentDescription = null) },
-                    additionalTools = {
-                        SketchToolButtons(ToolType.valueOf(currentMode.name), listOf(
-                            SketchToolItem(ToolType.SPLIT, getString(R.string.sketch_tool_split)),
-                            SketchToolItem(ToolType.MEASURE, getString(R.string.sketch_tool_measure))),
-                            onTool = { setMode(SketchMode.valueOf(it.name)) },
-                            toolIcon = { tool -> Icon(painterResource(
-                                if (tool == ToolType.MEASURE) R.drawable.ic_measure else R.drawable.ic_split),
-                                contentDescription = null) })
-                    })
+                if (currentMode == SketchMode.WALL) {
+                    DrawingWallTools(when (drawingControlLine) {
+                        SketchWallControlLine.CENTER -> WallAlignment.CENTER
+                        SketchWallControlLine.INNER -> WallAlignment.LEFT
+                        SketchWallControlLine.OUTER -> WallAlignment.RIGHT
+                    }, getString(R.string.wall_control_line_label), listOf(
+                        getString(R.string.wall_control_line_center), getString(R.string.wall_control_line_inner),
+                        getString(R.string.wall_control_line_outer)),
+                        getString(R.string.sketch_drawing_wall_thickness, formatSketchMillimeters(drawingThickness.toDouble())),
+                        onAlignment = { alignment ->
+                            sketchView.setDrawingWallControlLine(when (alignment) {
+                                WallAlignment.CENTER -> SketchWallControlLine.CENTER
+                                WallAlignment.LEFT -> SketchWallControlLine.INNER
+                                WallAlignment.RIGHT -> SketchWallControlLine.OUTER
+                            })
+                            drawingControlLine = sketchView.wallControlLine()
+                        }, onThickness = { drawingThicknessVisible = true },
+                        fill = drawingFill, fillLabels = listOf(getString(R.string.wall_fill_blank),
+                            getString(R.string.wall_fill_hatch), getString(R.string.wall_fill_black)),
+                        onFill = { drawingFill = it; sketchView.drawingWallFill = it })
+                    if (drawingThicknessVisible) {
+                        AlertDialog(onDismissRequest = { drawingThicknessVisible = false },
+                            confirmButton = {}, text = {
+                                NumberInput(formatSketchMillimeters(drawingThickness.toDouble()),
+                                    getString(R.string.sketch_wall_thickness), getString(R.string.sketch_wall_thickness_apply),
+                                    errorLabel = getString(R.string.sketch_wall_thickness_invalid), wallThicknessPresets = true) { text ->
+                                    val applied = text.toDoubleOrNull()?.let { sketchView.setDrawingWallThickness(it) } == true
+                                    if (applied) {
+                                        drawingThickness = sketchView.drawingWallThickness()
+                                        drawingThicknessVisible = false
+                                    }
+                                    applied
+                                }
+                            })
+                    }
+                } else if (currentMode in listOf(SketchMode.RECT_COLUMN, SketchMode.CIRCLE_COLUMN, SketchMode.DOOR, SketchMode.WINDOW)) {
+                    CreationTools()
+                } else if (currentMode in listOf(SketchMode.SELECT, SketchMode.SPLIT, SketchMode.MEASURE)) {
+                    SketchEditTools(joinWallsActive, extendWallActive,
+                        getString(if (joinWallsActive) R.string.sketch_join_cancel else R.string.sketch_join),
+                        getString(if (extendWallActive) R.string.sketch_extend_cancel else R.string.sketch_extend),
+                        onJoin = { if (joinWallsActive) stopWallJoinMode() else startWallJoinMode() },
+                        onExtend = { if (extendWallActive) stopWallExtendMode() else startWallExtendMode() },
+                        joinIcon = { Icon(painterResource(R.drawable.ic_join_walls), contentDescription = null) },
+                        extendIcon = { Icon(painterResource(R.drawable.ic_extend_wall), contentDescription = null) },
+                        additionalTools = {
+                            SketchToolButtons(ToolType.valueOf(currentMode.name), listOf(
+                                SketchToolItem(ToolType.SPLIT, getString(R.string.sketch_tool_split)),
+                                SketchToolItem(ToolType.MEASURE, getString(R.string.sketch_tool_measure))),
+                                onTool = { setMode(SketchMode.valueOf(it.name)) },
+                                toolIcon = { tool -> Icon(painterResource(
+                                    if (tool == ToolType.MEASURE) R.drawable.ic_measure else R.drawable.ic_split),
+                                    contentDescription = null) })
+                        })
+                }
             }
         }
 
         @Composable fun GridSnap() {
             MaterialTheme {
-                GridSnapControl(gridSnapEnabled, getString(R.string.sketch_grid_snap)) { enabled ->
-                    gridSnapEnabled = enabled
-                    sketchView.setGridSnapEnabled(enabled)
-                }
+                SketchBottomControls(gridSnapEnabled, getString(R.string.sketch_grid_snap),
+                    !detachMultiWayEndpoints,
+                    getString(R.string.sketch_endpoint_move_together),
+                    onGridChange = { enabled ->
+                        gridSnapEnabled = enabled
+                        sketchView.setGridSnapEnabled(enabled)
+                    }, onNodeChange = { moveTogether ->
+                        detachMultiWayEndpoints = !moveTogether
+                        sketchView.setDetachMultiWayEndpoints(detachMultiWayEndpoints)
+                    })
             }
         }
 
@@ -322,12 +383,6 @@ class SketchActivity : AppCompatActivity() {
                             currentMode == SketchMode.WALL -> R.string.sketch_wall_chain_hint
                             else -> R.string.sketch_selection_gestures_hint
                         }))
-                        if (propertySelection is SketchSelection.Wall && currentMode == SketchMode.SELECT && wallEditSession == null) {
-                            androidx.compose.material3.TextButton(onClick = {
-                                detachMultiWayEndpoints = !detachMultiWayEndpoints
-                                sketchView.setDetachMultiWayEndpoints(detachMultiWayEndpoints)
-                            }) { Text(getString(if (detachMultiWayEndpoints) R.string.sketch_endpoint_detach else R.string.sketch_endpoint_joined)) }
-                        }
                     },
                     properties = { Properties() },
                     dialogs = { Settings(); FaceDistanceDialog() })
@@ -358,8 +413,12 @@ class SketchActivity : AppCompatActivity() {
     private fun setMode(mode: SketchMode) {
         if (joinWallsActive) stopWallJoinMode()
         if (extendWallActive) stopWallExtendMode()
+        creationProperty = null
+        drawingThicknessVisible = false
         currentMode = mode
         sketchView.setMode(mode)
+        drawingControlLine = sketchView.wallControlLine()
+        drawingThickness = sketchView.drawingWallThickness()
         when (mode) {
             SketchMode.MEASURE -> toast(getString(R.string.sketch_measure_hint))
             SketchMode.SPLIT -> toast(getString(R.string.sketch_split_hint))
@@ -367,8 +426,6 @@ class SketchActivity : AppCompatActivity() {
             else -> Unit
         }
         when (mode) {
-            SketchMode.DOOR -> showOpeningPlacementProperties(SketchOpeningType.DOOR)
-            SketchMode.WINDOW -> showOpeningPlacementProperties(SketchOpeningType.WINDOW)
             SketchMode.SELECT -> Unit
             else -> hideProperties()
         }
@@ -411,7 +468,6 @@ class SketchActivity : AppCompatActivity() {
 
     private fun showSelection(selection: SketchSelection?) {
         propertySelection = selection
-        openingPlacementType = null
         propertyPanelResetKey++
         animatePropertyDismiss = false
         hasSelection = selection != null
@@ -421,14 +477,10 @@ class SketchActivity : AppCompatActivity() {
             selection is SketchSelection.Opening && selection.opening.type == SketchOpeningType.DOOR -> SelectionActionTarget.DOOR
             else -> SelectionActionTarget.NONE
         }
-        if (selection is SketchSelection.Dimension) {
+        if (selection is SketchSelection.Dimension || currentMode != SketchMode.SELECT) {
             hideProperties()
         } else if (selection == null) {
-            when (currentMode) {
-                SketchMode.DOOR -> showOpeningPlacementProperties(SketchOpeningType.DOOR)
-                SketchMode.WINDOW -> showOpeningPlacementProperties(SketchOpeningType.WINDOW)
-                else -> hideProperties()
-            }
+            hideProperties()
         } else propertyPanelVisible = true
     }
 
@@ -437,18 +489,9 @@ class SketchActivity : AppCompatActivity() {
         propertyPanelVisible = false
     }
 
-    private fun showOpeningPlacementProperties(type: SketchOpeningType) {
-        propertySelection = null
-        openingPlacementType = type
-        propertyPanelResetKey++
-        animatePropertyDismiss = false
-        propertyPanelVisible = true
-    }
-
     @Composable
     private fun Properties() {
         val selection = propertySelection
-        val placement = openingPlacementType
         val title = when (selection) {
             is SketchSelection.Dimension -> getString(R.string.sketch_dimension_properties)
             is SketchSelection.Wall -> getString(R.string.sketch_wall_properties)
@@ -456,20 +499,29 @@ class SketchActivity : AppCompatActivity() {
                 R.string.sketch_circle_properties else R.string.sketch_rectangle_properties)
             is SketchSelection.Opening -> getString(if (selection.opening.type == SketchOpeningType.DOOR)
                 R.string.sketch_door_properties else R.string.sketch_window_properties)
-            null -> placement?.let { getString(if (it == SketchOpeningType.DOOR)
-                R.string.sketch_place_door_hint else R.string.sketch_place_window_hint) }.orEmpty()
+            null -> ""
         }
         SketchPropertySheet(propertyPanelVisible, propertyPanelResetKey, animatePropertyDismiss, title,
             propertySheetStyle(), ViewConfiguration.get(this).scaledTouchSlop.toFloat(),
             onDismiss = { animatePropertyDismiss = true; propertyPanelVisible = false },
-            onPresenceChanged = { propertyPanelPresent = it }) {
+            onPresenceChanged = { propertyPanelPresent = it },
+            headerAccessory = {
+                (selection as? SketchSelection.Wall)?.let { WallReferenceLine(it.wall.id) }
+                (selection as? SketchSelection.Opening)?.takeIf { it.opening.type == SketchOpeningType.DOOR }?.let {
+                    androidx.compose.foundation.layout.Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                        OpeningProperties(it.opening.id)
+                    }
+                }
+            }) {
             key(propertyPanelResetKey) {
                 when (selection) {
                     is SketchSelection.Dimension -> Unit
                     is SketchSelection.Wall -> WallProperties(selection.wall.id)
                     is SketchSelection.Column -> ColumnProperties(selection.column.id)
-                    is SketchSelection.Opening -> OpeningProperties(selection.opening.id)
-                    null -> placement?.let { OpeningPlacementProperties(it) }
+                    is SketchSelection.Opening -> if (selection.opening.type != SketchOpeningType.DOOR) {
+                        OpeningProperties(selection.opening.id)
+                    }
+                    null -> Unit
                 }
             }
         }
@@ -487,6 +539,7 @@ class SketchActivity : AppCompatActivity() {
     @Composable
     private fun FaceDistanceDialog() {
         val dimension = editingFaceDimension ?: return
+        val records by MeasurementServices.get(this).service.records.collectAsStateWithLifecycle()
         val value = com.example.boschlaser.shared.geometry.WallDimensionGeometry.layout(sketchView.snapshotDocument(), dimension)?.valueMm
             ?: return
         MaterialTheme(colorScheme = lightColorScheme(primary = colorResource(R.color.sketch_tool_active))) {
@@ -501,18 +554,20 @@ class SketchActivity : AppCompatActivity() {
                     val applied = requested != null && sketchView.applyWallFaceDistance(dimension, requested)
                     if (applied) editingFaceDimension = null
                     applied
-                }, onDismiss = { editingFaceDimension = null })
+                }, onDismiss = { editingFaceDimension = null },
+                recentMeasurements = records.asReversed().take(3).map { formatSketchMillimeters(it.measurement.valueMm) },
+                recentMeasurementsLabel = getString(R.string.sketch_recent_measurements))
         }
     }
 
     @Composable
-    private fun WallProperties(wallId: String) {
+    private fun WallReferenceLine(wallId: String) {
         val wall = sketchView.renderDocument().walls[wallId] ?: return
         val alignment = wall.alignment
-        MaterialTheme(colorScheme = lightColorScheme(primary = colorResource(R.color.sketch_tool_active))) {
+        if (currentMode != SketchMode.WALL) MaterialTheme(colorScheme = lightColorScheme(primary = colorResource(R.color.sketch_tool_active))) {
             WallControlLinePicker(alignment, getString(R.string.wall_control_line_label), listOf(
                 getString(R.string.wall_control_line_center), getString(R.string.wall_control_line_inner),
-                getString(R.string.wall_control_line_outer))) { selected ->
+                getString(R.string.wall_control_line_outer)), showLabel = false) { selected ->
                 val controlLine = when (selected) {
                     WallAlignment.CENTER -> SketchWallControlLine.CENTER
                     WallAlignment.LEFT -> SketchWallControlLine.INNER
@@ -521,13 +576,109 @@ class SketchActivity : AppCompatActivity() {
                 sketchView.updateSelectedWallControlLine(controlLine)
             }
         }
-        NumberInput(formatSketchMillimeters(wall.thickness), getString(R.string.sketch_wall_thickness),
-            getString(R.string.sketch_wall_thickness_apply)) { text ->
-            val value = text.toDoubleOrNull()
-            if (value == null || !sketchView.updateSelectedWallThickness(value)) {
-                toast(getString(R.string.sketch_wall_thickness_invalid))
+    }
+
+    @Composable
+    private fun WallProperties(wallId: String) {
+        val wall = sketchView.renderDocument().walls[wallId] ?: return
+        var thicknessVisible by remember(wallId) { mutableStateOf(false) }
+        val thicknessLabel = getString(R.string.sketch_drawing_wall_thickness, formatSketchMillimeters(wall.thickness))
+        androidx.compose.foundation.layout.Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            androidx.compose.material3.TextButton(onClick = { thicknessVisible = true }) {
+                Text(thicknessLabel)
+            }
+            com.example.boschlaser.ui.WallFillPicker(wall.fill, listOf(getString(R.string.wall_fill_blank),
+                getString(R.string.wall_fill_hatch), getString(R.string.wall_fill_black))) {
+                sketchView.updateSelectedWallFill(it)
             }
         }
+        if (thicknessVisible) {
+            AlertDialog(onDismissRequest = { thicknessVisible = false }, confirmButton = {},
+                dismissButton = { androidx.compose.material3.TextButton(onClick = { thicknessVisible = false }) {
+                    Text(getString(R.string.sketch_settings_cancel))
+                } }, text = {
+                NumberInput(formatSketchMillimeters(wall.thickness), getString(R.string.sketch_wall_thickness),
+                    getString(R.string.sketch_wall_thickness_apply), errorLabel = getString(R.string.sketch_wall_thickness_invalid),
+                    wallThicknessPresets = true) { text ->
+                    val applied = text.toDoubleOrNull()?.let { sketchView.updateSelectedWallThickness(it) } == true
+                    if (applied) thicknessVisible = false
+                    applied
+                }
+            })
+        }
+    }
+
+    @Composable
+    private fun CreationTools() {
+        // Reading this revision refreshes summaries after applying creation settings.
+        val revision = creationSettingsRevision
+        val column = currentMode == SketchMode.RECT_COLUMN || currentMode == SketchMode.CIRCLE_COLUMN
+        val circular = currentMode == SketchMode.CIRCLE_COLUMN
+        val door = currentMode == SketchMode.DOOR
+        val type = if (door) SketchOpeningType.DOOR else SketchOpeningType.WINDOW
+        val labels = if (column) listOfNotNull(
+            getString(R.string.sketch_creation_column_size,
+                formatSketchMillimeters(sketchView.placementColumnWidth),
+                formatSketchMillimeters(sketchView.placementColumnDepth)),
+            if (!circular) getString(R.string.sketch_creation_column_angle,
+                sketchView.placementColumnRotation.toString().removeSuffix(".0")) else null)
+        else listOfNotNull(getString(R.string.sketch_creation_opening_width,
+            formatSketchMillimeters(sketchView.placementOpeningWidth(type).toDouble())),
+            if (door) getString(when (sketchView.placementDoorStyle) {
+                com.example.boschlaser.shared.model.DoorStyle.SINGLE -> R.string.sketch_door_single
+                com.example.boschlaser.shared.model.DoorStyle.DOUBLE -> R.string.sketch_door_double
+                com.example.boschlaser.shared.model.DoorStyle.SLIDING -> R.string.sketch_door_sliding
+                com.example.boschlaser.shared.model.DoorStyle.OPENING -> R.string.sketch_door_opening
+            }) else null)
+        key(revision) {
+            if (column) com.example.boschlaser.ui.ColumnPropertyTools(drawingColumnFill,
+                listOf(getString(R.string.column_fill_white), getString(R.string.column_fill_black)), labels,
+                onFill = { drawingColumnFill = it; sketchView.drawingColumnFill = it },
+                onProperty = { creationProperty = it })
+            else CreationPropertyTools(labels) { creationProperty = it }
+        }
+        val property = creationProperty ?: return
+        fun applied() { creationSettingsRevision++; creationProperty = null }
+        AlertDialog(onDismissRequest = { creationProperty = null }, confirmButton = {},
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { creationProperty = null }) {
+                    Text(getString(R.string.sketch_settings_cancel))
+                }
+            }, text = {
+            when {
+                column && property == 0 -> {
+                    var width by remember { mutableStateOf(TextFieldValue(formatSketchMillimeters(sketchView.placementColumnWidth))) }
+                    var depth by remember { mutableStateOf(TextFieldValue(formatSketchMillimeters(sketchView.placementColumnDepth))) }
+                    var error by remember { mutableStateOf<String?>(null) }
+                    ColumnSizeProperty(width, if (circular) null else depth,
+                        getString(R.string.sketch_column_width), getString(R.string.sketch_column_depth),
+                        getString(R.string.sketch_property_apply),
+                        onWidth = { width = it; error = null }, onDepth = { depth = it; error = null },
+                        onApply = {
+                            val w = width.text.toDoubleOrNull()
+                            val d = if (circular) w else depth.text.toDoubleOrNull()
+                            if (w != null && d != null && sketchView.updatePlacementColumnSize(w, d)) applied()
+                            else error = getString(R.string.sketch_column_size_invalid)
+                        }, error = error)
+                }
+                column -> NumberInput(sketchView.placementColumnRotation.toString().removeSuffix(".0"),
+                    getString(R.string.column_rotation_angle), errorLabel = getString(R.string.column_rotation_invalid), columnAnglePresets = true) {
+                    val success = it.toDoubleOrNull()?.let(sketchView::updatePlacementColumnRotation) == true
+                    if (success) applied()
+                    success
+                }
+                property == 0 -> NumberInput(formatSketchMillimeters(sketchView.placementOpeningWidth(type).toDouble()),
+                    getString(R.string.sketch_opening_width), errorLabel = getString(R.string.sketch_opening_placement_width_invalid), openingWidthPresets = true) {
+                    val success = it.toFloatOrNull()?.let { width -> sketchView.updatePlacementOpeningWidth(type, width) } == true
+                    if (success) applied()
+                    success
+                }
+                else -> DoorStylePicker(sketchView.placementDoorStyle) {
+                    sketchView.updatePlacementDoorStyle(it)
+                    applied()
+                }
+            }
+        })
     }
 
     @Composable
@@ -536,50 +687,84 @@ class SketchActivity : AppCompatActivity() {
         val rectangle = column as? com.example.boschlaser.shared.model.RectColumn
         val columnWidth = rectangle?.width ?: (column as com.example.boschlaser.shared.model.CircularColumn).diameter
         val columnDepth = rectangle?.depth ?: columnWidth
-        var width by remember { mutableStateOf(TextFieldValue(formatSketchMillimeters(columnWidth))) }
-        var depth by remember { mutableStateOf(TextFieldValue(formatSketchMillimeters(columnDepth))) }
-        val showDepth = rectangle != null
-        MaterialTheme(colorScheme = lightColorScheme(primary = colorResource(R.color.sketch_tool_active))) {
-            ColumnSizeProperty(width, if (showDepth) depth else null,
-                getString(R.string.sketch_column_width), getString(R.string.sketch_column_depth),
-                getString(R.string.sketch_property_apply), onWidth = { width = it }, onDepth = { depth = it },
-                onApply = {
-                    val w = width.text.toDoubleOrNull()
-                    val d = if (showDepth) depth.text.toDoubleOrNull() else w
-                    if (w == null || d == null || !sketchView.updateSelectedColumnSize(w, d)) {
-                        toast(getString(R.string.sketch_column_size_invalid))
+        var property by remember(columnId) { mutableStateOf<Int?>(null) }
+        val labels = listOfNotNull(getString(R.string.sketch_creation_column_size,
+            formatSketchMillimeters(columnWidth), formatSketchMillimeters(columnDepth)),
+            rectangle?.let { getString(R.string.sketch_creation_column_angle, formatSketchMillimeters(it.rotationDegrees)) })
+        com.example.boschlaser.ui.ColumnPropertyTools(column.fill,
+            listOf(getString(R.string.column_fill_white), getString(R.string.column_fill_black)), labels,
+            onFill = { sketchView.updateSelectedColumnFill(it) }, onProperty = { property = it })
+        val editing = property ?: return
+        AlertDialog(onDismissRequest = { property = null }, confirmButton = {},
+            dismissButton = { androidx.compose.material3.TextButton(onClick = { property = null }) {
+                Text(getString(R.string.sketch_settings_cancel))
+            } }, text = {
+                if (editing == 0) {
+                    var width by remember { mutableStateOf(TextFieldValue(formatSketchMillimeters(columnWidth))) }
+                    var depth by remember { mutableStateOf(TextFieldValue(formatSketchMillimeters(columnDepth))) }
+                    var sizeError by remember { mutableStateOf<String?>(null) }
+                    ColumnSizeProperty(width, if (rectangle != null) depth else null,
+                        getString(R.string.sketch_column_width), getString(R.string.sketch_column_depth),
+                        getString(R.string.sketch_property_apply), onWidth = { width = it; sizeError = null }, onDepth = { depth = it; sizeError = null },
+                        onApply = {
+                            val w = width.text.toDoubleOrNull()
+                            val d = if (rectangle != null) depth.text.toDoubleOrNull() else w
+                            if (w != null && d != null && sketchView.updateSelectedColumnSize(w, d)) property = null
+                            else sizeError = getString(R.string.sketch_column_size_invalid)
+                        }, error = sizeError)
+                } else if (rectangle != null) {
+                    NumberInput(formatSketchMillimeters(rectangle.rotationDegrees),
+                        getString(R.string.column_rotation_angle), getString(R.string.column_rotation_apply),
+                        errorLabel = getString(R.string.column_rotation_invalid), columnAnglePresets = true) { text ->
+                        val success = text.toDoubleOrNull()?.let(sketchView::updateSelectedColumnRotation) == true
+                        if (success) property = null
+                        success
                     }
-                })
-        }
-        if (rectangle != null) {
-            NumberInput(formatSketchMillimeters(rectangle.rotationDegrees),
-                getString(R.string.column_rotation_angle), getString(R.string.column_rotation_apply)) { text ->
-                val angle = text.toDoubleOrNull()
-                if (angle == null || !sketchView.updateSelectedColumnRotation(angle)) toast(getString(R.string.column_rotation_invalid))
-            }
-        }
+                }
+            })
     }
 
     @Composable
     private fun OpeningProperties(openingId: String) {
         val opening = sketchView.renderDocument().openings[openingId] ?: return
-        if (currentMode == SketchMode.DOOR) DoorPlacementStylePicker()
-        else if (opening.type == com.example.boschlaser.shared.model.OpeningType.DOOR) {
-            DoorStylePicker(opening.doorStyle) { sketchView.updateSelectedDoorStyle(it) }
+        if (opening.type == com.example.boschlaser.shared.model.OpeningType.DOOR) {
+            var styleVisible by remember(openingId) { mutableStateOf(false) }
+            val styleSummary = getString(when (opening.doorStyle) {
+                com.example.boschlaser.shared.model.DoorStyle.SINGLE -> R.string.sketch_door_single
+                com.example.boschlaser.shared.model.DoorStyle.DOUBLE -> R.string.sketch_door_double
+                com.example.boschlaser.shared.model.DoorStyle.SLIDING -> R.string.sketch_door_sliding
+                com.example.boschlaser.shared.model.DoorStyle.OPENING -> R.string.sketch_door_opening
+            })
+            androidx.compose.material3.TextButton(onClick = { styleVisible = true },
+                modifier = androidx.compose.ui.Modifier.semantics { contentDescription = styleSummary }) {
+                Text(styleSummary)
+            }
+            if (styleVisible) AlertDialog(onDismissRequest = { styleVisible = false }, confirmButton = {},
+                dismissButton = { androidx.compose.material3.TextButton(onClick = { styleVisible = false }) {
+                    Text(getString(R.string.sketch_settings_cancel))
+                } }, text = {
+                    DoorStylePicker(opening.doorStyle) {
+                        if (sketchView.updateSelectedDoorStyle(it)) styleVisible = false
+                    }
+                })
         }
-        NumberInput(formatSketchMillimeters(opening.width), getString(R.string.sketch_opening_width)) { text ->
-            val value = text.toDoubleOrNull()
-            if (value == null || !sketchView.updateSelectedOpening(value)) toast(getString(R.string.sketch_opening_width_invalid))
+        var widthVisible by remember(openingId) { mutableStateOf(false) }
+        val widthSummary = getString(R.string.sketch_creation_opening_width, formatSketchMillimeters(opening.width))
+        androidx.compose.material3.TextButton(onClick = { widthVisible = true },
+            modifier = androidx.compose.ui.Modifier.semantics { contentDescription = widthSummary }) {
+            Text(widthSummary)
         }
-    }
-
-    @Composable
-    private fun DoorPlacementStylePicker() {
-        var selected by remember { mutableStateOf(sketchView.placementDoorStyle) }
-        DoorStylePicker(selected) { style ->
-            selected = style
-            sketchView.updatePlacementDoorStyle(style)
-        }
+        if (widthVisible) AlertDialog(onDismissRequest = { widthVisible = false }, confirmButton = {},
+            dismissButton = { androidx.compose.material3.TextButton(onClick = { widthVisible = false }) {
+                Text(getString(R.string.sketch_settings_cancel))
+            } }, text = {
+                NumberInput(formatSketchMillimeters(opening.width), getString(R.string.sketch_opening_width),
+                    errorLabel = getString(R.string.sketch_opening_width_invalid), openingWidthPresets = true) { text ->
+                    val success = text.toDoubleOrNull()?.let { sketchView.updateSelectedOpening(it) } == true
+                    if (success) widthVisible = false
+                    success
+                }
+            })
     }
 
     @Composable
@@ -594,22 +779,19 @@ class SketchActivity : AppCompatActivity() {
     }
 
     @Composable
-    private fun OpeningPlacementProperties(type: SketchOpeningType) {
-        if (type == SketchOpeningType.DOOR) DoorPlacementStylePicker()
-        NumberInput(sketchView.placementOpeningWidth(type).roundToInt().toString(), getString(R.string.sketch_opening_width)) { text ->
-            val value = text.toFloatOrNull()
-            if (value == null || !sketchView.updatePlacementOpeningWidth(type, value)) {
-                toast(getString(R.string.sketch_opening_placement_width_invalid))
-            } else toast(getString(R.string.sketch_opening_placement_width_updated, value.roundToInt()))
-        }
-    }
-
-    @Composable
     private fun NumberInput(initialValue: String, label: String, applyLabel: String = getString(R.string.sketch_property_apply),
-        accessory: @Composable () -> Unit = {}, onApply: (String) -> Unit) {
+        errorLabel: String, accessory: @Composable () -> Unit = {}, wallThicknessPresets: Boolean = false, openingWidthPresets: Boolean = false, columnAnglePresets: Boolean = false, onApply: (String) -> Boolean) {
         var draft by remember { mutableStateOf(TextFieldValue(initialValue, TextRange(0, initialValue.length))) }
+        var error by remember { mutableStateOf<String?>(null) }
         MaterialTheme(colorScheme = lightColorScheme(primary = colorResource(R.color.sketch_tool_active))) {
-            NumberProperty(draft, label, applyLabel, onValue = { draft = it }, onApply = { onApply(draft.text) }, accessory = accessory)
+            androidx.compose.foundation.layout.Column {
+                NumberProperty(draft, label, applyLabel, onValue = { draft = it; error = null },
+                    onApply = { error = if (onApply(draft.text)) null else errorLabel }, accessory = accessory, error = error, openingWidthPresets = openingWidthPresets, columnAnglePresets = columnAnglePresets)
+                if (wallThicknessPresets) com.example.boschlaser.ui.WallThicknessPresets(draft.text) { selected ->
+                    draft = TextFieldValue(selected, TextRange(0, selected.length))
+                    error = if (onApply(selected)) null else errorLabel
+                }
+            }
         }
     }
 

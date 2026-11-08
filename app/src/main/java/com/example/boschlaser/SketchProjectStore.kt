@@ -23,6 +23,7 @@ data class SketchWall(
     val thickness: Float = 240f,
     val measuredLength: Float? = null,
     val controlLine: SketchWallControlLine = SketchWallControlLine.CENTER,
+    val fill: com.example.boschlaser.shared.model.WallFill = com.example.boschlaser.shared.model.WallFill.BLANK,
 )
 
 enum class SketchColumnType { RECTANGLE, CIRCLE }
@@ -34,6 +35,7 @@ data class SketchColumn(
     val width: Float = 400f,
     val depth: Float = 400f,
     val rotationDegrees: Float = 0f,
+    val fill: com.example.boschlaser.shared.model.ColumnFill = com.example.boschlaser.shared.model.ColumnFill.BLACK,
 )
 
 enum class SketchOpeningType { DOOR, WINDOW }
@@ -148,11 +150,11 @@ object SketchProjectStore {
         put("walls", JSONArray().apply { state.walls.forEach { wall -> put(JSONObject().apply {
             put("id", wall.id); point("start", wall.start); point("end", wall.end)
             put("thickness", wall.thickness); wall.measuredLength?.let { put("measuredLength", it) }
-            put("controlLine", wall.controlLine.name)
+            put("controlLine", wall.controlLine.name); put("fill", wall.fill.name)
         }) } })
         put("columns", JSONArray().apply { state.columns.forEach { column -> put(JSONObject().apply {
             put("id", column.id); put("type", column.type.name); point("center", column.center)
-            put("width", column.width); put("depth", column.depth); put("rotationDegrees", column.rotationDegrees)
+            put("width", column.width); put("depth", column.depth); put("rotationDegrees", column.rotationDegrees); put("fill", column.fill.name)
         }) } })
         put("openings", JSONArray().apply { state.openings.forEach { opening -> put(JSONObject().apply {
             put("id", opening.id); put("type", opening.type.name); put("wallId", opening.wallId)
@@ -169,12 +171,14 @@ object SketchProjectStore {
             if (item.has("measuredLength")) item.optDouble("measuredLength").toFloat() else null,
             runCatching { SketchWallControlLine.valueOf(item.optString("controlLine")) }
                 .getOrDefault(SketchWallControlLine.CENTER),
+            runCatching { com.example.boschlaser.shared.model.WallFill.valueOf(item.optString("fill", "BLANK").let { if (it == "GRAY") "BLANK" else it }) }.getOrDefault(com.example.boschlaser.shared.model.WallFill.BLANK),
         ) },
         columns = data.optJSONArray("columns").objects().map { item -> SketchColumn(
             item.optString("id", UUID.randomUUID().toString()),
             runCatching { SketchColumnType.valueOf(item.optString("type")) }.getOrDefault(SketchColumnType.RECTANGLE),
             item.point("center"), item.optDouble("width", 400.0).toFloat(), item.optDouble("depth", 400.0).toFloat(),
             item.optDouble("rotationDegrees", 0.0).toFloat(),
+            runCatching { com.example.boschlaser.shared.model.ColumnFill.valueOf(item.optString("fill", "BLACK")) }.getOrDefault(com.example.boschlaser.shared.model.ColumnFill.BLACK),
         ) },
         openings = data.optJSONArray("openings").objects().map { item -> SketchOpening(
             item.optString("id", UUID.randomUUID().toString()),

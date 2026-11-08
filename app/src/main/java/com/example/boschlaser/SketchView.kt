@@ -117,6 +117,26 @@ class SketchView @JvmOverloads constructor(
         placementDoorStyle = style
     }
 
+    internal var placementColumnWidth = 400.0
+        private set
+    internal var placementColumnDepth = 400.0
+        private set
+    internal var placementColumnRotation = 0.0
+        private set
+
+    internal fun updatePlacementColumnSize(width: Double, depth: Double): Boolean {
+        if (!width.isFinite() || !depth.isFinite() || width < 50.0 || depth < 50.0) return false
+        placementColumnWidth = width
+        placementColumnDepth = depth
+        return true
+    }
+
+    internal fun updatePlacementColumnRotation(angle: Double): Boolean {
+        if (!angle.isFinite()) return false
+        placementColumnRotation = ((angle % 360.0) + 360.0) % 360.0
+        return true
+    }
+
     private var defaultDoorWidth = 900f
     private var defaultWindowWidth = 1200f
     private var currentWallThickness = 240f
@@ -383,6 +403,14 @@ class SketchView @JvmOverloads constructor(
         return true
     }
 
+    fun updateSelectedWallFill(fill: com.example.boschlaser.shared.model.WallFill): Boolean {
+        val wall = editor.renderDocument.walls[selectedWallId] ?: return false
+        if (wall.fill == fill) return true
+        if (!previewWallEdit(com.example.boschlaser.shared.command.ChangeWallFillCommand(wall.id, fill), recordUndo = true)) return false
+        notifySelection(); changed()
+        return true
+    }
+
     fun updateSelectedWallThickness(thicknessMm: Float): Boolean = updateSelectedWallThickness(thicknessMm.toDouble())
 
     fun updateSelectedWallThickness(thicknessMm: Double): Boolean {
@@ -394,6 +422,25 @@ class SketchView @JvmOverloads constructor(
         currentWallThickness = thicknessMm.toFloat()
         notifySelection(); changed()
         return true
+    }
+
+    internal fun drawingWallThickness(): Float = currentWallThickness
+
+    internal fun setDrawingWallThickness(thicknessMm: Double): Boolean {
+        if (mode != SketchMode.WALL || !thicknessMm.isFinite() || thicknessMm !in 50.0..1000.0) return false
+        currentWallThickness = thicknessMm.toFloat()
+        editor.placement = placementSettings()
+        requestRender()
+        return true
+    }
+
+    internal fun wallControlLine(): SketchWallControlLine = currentWallControlLine
+
+    internal fun setDrawingWallControlLine(controlLine: SketchWallControlLine) {
+        if (mode != SketchMode.WALL) return
+        currentWallControlLine = controlLine
+        editor.placement = placementSettings()
+        requestRender()
     }
 
     fun updateSelectedWallControlLine(controlLine: SketchWallControlLine): Boolean {
@@ -538,11 +585,27 @@ class SketchView @JvmOverloads constructor(
         }
     }
 
+    internal var drawingColumnFill = com.example.boschlaser.shared.model.ColumnFill.BLACK
+        set(value) { field = value; editor.placement = placementSettings(); invalidate() }
+
+    fun updateSelectedColumnFill(fill: com.example.boschlaser.shared.model.ColumnFill): Boolean {
+        val id = selectedColumnId ?: return false
+        val column = editor.renderDocument.columns[id] ?: return false
+        if (column.fill == fill) return true
+        if (!previewWallEdit(com.example.boschlaser.shared.command.ChangeColumnFillCommand(id, fill), recordUndo = true)) return false
+        notifySelection(); changed()
+        return true
+    }
+
+    internal var drawingWallFill = com.example.boschlaser.shared.model.WallFill.BLANK
+        set(value) { field = value; editor.placement = placementSettings(); invalidate() }
+
     private fun placementSettings() = PlacementSettings(currentWallThickness.toDouble(), when (currentWallControlLine) {
         SketchWallControlLine.CENTER -> WallAlignment.CENTER
         SketchWallControlLine.INNER -> WallAlignment.LEFT
         SketchWallControlLine.OUTER -> WallAlignment.RIGHT
-    }, defaultDoorWidth.toDouble(), defaultWindowWidth.toDouble(), placementDoorStyle)
+    }, defaultDoorWidth.toDouble(), defaultWindowWidth.toDouble(), placementDoorStyle,
+        placementColumnWidth, placementColumnDepth, placementColumnRotation, columnFill = drawingColumnFill, wallFill = drawingWallFill)
 
     private fun sceneDrawingStyle(density: Density): SketchSceneStyle =
         androidSketchDrawingStyle(context, density, COLUMN_ROTATION_HANDLE_RADIUS_DP * density.density).copy(
