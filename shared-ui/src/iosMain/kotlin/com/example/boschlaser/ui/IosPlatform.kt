@@ -2,6 +2,8 @@
 
 package com.example.boschlaser.ui
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import kotlinx.cinterop.*
 import kotlinx.coroutines.*
 import kotlin.native.ref.WeakReference
@@ -16,7 +18,24 @@ import platform.darwin.dispatch_async
 import platform.darwin.dispatch_get_main_queue
 import platform.posix.memcpy
 
-internal fun label(key: String): String = NSBundle.mainBundle.localizedStringForKey(key, key, null)
+// Snapshot state lets resource reads in Compose update without rebuilding services or editors.
+internal var appLanguage by androidx.compose.runtime.mutableStateOf("")
+    private set
+
+internal fun selectAppLanguage(tag: String, preferences: NSUserDefaults) {
+    appLanguage = tag.takeIf { it in listOf("zh-Hans", "zh-Hant", "ja", "ko", "en") }.orEmpty()
+    preferences.setObject(appLanguage, "appLanguage")
+}
+
+internal fun label(key: String): String {
+    val language = appLanguage.ifEmpty {
+        NSBundle.preferredLocalizationsFromArray(listOf("en", "zh-Hans", "zh-Hant", "ja", "ko"))
+            .firstOrNull() as? String ?: "en"
+    }
+    val bundle = NSBundle.mainBundle.pathForResource(language, "lproj")?.let { NSBundle.bundleWithPath(it) }
+        ?: NSBundle.mainBundle
+    return bundle.localizedStringForKey(key, key, null)
+}
 internal fun now(): Long = (NSDate().timeIntervalSince1970 * 1000).toLong()
 internal fun uuid(): String = NSUUID().UUIDString
 internal fun ByteArray.nsData(): NSData = if (isEmpty()) NSData() else usePinned { NSData.create(bytes = it.addressOf(0), length = size.toULong()) }

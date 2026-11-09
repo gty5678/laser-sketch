@@ -4,23 +4,25 @@
 
 <h1>LaserSketch</h1>
 
-<p><strong>Android 激光测距与空间记录工具</strong></p>
+<p><strong>Android / iOS 激光测距与空间记录工具</strong></p>
 
 <p>通过 BLE 连接 Bosch GLM 测距设备，记录数据、绘制平面草稿，并在照片上添加尺寸标注。</p>
 
 <p>
-  <img alt="Platform" src="https://img.shields.io/badge/Platform-Android%2012%2B-3DDC84?logo=android&logoColor=white">
+  <img alt="Platform" src="https://img.shields.io/badge/Platform-Android%2012%2B%20%7C%20iOS%2016%2B-3DDC84?logo=android&logoColor=white">
   <img alt="Language" src="https://img.shields.io/badge/Language-Kotlin-7F52FF?logo=kotlin&logoColor=white">
-  <img alt="UI" src="https://img.shields.io/badge/UI-View%20%2B%20Canvas-4285F4?logo=android&logoColor=white">
-  <img alt="Material Components" src="https://img.shields.io/badge/UI-Material%20Components-757575?logo=materialdesign&logoColor=white">
+  <img alt="UI" src="https://img.shields.io/badge/UI-Compose%20Multiplatform-4285F4?logo=android&logoColor=white">
+  <img alt="Material Components" src="https://img.shields.io/badge/UI-Material%203-757575?logo=materialdesign&logoColor=white">
   <img alt="Bluetooth Low Energy" src="https://img.shields.io/badge/Bluetooth-Low%20Energy-0082FC?logo=bluetooth&logoColor=white">
   <img alt="SQLite" src="https://img.shields.io/badge/Storage-SQLite-003B57?logo=sqlite&logoColor=white">
-  <img alt="Build" src="https://img.shields.io/badge/Build-Gradle%209.5-02303A?logo=gradle&logoColor=white">
+  <img alt="Build" src="https://img.shields.io/badge/Build-Gradle%209.6.0-02303A?logo=gradle&logoColor=white">
 </p>
 
 </div>
 
-LaserSketch 是一款面向 Android 的激光测距与空间记录工具。应用通过 Bluetooth Low Energy（BLE）连接 Bosch GLM 系列测距设备，将测量结果保存为历史记录，并支持绘制平面草稿、在照片上添加尺寸标注以及导出和分享结果。
+LaserSketch 是一款面向 Android 和 iOS 的激光测距与空间记录工具。应用通过 Bluetooth Low Energy（BLE）连接 Bosch GLM 系列测距设备，将测量结果保存为历史记录，并支持绘制平面草稿、在照片上添加尺寸标注以及导出和分享结果。
+
+Android 与 iOS 复用 Kotlin Multiplatform 核心和 Compose 界面，分别提供原生蓝牙、照片与文件适配。iOS 已接入主要功能，蓝牙和部分权限、手势仍待真机验收，详细范围见 [双端开发说明](docs/ios-migration.md)。
 
 ## 功能
 
@@ -35,7 +37,7 @@ LaserSketch 是一款面向 Android 的激光测距与空间记录工具。应�
 
 ### 平面草稿
 
-- 绘制墙体并编辑墙长、墙厚
+- 绘制墙体并编辑墙厚；通过同墙两端尺寸驱动精确墙长，先选端固定、后选端移动
 - 添加平行墙面的关联尺寸标注，选内墙面可标注房间净距；标注随工程保存并参与图片导出
 - 先选中标注关联的墙，再点击尺寸数字输入实测净距，移动选中墙、固定另一面墙，相连墙沿原方向调整；支持撤销和删除标注
 - 选中墙直接显示邻近平行墙面的临时净距，仅点击图上绿色净距数字弹出数值输入，推动选中墙；净距和尺寸标注不在底部显示编辑面板
@@ -46,7 +48,7 @@ LaserSketch 是一款面向 Android 的激光测距与空间记录工具。应�
 - 选择、移动和删除图形
 - 将墙体连接、延长或拉直为水平/垂直
 - 支持直角和斜角 T 型墙体融合：支墙端部的两个角分别贴合主墙远侧墙面，接头内部连续，不出现楔形缺口、横穿边线或突出主墙的墙角
-- 支持撤销最近一次放置操作
+- 支持创建和编辑操作的撤销、重做
 - 创建、打开、重命名和删除草稿项目
 
 墙体连接以各墙当前定位线为几何基准。墙端连接到另一堵墙的中段时形成 T 型连接；如果支墙为斜墙，软件会按实际夹角分别计算支墙两侧边与主墙边界的交点，使墙体只在主墙范围内融合，不会因为统一延长距离而让其中一角穿出主墙。
@@ -58,12 +60,20 @@ LaserSketch 是一款面向 Android 的激光测距与空间记录工具。应�
 - 使用最近的测量结果快速填充尺寸
 - 拖动调整标注位置和控制点
 - 保存标注图片到相册
-- 导出并通过微信分享标注图片
+- 导出并通过系统分享面板分享标注图片；Android 支持微信分享入口
 - 创建、打开、重命名和删除图片标注项目
+
+### 工程交换与语言
+
+- 导入和导出 `.lsk` 完整工程，在 Android 与 iOS 之间手动交换；导入创建独立副本，不覆盖已有项目
+- 首页「设置 → 语言」支持简体中文、繁体中文、日语、韩语、英语及跟随系统；不支持的系统语言回退到英语
+- 语言选择会保留，已有项目名称、用户文字和测量数据不会随切换重写；详见 [国际化说明](docs/internationalization.md)
+- 项目保存在本机，不提供云端自动同步
 
 ## 技术栈
 
-- Kotlin
+- Kotlin `2.2.20`；iOS SwiftUI 宿主
+- Compose Multiplatform `1.9.3`：共享首页、属性控件与草图 / 标注 Canvas
 - Kotlin Multiplatform `:shared` 核心（Android / JVM / iOS targets）
 - Android Gradle Plugin `9.3.2`
 - Gradle `9.6.0`
@@ -71,12 +81,12 @@ LaserSketch 是一款面向 Android 的激光测距与空间记录工具。应�
 - 最低支持：Android `12`（API 31）
 - AndroidX Core KTX、AppCompat、Material Components
 - Bluetooth GATT / BLE
-- SQLite：保存测量历史
+- Android SQLite / iOS 原子文件：保存测量历史
 - 统一 `.lsk` 仓库：保存草图、照片和标注；保留旧工程原件
 
 ## 项目结构
 
-跨平台改造进度、依赖方向与尚未迁移的部分见 [架构说明](docs/architecture.md)，数据兼容规则见 [工程格式](docs/project-format.md)。Android UI 当前继续使用 View/Canvas。
+跨平台改造进度、依赖方向与尚未迁移的部分见 [架构说明](docs/architecture.md)，数据兼容规则见 [工程格式](docs/project-format.md)。共享 `:shared-ui` 提供 Compose 界面与场景绘制，Android View 保留平台触控、位图和生命周期适配。
 
 ```text
 .
@@ -85,12 +95,12 @@ LaserSketch 是一款面向 Android 的激光测距与空间记录工具。应�
 │       ├── main/
 │       │   ├── java/com/example/boschlaser/
 │       │   │   ├── MainActivity.kt              # 首页、设备连接和测量记录
-│       │   │   ├── BoschBleManager.kt           # BLE 扫描、连接和通信
-│       │   │   ├── BoschProtocol.kt             # Bosch 测量协议解析
+│       │   │   ├── BoschBleManager.kt           # Android BLE 生命周期协调
+│       │   │   ├── BoschProtocol.kt             # 共享 Bosch 协议的兼容外观
 │       │   │   ├── SketchActivity.kt            # 平面草稿编辑器
-│       │   │   ├── SketchView.kt                # 平面草稿绘制和几何操作
+│       │   │   ├── SketchView.kt                # Compose 草图宿主与触控适配
 │       │   │   ├── AnnotationActivity.kt        # 图片标注编辑器
-│       │   │   ├── ImageAnnotationView.kt       # 图片标注绘制和交互
+│       │   │   ├── ImageAnnotationView.kt       # Compose 标注宿主与触控适配
 │       │   │   ├── *ProjectStore.kt             # 旧工程格式兼容
 │       │   │   ├── ProjectServices.kt           # 统一项目仓库与应用级保存队列
 │       │   │   └── MeasurementServices.kt       # 共享测量服务的 Android 容器
@@ -101,6 +111,17 @@ LaserSketch 是一款面向 Android 的激光测距与空间记录工具。应�
 │   └── src/
 │       ├── commonMain/kotlin/                  # 语义模型、纯几何、命令、协议
 │       └── commonTest/kotlin/                  # 平台无关核心回归测试
+├── shared-ui/
+│   └── src/
+│       ├── commonMain/                        # Compose 界面、场景与唯一矢量图标源
+│       ├── commonTest/                        # 共享 UI 回归测试
+│       └── iosMain/                           # UIKit、蓝牙、照片和文件适配
+├── iosApp/
+│   ├── LaserSketch.xcodeproj                 # Xcode 工程
+│   ├── LaserSketch/                          # SwiftUI 宿主及五种语言资源
+│   └── LaserSketchUITests/                   # 隔离模拟器 UI 测试
+├── scripts/                                 # 双端验证、国际化检查与 iOS UI 测试
+├── docs/                                    # 行为规范、架构和验收记录
 ├── gradle/
 ├── build.gradle.kts
 ├── settings.gradle.kts
@@ -109,11 +130,13 @@ LaserSketch 是一款面向 Android 的激光测距与空间记录工具。应�
 
 ## 环境要求
 
-- Android Studio
+- Android 开发：Android Studio
 - JDK 17 或更高版本（Gradle 9.6 运行要求）
 - Android SDK Platform 37.0 和 Android SDK Build-Tools 36.0.0
 - 一台 Android 12 或更高版本的设备或模拟器
-- 如需测距功能，需要支持 BLE 的 Bosch GLM 测距设备
+- iOS 开发：macOS、Xcode、iOS 16+；支持 iPhone arm64 与 Apple Silicon 模拟器 arm64，未配置 Intel 模拟器 target
+- 双端验证和语言资源检查：Python 3
+- 如需测距功能，需要支持 BLE 的 Bosch GLM 测距设备；iOS 蓝牙联调需要真实 iPhone
 
 项目源码的 Java 编译目标为 Java 11。Gradle 启动器需要 JDK 17 或更高版本，仓库的 Gradle Daemon 配置使用 JDK 25。
 
@@ -157,6 +180,14 @@ app/build/outputs/apk/debug/app-debug.apk
 ./gradlew :app:installDebug
 ```
 
+### iOS 运行
+
+用 Xcode 打开 `iosApp/LaserSketch.xcodeproj`，选择 `LaserSketch` scheme 与 iPhone 模拟器，按 Command-R。构建阶段会自动编译共享 Kotlin framework，首次构建需要下载 Kotlin/Native 和 LLVM。
+
+模拟器无需个人签名；真机需在 Signing & Capabilities 配置自己的开发团队，并开启 iPhone 开发者模式。仓库不保存个人证书或描述文件。
+
+Android release 当前仍使用 debug 签名且未启用优化；iOS 未配置 App Store 发布，两者均不能视为生产发布配置。
+
 ## 测试
 
 运行 JVM 单元测试：
@@ -164,13 +195,36 @@ app/build/outputs/apk/debug/app-debug.apk
 ```powershell
 .\gradlew.bat :app:testDebugUnitTest
 .\gradlew.bat :shared:checkSharedBoundaries :shared:jvmTest
+.\gradlew.bat :shared-ui:checkSharedUiBoundaries :shared-ui:jvmTest
 ```
 
-运行连接设备上的 Android 仪器测试：
+macOS/Linux 将 `.\gradlew.bat` 替换为 `./gradlew`。语言资源检查和 macOS 双端验证：
 
-```powershell
-.\gradlew.bat :app:connectedDebugAndroidTest
+```bash
+python3 scripts/check-localizations.py
+./scripts/check-mobile.sh
 ```
+
+双端脚本执行语言资源检查、两个模块的边界检查、JVM 和 iOS Native 测试、Android Debug APK、iOS 模拟器和未签名 iPhone 构建；默认不运行 UI / 仪器测试。
+
+Android 仪器测试只允许在专用、可丢弃的模拟器上运行，必须通过 `ANDROID_SERIAL` 显式选择：
+
+```bash
+adb devices
+ANDROID_SERIAL=emulator-5554 ./gradlew :app:connectedDebugAndroidTest
+```
+
+Windows PowerShell 先设置 `$env:ANDROID_SERIAL="emulator-5554"`，再运行 `.\gradlew.bat :app:connectedDebugAndroidTest`。将示例序列号替换为实际的专用模拟器。日常真机调试使用普通 Run/Debug，保留应用数据，不卸载或清除数据。
+
+iOS UI 测试脚本会创建一次性模拟器、注入合成样本，并在完成后清理：
+
+```bash
+./scripts/test-ios.sh
+# 在双端检查中同时启用两端交互测试：
+ANDROID_SERIAL=emulator-5554 LASERSKETCH_UI_TESTS=1 LASERSKETCH_ANDROID_DEVICE_TESTS=1 ./scripts/check-mobile.sh
+```
+
+真机 BLE 验收需另行检查权限拒绝 / 授予、扫描、连接、测量和重连。历史验证记录与尚未完成的检查见 [双端开发说明](docs/ios-migration.md) 和 [国际化说明](docs/internationalization.md)。
 
 ## 权限说明
 
@@ -180,8 +234,6 @@ app/build/outputs/apk/debug/app-debug.apk
 - `BLUETOOTH_CONNECT`
 
 Android 12 及以上版本会在运行时请求“附近设备”权限。BLE 扫描明确声明为不用于推断位置，应用不申请粗略或精确位置权限。
-<<<<<<< HEAD
-=======
 
 <div align="center">
 
@@ -203,13 +255,14 @@ Android 12 及以上版本会在运行时请求“附近设备”权限。BLE �
 </table>
 
 </div>
->>>>>>> 8adca344f517da9bce55ace716386351855e3a52
+
+iOS 通过 CoreBluetooth 申请 Bluetooth 权限；选择照片使用系统 PHPicker，不申请读取整个照片库，保存相册时仅申请添加照片权限。iPhone 上的蓝牙与相册权限组合仍需真机验收。
 
 ## 数据与隐私
 
-- 测量历史保存在应用本地 SQLite 数据库中。
+- Android 测量历史保存在本地 SQLite 数据库中；iOS 使用应用私有目录中的原子文件。
 - 平面草稿和图片标注项目保存在应用内部目录中，包含 JSON 数据、原图和预览图。
-- 保存到相册的图片会写入 `Pictures/LaserSketch`。
+- Android 保存到相册的图片写入 `Pictures/LaserSketch`；iOS 通过系统照片库保存。
 - CSV 导出位置由系统文件选择器决定。
 - 应用不会在本项目中配置生产签名密钥。
 

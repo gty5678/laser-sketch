@@ -32,7 +32,7 @@ iOS 功能代码已接入，仍不能将模拟器、纯逻辑测试或未签名�
 - `IosProjectRepository` 接入同一个共享 `ProjectService`。草图保存自动过滤失效绑定，照片保存不覆盖草图、其他照片、测量与资产。已接受保存使用应用 scope，并在退后台时申请有限后台完成时间；保存失败保留页面和正式编辑文档。
 - 草图和照片持久化前先取消未提交手势；绘制观察显式刷新状态，不能靠视口变化偶然刷新。字体和图片通过宿主适配进入同一场景，图片导出排除选择和预览。
 - 图标唯一源位于 `shared-ui/src/commonMain/composeResources/drawable`。Android 原生宿主的 `R.drawable` 通过 app 的资源源目录继续读取这些文件，iOS 通过 Compose Resources 读取。共享矢量使用具体颜色值，不允许 `@android:color` 引用；边界检查覆盖该规则。
-- Android 文案继续使用 strings.xml；iOS 使用 `iosApp/LaserSketch/{en,zh-Hans}.lproj/Localizable.strings`，权限说明使用各语言的 InfoPlist.strings，色样使用 Palette.plist。主题使用 MaterialTheme。
+- Android 文案继续使用 strings.xml；iOS 使用 `iosApp/LaserSketch/{en,zh-Hans,zh-Hant,ja,ko}.lproj/Localizable.strings`，权限说明使用各语言的 InfoPlist.strings，色样使用 Palette.plist。主题使用 MaterialTheme。
 - 两端单位转换共用十进制移位逻辑，保留物理量，避免把二进制浮点尾数显示为 `12.575000000000001`。
 
 ## 数据与系统操作
@@ -87,3 +87,5 @@ xcodebuild -project iosApp/LaserSketch.xcodeproj -scheme LaserSketch -configurat
 - Xcode 的 8 项界面测试全部通过（0 失败/跳过），覆盖墙体重绘和保存恢复、参数草稿、尺寸驱动实际墙边、四类照片标注、实际相册写入、系统文件选择器导入 Android 工程并重启恢复、系统分享、测量入口和模拟器蓝牙不可用。
 - Android 全量 217 项仪器测试已通过。旧测试按当前行为规范补齐显式等待测量、单位换算、延迟删除、分页与设置草稿的断言；柱拖动夹具明确避开墙端点命中区域，保留原移动/取消断言。
 - 按用户当前确认，本阶段完成代码和模拟器验证。后续真机验收尚包括：真实 iPhone 上的相册权限组合、完整绘图/手势逐项验收、与 Bosch GLM 的权限授予/拒绝、测量及重连；当前仅有模拟器，未声称这些检查已通过。
+
+语言资源与首页切换行为见 [国际化说明](internationalization.md)。

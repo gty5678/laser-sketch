@@ -201,6 +201,9 @@ class MainActivity : AppCompatActivity(), BoschBleManager.Listener {
                                 onConnectSaved = { requirePermissionThen(PermissionAction.CONNECT_SAVED) },
                                 onDisconnect = { autoReconnectEnabled = false; cancelAutoReconnect(); ble.disconnect(); onDisconnected() })
                         },
+                        settings = { androidx.compose.material3.TextButton(onClick = ::showAppSettings) {
+                            androidx.compose.material3.Text(getString(R.string.app_settings))
+                        } },
                         deviceIcon = { Icon(painterResource(R.drawable.ic_device), contentDescription = null) },
                     )
                 }
@@ -208,10 +211,30 @@ class MainActivity : AppCompatActivity(), BoschBleManager.Listener {
         })
     }
 
+    private fun showAppSettings() {
+        AlertDialog.Builder(this).setTitle(R.string.app_settings)
+            .setItems(arrayOf(getString(R.string.app_language))) { _, _ -> showLanguageChooser() }
+            .setNegativeButton(R.string.action_cancel, null).show()
+    }
+
+    private fun showLanguageChooser() {
+        val tags = listOf("", "zh-Hans", "zh-Hant", "ja", "ko", "en")
+        val names = arrayOf(getString(R.string.language_system), getString(R.string.language_zh_hans),
+            getString(R.string.language_zh_hant), getString(R.string.language_ja),
+            getString(R.string.language_ko), getString(R.string.language_en))
+        val current = androidx.appcompat.app.AppCompatDelegate.getApplicationLocales().toLanguageTags()
+        AlertDialog.Builder(this).setTitle(R.string.app_language)
+            .setSingleChoiceItems(names, tags.indexOf(current)) { dialog, index ->
+                dialog.dismiss()
+                androidx.appcompat.app.AppCompatDelegate.setApplicationLocales(
+                    androidx.core.os.LocaleListCompat.forLanguageTags(tags[index]))
+            }.setNegativeButton(R.string.action_cancel, null).show()
+    }
+
     private fun showImageSourceChooser() {
         AlertDialog.Builder(this)
-            .setTitle("添加尺寸标注")
-            .setItems(arrayOf("拍照", "从图片中选择")) { _, position ->
+            .setTitle(R.string.add_annotation)
+            .setItems(arrayOf(getString(R.string.take_photo), getString(R.string.choose_image))) { _, position ->
                 val source = if (position == 0) {
                     AnnotationActivity.SOURCE_CAMERA
                 } else {
@@ -223,7 +246,7 @@ class MainActivity : AppCompatActivity(), BoschBleManager.Listener {
                     },
                 )
             }
-            .setNegativeButton("取消", null)
+            .setNegativeButton(R.string.action_cancel, null)
             .show()
     }
 
@@ -263,12 +286,12 @@ class MainActivity : AppCompatActivity(), BoschBleManager.Listener {
             selectAll()
         }
         AlertDialog.Builder(this)
-            .setTitle("修改文件名字")
+            .setTitle(R.string.project_rename)
             .setView(input)
-            .setNegativeButton("取消", null)
-            .setPositiveButton("保存") { _, _ ->
+            .setNegativeButton(R.string.action_cancel, null)
+            .setPositiveButton(R.string.action_save) { _, _ ->
                 val name = input.text.toString().trim()
-                if (name.isEmpty()) toast("名字不能为空")
+                if (name.isEmpty()) toast(getString(R.string.project_name_required))
                 else projectServices.rename(project.id, name)
             }
             .show()
@@ -276,10 +299,10 @@ class MainActivity : AppCompatActivity(), BoschBleManager.Listener {
 
     private fun confirmDeleteProject(project: AnnotationProjectSummary) {
         AlertDialog.Builder(this)
-            .setTitle("删除“${project.name}”？")
+            .setTitle(getString(R.string.project_delete_title, project.name))
             .setMessage(R.string.project_delete_message)
-            .setNegativeButton("取消", null)
-            .setPositiveButton("删除") { _, _ ->
+            .setNegativeButton(R.string.action_cancel, null)
+            .setPositiveButton(R.string.project_delete) { _, _ ->
                 projectServices.delete(project.id)
             }
             .show()
@@ -440,19 +463,19 @@ class MainActivity : AppCompatActivity(), BoschBleManager.Listener {
     private fun showRenameSketchDialog(project: SketchProjectSummary) {
         val input = EditText(this).apply { setText(project.name); setSelection(text.length); setSingleLine(true); selectAll() }
         AlertDialog.Builder(this)
-            .setTitle("修改草稿名字").setView(input).setNegativeButton("取消", null)
-            .setPositiveButton("保存") { _, _ ->
+            .setTitle(R.string.project_rename).setView(input).setNegativeButton(R.string.action_cancel, null)
+            .setPositiveButton(R.string.action_save) { _, _ ->
                 val name = input.text.toString().trim()
-                if (name.isEmpty()) toast("名字不能为空")
+                if (name.isEmpty()) toast(getString(R.string.project_name_required))
                 else projectServices.rename(project.id, name)
             }.show()
     }
 
     private fun confirmDeleteSketch(project: SketchProjectSummary) {
-        AlertDialog.Builder(this).setTitle("删除“${project.name}”？")
+        AlertDialog.Builder(this).setTitle(getString(R.string.project_delete_title, project.name))
             .setMessage(R.string.project_delete_message)
-            .setNegativeButton("取消", null)
-            .setPositiveButton("删除") { _, _ ->
+            .setNegativeButton(R.string.action_cancel, null)
+            .setPositiveButton(R.string.project_delete) { _, _ ->
                 projectServices.delete(project.id)
             }.show()
     }

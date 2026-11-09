@@ -43,12 +43,16 @@ fun HomeScreen(
     device: @Composable () -> Unit,
     deviceIcon: @Composable () -> Unit,
     modifier: Modifier = Modifier,
+    settings: @Composable () -> Unit = {},
 ) {
     Box(modifier.fillMaxSize().systemBarsPadding()) {
         Column(Modifier.fillMaxSize().padding(bottom = 96.dp)) {
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState())
                 .padding(start = 16.dp, top = 8.dp, end = 16.dp, bottom = 8.dp)) {
-                TextButton(onClick = onImport, modifier = Modifier.align(Alignment.End)) { Text(labels.importProject) }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    settings()
+                    TextButton(onClick = onImport) { Text(labels.importProject) }
+                }
                 Text(labels.photos, Modifier.padding(top = 18.dp, bottom = 6.dp), style = MaterialTheme.typography.titleLarge)
                 photos()
                 Text(labels.sketches, Modifier.padding(top = 18.dp, bottom = 6.dp), style = MaterialTheme.typography.titleLarge)

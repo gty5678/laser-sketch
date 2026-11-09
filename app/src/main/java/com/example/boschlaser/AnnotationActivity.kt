@@ -549,7 +549,7 @@ class AnnotationActivity : AppCompatActivity() {
         Thread {
             val sharedUri = runCatching {
                 val directory = File(cacheDir, "shared").apply { mkdirs() }
-                val file = File(directory, "GLM标注分享.png")
+                val file = File(directory, "LaserSketch-share.png")
                 FileOutputStream(file).use { stream ->
                     check(result.compress(Bitmap.CompressFormat.PNG, 100, stream))
                 }
@@ -590,7 +590,7 @@ class AnnotationActivity : AppCompatActivity() {
             var imageUri: Uri? = null
             val saved = runCatching {
                 val values = ContentValues().apply {
-                    put(MediaStore.Images.Media.DISPLAY_NAME, "GLM标注-${fileTime()}.png")
+                    put(MediaStore.Images.Media.DISPLAY_NAME, "LaserSketch-${fileTime()}.png")
                     put(MediaStore.Images.Media.MIME_TYPE, "image/png")
                     put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/LaserSketch")
                     put(MediaStore.Images.Media.IS_PENDING, 1)

@@ -167,7 +167,6 @@
 "sketch_counts" = "墙：%w · 门窗：%o · 柱：%c";
 "annotation_counts" = "标注：%s";
 "dimension_count" = "尺寸：%s";
-
 "photo_correction_title" = "照片矫正";
 "photo_correction_hint" = "移动水平、垂直透视滑杆拉正照片，镜头畸变滑杆调直弯曲边缘。保留完整画面，不裁剪，空出的边缘留白。";
 "photo_correction_lens" = "镜头畸变（桶形 ↔ 枕形）";
@@ -175,24 +174,25 @@
 "photo_correction_original" = "使用原图";
 "photo_correction_apply" = "矫正并标注";
 "photo_correction_error" = "矫正失败，请调整或使用原图";
-
 "wall_fill_blank" = "白色填充";
 "wall_fill_hatch" = "斜线";
-
 "wall_fill_black" = "黑色填充";
 "column_fill_white" = "柱子白色填充";
 "column_fill_black" = "柱子黑色填充";
-
 "wall_properties" = "墙体属性";
-
 "photo_correction_horizontal" = "水平透视";
 "photo_correction_vertical" = "垂直透视";
-
 "photo_correction_rotation" = "左右旋转";
-
 "custom_color" = "自定义";
 "color_hex" = "颜色代码（6 位十六进制）";
 "apply_color" = "应用颜色";
-
 "color_wheel" = "色盘";
 "color_brightness" = "明度";
+"app_settings" = "设置";
+"app_language" = "语言";
+"language_system" = "跟随系统";
+"language_zh_hans" = "简体中文";
+"language_zh_hant" = "繁體中文";
+"language_ja" = "日本語";
+"language_ko" = "한국어";
+"language_en" = "English";

@@ -271,3 +271,7 @@ adb devices
 已在 Android 16 真机执行触控、Canvas 像素、页面重建、SQLite 升级和 FileProvider URI 导入导出仪器测试；这不覆盖外部分享目标的完整系统选择流程。完整 176 项仪器套件已通过；真实权限拒绝/授予、扫描、GLM 单次测量、断开与重连已经确认；连续测量按用户最新要求排除，未声明实机通过。性能、单手和平板体验也不能由单元测试证明。该段为原 Android 改造记录；新增 iOS 宿主与验证见 [双端开发记录](ios-migration.md)，桌面与云服务仍不在范围内。逐项状态见核对记录，测试入口与运行约束见 [贡献指南](../CONTRIBUTING.md)。
 
 首页由单个 Android `ComposeView` 承载共享 `HomeScreen`；共享层安排滚动内容、新建入口、设备悬浮按钮和可切换面板，并处理系统栏留白。首页滚动内容依次为项目导入入口、图片标注、平面草稿、测量记录，优先展示两类绘图项目。文案、按钮颜色与设备图标由 Android 资源注入，项目缩略图和 Flow 生命周期收集仍由 Android 适配器管理。`HomeScreenInstrumentedTest` 覆盖滚动后操作入口、设备面板切换及内容滚动位置保留，已在 Android 16 真机通过；完整套件状态以核对记录为准。
+
+## 国际化
+
+Android 与 iOS 的五种语言资源、首页语言设置及平台边界见 [国际化说明](internationalization.md)。共享 UI 保持宿主 Labels 注入，核心与持久化格式不变。

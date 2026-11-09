@@ -23,7 +23,7 @@ fun MainViewController(): UIViewController {
         val services = remember {
             val testId = if (Platform.isDebugBinary) NSProcessInfo.processInfo.environment["LASERSKETCH_TEST_ID"] as? String else null
             val testRoot = testId?.takeIf { it.matches(Regex("[a-fA-F0-9-]{36}")) }?.let { NSTemporaryDirectory() + "LaserSketchUITest-$it" }
-            IosAppServices(testRoot)
+            IosAppServices(testRoot).also { selectAppLanguage(it.preferences.stringForKey("appLanguage").orEmpty(), it.preferences) }
         }
         DisposableEffect(services) { onDispose { services.close(); platform.close() } }
         MaterialTheme { IosApplication(platform, services) }
@@ -45,6 +45,8 @@ private fun IosApplication(platform: IosPlatform, services: IosAppServices) {
     var naming by remember { mutableStateOf<String?>(null) }
     var name by remember { mutableStateOf("") }
     var deleting by remember { mutableStateOf<String?>(null) }
+    var appSettings by remember { mutableStateOf(false) }
+    var languageChooser by remember { mutableStateOf(false) }
     var working by remember { mutableStateOf(false) }
     suspend fun reload() { projects = withContext(Dispatchers.Default) { store.list() } }
     fun work(action: suspend () -> Unit) { scope.launch {
@@ -117,6 +119,7 @@ private fun IosApplication(platform: IosPlatform, services: IosAppServices) {
                     }
                     TextButton(onClick = { work { platform.share(withContext(Dispatchers.Default) { store.export(project) }, "lsk") } }) { Text(label("export_project")) }
                 } else {
+                    TextButton(onClick = { appSettings = true }) { Text(label("app_settings")) }
                     Row {
                         listOf("projects", "measurements", "devices").forEachIndexed { index, key ->
                             FilterChip(tab == index, { tab = index }, label = { Text(label(key)) })
@@ -147,6 +150,22 @@ private fun IosApplication(platform: IosPlatform, services: IosAppServices) {
                 }
             }
         }
+        if (appSettings) AlertDialog(onDismissRequest = { appSettings = false },
+            title = { Text(label("app_settings")) },
+            text = { TextButton(onClick = { appSettings = false; languageChooser = true }) { Text(label("app_language")) } },
+            confirmButton = { TextButton(onClick = { appSettings = false }) { Text(label("ok")) } })
+        if (languageChooser) AlertDialog(onDismissRequest = { languageChooser = false },
+            title = { Text(label("app_language")) },
+            text = { Column(Modifier.verticalScroll(rememberScrollState())) {
+                listOf("" to "language_system", "zh-Hans" to "language_zh_hans", "zh-Hant" to "language_zh_hant",
+                    "ja" to "language_ja", "ko" to "language_ko", "en" to "language_en").forEach { (tag, key) ->
+                    TextButton(onClick = { selectAppLanguage(tag, services.preferences); languageChooser = false }) {
+                        RadioButton(selected = appLanguage == tag, onClick = null)
+                        Text(label(key))
+                    }
+                }
+            } },
+            confirmButton = { TextButton(onClick = { languageChooser = false }) { Text(label("cancel")) } })
         if (naming != null) AlertDialog(onDismissRequest = { naming = null }, title = { Text(label("project_name")) },
             text = { OutlinedTextField(name, { name = it }, label = { Text(label("project_name")) }, singleLine = true) },
             confirmButton = { TextButton(enabled = name.isNotBlank(), onClick = { work {

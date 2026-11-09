@@ -17,12 +17,18 @@ class AndroidMeasurementCsv(context: Context) {
     private val application = context.applicationContext
 
     suspend fun export(uri: Uri, records: List<MeasurementRecord>) = withContext(Dispatchers.IO) {
-        val time = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault())
+        // Application resources do not inherit AppCompat activity locales on Android 12/12L.
+        val locales = androidx.appcompat.app.AppCompatDelegate.getApplicationLocales()
+        val localized = if (locales.isEmpty) application else application.createConfigurationContext(
+            android.content.res.Configuration(application.resources.configuration).apply {
+                setLocales(android.os.LocaleList.forLanguageTags(locales.toLanguageTags()))
+            })
+        val time = SimpleDateFormat("HH:mm:ss.SSS", localized.resources.configuration.locales[0])
         val stream = checkNotNull(application.contentResolver.openOutputStream(uri))
         stream.bufferedWriter(Charsets.UTF_8).use { writer ->
-            MeasurementCsv.write(records, application.resources.getStringArray(R.array.measurement_csv_headers).toList(),
+            MeasurementCsv.write(records, localized.resources.getStringArray(R.array.measurement_csv_headers).toList(),
                 time = { time.format(Date(it)) },
-                operation = { record -> record.legacyOperation ?: application.getString(when (record.measurement.operation) {
+                operation = { record -> record.legacyOperation ?: localized.getString(when (record.measurement.operation) {
                     MeasurementOperation.ADD -> R.string.measurement_operation_add
                     MeasurementOperation.SUBTRACT -> R.string.measurement_operation_subtract
                     null -> R.string.measurement_csv_single

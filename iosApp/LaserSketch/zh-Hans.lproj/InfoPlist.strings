@@ -1,2 +1,2 @@
-"NSBluetoothAlwaysUsageDescription" = "连接 Bosch 激光测距设备，接收测量结果。";
-"NSPhotoLibraryAddUsageDescription" = "将草图和标注后的图片保存到相册。";
+"NSBluetoothAlwaysUsageDescription" = "连接 Bosch 测距设备并接收测量结果。";
+"NSPhotoLibraryAddUsageDescription" = "将草图和标注图片保存到相册。";

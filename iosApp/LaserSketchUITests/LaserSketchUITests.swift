@@ -33,6 +33,37 @@ final class LaserSketchUITests: XCTestCase {
         XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
     }
 
+    func testHomeLanguageSwitchAndPersistence() throws {
+        createSketch()
+        button("Save and close").tap()
+        XCTAssertTrue(button("Back").waitForExistence(timeout: 10))
+        button("Back").tap()
+        XCTAssertTrue(button("New sketch").waitForExistence(timeout: 10))
+        let choices = [("简体中文", "设置", "语言", "新建草图"),
+                       ("繁體中文", "設定", "語言", "新建草圖"),
+                       ("日本語", "設定", "言語", "新規スケッチ"),
+                       ("한국어", "설정", "언어", "새 스케치"),
+                       ("English", "Settings", "Language", "New sketch")]
+        var settings = "Settings"
+        var language = "Language"
+        for (choice, newSettings, newLanguage, newSketch) in choices {
+            button(settings).tap()
+            button(language).tap()
+            button(choice).tap()
+            XCTAssertTrue(button(newSketch).waitForExistence(timeout: 5))
+            app.terminate()
+            app.launch()
+            XCTAssertTrue(button(newSketch).waitForExistence(timeout: 10))
+            XCTAssertTrue(app.staticTexts["iOS regression"].exists)
+            settings = newSettings
+            language = newLanguage
+        }
+        button(settings).tap()
+        button(language).tap()
+        button("Follow system").tap()
+        XCTAssertTrue(button("New sketch").waitForExistence(timeout: 5))
+    }
+
     func testWallPlacementUndoAndSavedProjectSurvivesRelaunch() throws {
         createSketch()
         button("Wall").tap()

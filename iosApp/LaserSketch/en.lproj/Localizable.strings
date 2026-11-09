@@ -167,7 +167,6 @@
 "sketch_counts" = "Walls: %w · Openings: %o · Columns: %c";
 "annotation_counts" = "Annotations: %s";
 "dimension_count" = "Dimensions: %s";
-
 "photo_correction_title" = "Photo correction";
 "photo_correction_hint" = "Adjust horizontal and vertical perspective to straighten the photo. All image content is kept, with white margins and no cropping.";
 "photo_correction_lens" = "Lens distortion (barrel ↔ pincushion)";
@@ -175,24 +174,25 @@
 "photo_correction_original" = "Use original";
 "photo_correction_apply" = "Apply and annotate";
 "photo_correction_error" = "Correction failed. Adjust or use original.";
-
 "wall_fill_blank" = "White fill";
 "wall_fill_hatch" = "Hatched";
-
 "wall_fill_black" = "Black fill";
 "column_fill_white" = "White column fill";
 "column_fill_black" = "Black column fill";
-
 "wall_properties" = "Wall properties";
-
 "photo_correction_horizontal" = "Horizontal perspective";
 "photo_correction_vertical" = "Vertical perspective";
-
 "photo_correction_rotation" = "Rotation";
-
 "custom_color" = "Custom";
 "color_hex" = "Color code (6 hexadecimal digits)";
 "apply_color" = "Apply color";
-
 "color_wheel" = "Color wheel";
 "color_brightness" = "Brightness";
+"app_settings" = "Settings";
+"app_language" = "Language";
+"language_system" = "Follow system";
+"language_zh_hans" = "简体中文";
+"language_zh_hant" = "繁體中文";
+"language_ja" = "日本語";
+"language_ko" = "한국어";
+"language_en" = "English";

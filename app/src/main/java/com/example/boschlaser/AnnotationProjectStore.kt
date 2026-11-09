@@ -45,7 +45,7 @@ object AnnotationProjectStore {
             check(bitmap.compress(Bitmap.CompressFormat.JPEG, 96, stream))
         }
         val now = System.currentTimeMillis()
-        val name = "照片标注 ${SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(now))}"
+        val name = context.getString(R.string.project_photo_default_name, SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(now)))
         writeProjectData(directory, id, name, now, AnnotationState())
         return id
     }
@@ -55,7 +55,7 @@ object AnnotationProjectStore {
         if (!directory.isDirectory || !File(directory, IMAGE_FILE).isFile) return
         val existing = readData(File(directory, DATA_FILE))
         val name = existing?.optString("name")?.takeIf { it.isNotBlank() }
-            ?: "照片标注 ${SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date())}"
+            ?: context.getString(R.string.project_photo_default_name, SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date()))
         writeProjectData(directory, id, name, System.currentTimeMillis(), state)
         preview?.let { bitmap ->
             FileOutputStream(File(directory, PREVIEW_FILE)).use { stream ->
@@ -71,7 +71,7 @@ object AnnotationProjectStore {
         return AnnotationProject(
             summary = AnnotationProjectSummary(
                 id = id,
-                name = data.optString("name", "照片标注"),
+                name = data.optString("name", context.getString(R.string.home_photos)),
                 updatedAt = data.optLong("updatedAt", 0L),
             ),
             bitmap = bitmap,
@@ -112,7 +112,7 @@ object AnnotationProjectStore {
             if (!File(directory, IMAGE_FILE).isFile) return@mapNotNull null
             AnnotationProjectSummary(
                 id = directory.name,
-                name = data.optString("name", "照片标注"),
+                name = data.optString("name", context.getString(R.string.home_photos)),
                 updatedAt = data.optLong("updatedAt", 0L),
             )
         }.sortedByDescending { it.updatedAt }

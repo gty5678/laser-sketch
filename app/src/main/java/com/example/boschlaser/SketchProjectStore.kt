@@ -69,7 +69,7 @@ object SketchProjectStore {
         val id = UUID.randomUUID().toString()
         val directory = projectDirectory(context, id).apply { check(mkdirs()) }
         val now = System.currentTimeMillis()
-        val name = "平面草稿 ${SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(now))}"
+        val name = context.getString(R.string.project_sketch_default_name, SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(now)))
         write(directory, id, name, now, SketchState())
         return id
     }
@@ -79,7 +79,7 @@ object SketchProjectStore {
         val directory = projectDirectory(context, id)
         require(directory.isDirectory)
         val old = readJson(File(directory, DATA_FILE)) ?: error("草稿不存在")
-        val name = old.optString("name").takeIf(String::isNotBlank) ?: "平面草稿"
+        val name = old.optString("name").takeIf(String::isNotBlank) ?: context.getString(R.string.home_sketches)
         write(directory, id, name, System.currentTimeMillis(), state)
         preview?.let { bitmap ->
             FileOutputStream(File(directory, PREVIEW_FILE)).use { output ->
@@ -92,7 +92,7 @@ object SketchProjectStore {
         if (!isValidId(id)) return null
         val data = readJson(File(projectDirectory(context, id), DATA_FILE)) ?: return null
         return SketchProject(
-            SketchProjectSummary(id, data.optString("name", "平面草稿"), data.optLong("updatedAt")),
+            SketchProjectSummary(id, data.optString("name", context.getString(R.string.home_sketches)), data.optLong("updatedAt")),
             decode(data),
         )
     }
@@ -103,7 +103,7 @@ object SketchProjectStore {
             val data = readJson(File(directory, DATA_FILE)) ?: return@mapNotNull null
             SketchProjectSummary(
                 directory.name,
-                data.optString("name", "平面草稿"),
+                data.optString("name", context.getString(R.string.home_sketches)),
                 data.optLong("updatedAt"),
             )
         }.sortedByDescending { it.updatedAt }
