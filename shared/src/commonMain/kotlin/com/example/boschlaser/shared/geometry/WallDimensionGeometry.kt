@@ -7,8 +7,9 @@ import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
 
-data class WallDimensionLayout(val line: Segment2, val firstWitness: Vec2, val secondWitness: Vec2) {
-    val valueMm get() = Geometry.length(line)
+data class WallDimensionLayout(val line: Segment2, val firstWitness: Vec2, val secondWitness: Vec2, val angleDegrees: Double? = null,
+    val arcCenter: Vec2? = null, val sweep: Double = 0.0) {
+    val valueMm get() = angleDegrees ?: Geometry.length(line)
 }
 
 data class DimensionEndpointSnap(val reference: DimensionReference, val point: Vec2, val dimensionId: String)
@@ -75,6 +76,7 @@ object WallDimensionGeometry {
                     WallFaceSide.LEFT -> shape.leftEdge
                     WallFaceSide.RIGHT -> shape.rightEdge
                     WallFaceSide.CENTER -> shape.centerLine
+                    WallFaceSide.CONTROL -> WallGeometry.referenceLine(wall)
                     WallFaceSide.START -> Segment2(shape.leftEdge.start, shape.rightEdge.start)
                     WallFaceSide.END -> Segment2(shape.leftEdge.end, shape.rightEdge.end)
                 }
@@ -115,6 +117,7 @@ object WallDimensionGeometry {
     }
 
     fun layout(document: SketchDocument, dimension: WallDimension): WallDimensionLayout? {
+        if (dimension.angular) return angularLayout(document, dimension)
         val first = face(document, dimension.first) ?: return null
         val second = face(document, dimension.second) ?: return null
         val direction = Geometry.normalize(first.end - first.start)
@@ -123,6 +126,22 @@ object WallDimensionGeometry {
         val start = Geometry.project(dimension.position, Line2(first.start, direction))
         val end = Geometry.project(start, Line2(second.start, other))
         return WallDimensionLayout(Segment2(start, end), Geometry.closestPoint(start, first), Geometry.closestPoint(end, second))
+    }
+
+    fun angularLayout(document: SketchDocument, dimension: WallDimension): WallDimensionLayout? {
+        val a = document.walls[(dimension.first as? WallFaceReference)?.wallId] ?: return null
+        val b = document.walls[(dimension.second as? WallFaceReference)?.wallId] ?: return null
+        val center = WallGeometry.intersection(a, b) ?: return null
+        fun ray(wall: Wall): Vec2 {
+            val end = if (Geometry.parameter(center, WallGeometry.referenceLine(wall)) > .500001) wall.start else wall.end
+            return Geometry.normalize(end - center)
+        }
+        val u = ray(a)
+        val v = ray(b)
+        val sweep = kotlin.math.atan2(u.cross(v), u.dot(v))
+        val radius = maxOf(100.0, Geometry.distance(center, dimension.position))
+        return WallDimensionLayout(Segment2(center + u * radius, center + v * radius), center, center,
+            abs(sweep) * 180.0 / PI, center, sweep)
     }
 
     fun references(document: SketchDocument): List<DimensionReference> =
@@ -140,6 +159,7 @@ object WallDimensionGeometry {
         first: DimensionReference? = null): DimensionEndpointSnap? {
         require(tolerance.isFinite() && tolerance >= 0.0)
         return document.dimensions.values.toList().asReversed().flatMap { dimension ->
+            if (dimension.angular) return@flatMap emptyList()
             val layout = layout(document, dimension) ?: return@flatMap emptyList()
             if (layout.valueMm < 1.0) return@flatMap emptyList()
             listOf(DimensionEndpointSnap(dimension.first, layout.line.start, dimension.id),
@@ -165,9 +185,25 @@ object WallDimensionGeometry {
         return candidates.first { it.second <= nearest + tolerance * .025 }.first
     }
 
+    fun distanceToLayout(point: Vec2, layout: WallDimensionLayout): Double {
+        val center = layout.arcCenter ?: return Geometry.distanceToSegment(point, layout.line)
+        val ray = layout.line.start - center
+        val start = kotlin.math.atan2(ray.y, ray.x)
+        val radius = Geometry.distance(center, layout.line.start)
+        var previous = layout.line.start
+        var distance = Double.POSITIVE_INFINITY
+        for (step in 1..64) {
+            val angle = start + layout.sweep * step / 64.0
+            val next = center + Vec2(cos(angle), sin(angle)) * radius
+            distance = minOf(distance, Geometry.distanceToSegment(point, Segment2(previous, next)))
+            previous = next
+        }
+        return distance
+    }
+
     fun hit(document: SketchDocument, point: Vec2, tolerance: Double): WallDimension? =
         document.dimensions.values.toList().asReversed().firstOrNull { dimension ->
-            layout(document, dimension)?.let { Geometry.distanceToSegment(point, it.line) <= tolerance }
+            layout(document, dimension)?.let { distanceToLayout(point, it) <= tolerance }
                 ?: (Geometry.distance(point, dimension.position) <= tolerance)
         }
 }

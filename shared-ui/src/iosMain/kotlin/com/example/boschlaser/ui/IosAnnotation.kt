@@ -109,7 +109,8 @@ internal fun IosAnnotation(project: Project, assetId: String, platform: IosPlatf
                 onBack = { cancel(); save(editor.document, true) }, onShare = { services.run { platform.share(export(), "png") } },
                 onSave = { services.run { platform.savePhoto(export()) { notice = label(if (it) "photo_saved" else "photo_error") } } }, onTool = ::mode,
                 backIcon = { DrawingIcon("back") }, shareIcon = { DrawingIcon("share") },
-                saveIcon = { DrawingIcon("save") }, toolIcon = { DrawingIcon(it.name.lowercase()) })
+                saveIcon = { DrawingIcon("save") }, toolIcon = { DrawingIcon(it.name.lowercase()) },
+                exportLabel = label("share"))
         }, placementOptions = {
             AnnotationSecondaryToolbar(scrollable = false) {
                 if (editor.state.mode != AnnotationMode.MOVE) {

@@ -77,7 +77,7 @@
 "flip_side" = "열림 방향 반전";
 "wall_edit_hint" = "두 벽을 순서대로 선택하세요. 탭한 위치가 남길 쪽을 결정합니다.";
 "dimension_hint" = "고정 기준, 이동 기준을 선택하고 치수를 배치하세요. 객체를 선택한 후 굵은 치수를 탭하여 편집하세요.";
-"sketch_hint" = "놓아서 확정하세요. 빈 곳을 드래그하여 이동하고 두 손가락으로 확대/축소하세요.";
+"sketch_hint" = "탭하여 선택한 후 드래그하여 편집하세요. 선택하지 않은 객체를 드래그하면 화면이 이동합니다. 두 손가락으로 이동 및 확대/축소하세요.";
 "length_mm_input" = "거리 (mm)";
 "share_image" = "이미지 공유";
 "save_album" = "사진에 저장";
@@ -196,3 +196,24 @@
 "language_ja" = "日本語";
 "language_ko" = "한국어";
 "language_en" = "English";
+
+"wall_drawing_single" = "단일";
+"wall_drawing_continuous" = "연속";
+
+"board" = "바닥판";
+"board_rectangle" = "직사각형";
+"board_polygon" = "다각형";
+"board_white" = "흰색";
+"board_grid" = "격자";
+"board_wood" = "나무 바닥";
+"board_hint" = "다각형은 3점 이상에서 OK 또는 시작점으로 닫기. 직사각형은 대각점, 원은 중심과 가장자리";
+"board_invalid" = "교차하는 변이나 크기를 확인하세요";
+"board_circle" = "원형";
+"board_delete_vertex" = "꼭짓점 삭제";
+"board_vertex_hint" = "변의 ＋로 추가. 꼭짓점을 선택하고 오른쪽 버튼으로 삭제. 최소 3개 필요";
+
+"pan" = "화면 이동";
+"pan_hint" = "아무 곳이나 드래그하여 화면을 이동하세요. 두 손가락으로 이동 및 확대/축소하세요.";
+
+"export_png" = "Export PNG image";
+"export_dxf" = "Export DXF file";

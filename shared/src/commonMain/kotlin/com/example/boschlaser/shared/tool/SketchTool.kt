@@ -27,7 +27,7 @@ data class PointerContext(
         require(gridStep == null || gridStep.isFinite() && gridStep > 0.0)
     }
 }
-enum class ToolFailure { INVALID_SPLIT, INVALID_DIMENSION }
+enum class ToolFailure { INVALID_SPLIT, INVALID_DIMENSION, INVALID_BOARD }
 
 data class ToolUpdate(val documentChanged: Boolean = false, val panBy: Vec2 = Vec2(0.0, 0.0),
     val failure: ToolFailure? = null,

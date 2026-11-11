@@ -67,7 +67,7 @@ class ProjectService(private val repository: ProjectRepository, private val epoc
         val manifest = project.manifest
         val sketch = project.sketch
         return ProjectCatalogEntry(ProjectInfo(manifest.projectId, manifest.name, manifest.updatedAt),
-            project.annotations.keys.toList(), project.annotations.isEmpty() || sketch.walls.isNotEmpty() || sketch.columns.isNotEmpty() || sketch.openings.isNotEmpty())
+            project.annotations.keys.toList(), project.annotations.isEmpty() || sketch.boards.isNotEmpty() || sketch.walls.isNotEmpty() || sketch.columns.isNotEmpty() || sketch.openings.isNotEmpty())
     }
     private val order = compareByDescending<ProjectCatalogEntry> { it.info.updatedAt }.thenBy { it.info.id }
 }

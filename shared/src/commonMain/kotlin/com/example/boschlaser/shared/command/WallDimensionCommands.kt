@@ -35,8 +35,9 @@ data class DriveWallFaceDistanceCommand(val dimension: WallDimension, val valueM
 /** Move a face parallel to itself and intersect attached walls on their original directions. */
 data class DriveWallDimensionCommand(val id: String, val valueMm: Double) : SketchCommand {
     override fun apply(document: SketchDocument): SketchDocument? {
-        if (!valueMm.isFinite() || valueMm !in 1.0..1_000_000.0) return null
         val dimension = document.dimensions[id] ?: return null
+        if (dimension.angular) return driveAngle(document, dimension, valueMm)
+        if (!valueMm.isFinite() || valueMm !in 1.0..1_000_000.0) return null
         val layout = WallDimensionGeometry.layout(document, dimension) ?: return null
         if (layout.valueMm < 1e-6) return null
         if (abs(layout.valueMm - valueMm) < 1e-6) return document
@@ -72,6 +73,60 @@ data class DriveWallDimensionCommand(val id: String, val valueMm: Double) : Sket
         if (!lengthDimension && fixedWall != null && document.walls[fixedWall.wallId] != result.walls[fixedWall.wallId]) return null
         val measured = WallDimensionGeometry.layout(result, dimension)?.valueMm ?: return null
         return result.takeIf { abs(measured - valueMm) < .01 }
+    }
+
+    private fun driveAngle(document: SketchDocument, dimension: WallDimension, degrees: Double): SketchDocument? {
+        if (!degrees.isFinite() || degrees <= 0.0 || degrees >= 180.0) return null
+        val layout = WallDimensionGeometry.angularLayout(document, dimension) ?: return null
+        if (abs(layout.valueMm - degrees) < 1e-6) return document
+        val fixed = (dimension.first as? WallFaceReference)?.wallId ?: return null
+        val target = document.walls[(dimension.second as? WallFaceReference)?.wallId] ?: return null
+        val center = layout.arcCenter ?: return null
+        val rotation = (if (layout.sweep < 0) -degrees else degrees) * kotlin.math.PI / 180.0 - layout.sweep
+        fun rotate(point: Vec2): Vec2 {
+            val p = point - center
+            return center + Vec2(p.x * kotlin.math.cos(rotation) - p.y * kotlin.math.sin(rotation),
+                p.x * kotlin.math.sin(rotation) + p.y * kotlin.math.cos(rotation))
+        }
+        var moved = target.copy(start = rotate(target.start), end = rotate(target.end), measuredLength = null)
+        val rotatedDirection = moved.end - moved.start
+        val moves = mutableListOf<EndpointMove>()
+        // Slide each connected node along its neighbours' original control lines.
+        // A free end retains its rotated position; a connected end may change wall length.
+        for ((start, point) in listOf(true to target.start, false to target.end)) {
+            val attachments = document.walls.values.filter { it.id != target.id &&
+                Geometry.distanceToSegment(point, WallGeometry.referenceLine(it)) < 5.0 }
+            val intersections = attachments.map { WallGeometry.intersection(moved, it) ?: return null }
+            var joint = intersections.firstOrNull() ?: if (start) moved.start else moved.end
+            if (intersections.any { Geometry.distance(it, joint) > .01 }) return null
+            // Preserve an unchanged node exactly, avoiding spurious changes to the fixed wall.
+            if (Geometry.distance(point, joint) < 1e-6) joint = point
+            moved = if (start) moved.copy(start = joint) else moved.copy(end = joint)
+            if (Geometry.distance(point, joint) >= 1e-6) moves += EndpointMove(target.id, start, joint)
+        }
+        if ((moved.end - moved.start).dot(rotatedDirection) <= 0.0) return null
+        for (wall in document.walls.values) {
+            if (wall.id == target.id) continue
+            for ((start, point) in listOf(true to wall.start, false to wall.end)) {
+                val t = Geometry.parameter(point, WallGeometry.referenceLine(target))
+                if (t > .0001 && t < .9999 && Geometry.distanceToSegment(point, WallGeometry.referenceLine(target)) < 5.0) {
+                    val joint = WallGeometry.intersection(wall, moved) ?: return null
+                    if (Geometry.parameter(joint, WallGeometry.referenceLine(moved)) !in 0.0..1.0) return null
+                    if (Geometry.distance(point, joint) >= 1e-6) moves += EndpointMove(wall.id, start, joint)
+                }
+            }
+        }
+        val changes = WallEditPlanner.endpointChanges(document, moves)
+        if (changes[fixed]?.let { it != document.walls[fixed] } == true) return null
+        for ((wallId, updated) in changes) {
+            val old = document.walls.getValue(wallId)
+            if (Geometry.length(WallGeometry.referenceLine(updated)) < 100.0) return null
+            if (wallId != target.id && ((updated.end - updated.start).dot(old.end - old.start) <= 0.0 ||
+                abs(Geometry.normalize(updated.end - updated.start).cross(Geometry.normalize(old.end - old.start))) > 1e-6)) return null
+        }
+        val result = UpdateWallsCommand(changes).apply(document) ?: return null
+        val measured = WallDimensionGeometry.layout(result, dimension)?.valueMm ?: return null
+        return result.takeIf { abs(measured - degrees) < .01 }
     }
 
     private fun resizeWall(document: SketchDocument, fixed: WallFaceReference, valueMm: Double): SketchDocument? {

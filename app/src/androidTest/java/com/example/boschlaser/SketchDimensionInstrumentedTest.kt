@@ -53,6 +53,47 @@ class SketchDimensionInstrumentedTest {
         return SketchDocument(walls = walls.associateBy { it.id }, openings = mapOf(opening.id to opening))
     }
 
+    @Test fun angleToolPicksControlLinesAndDrivesSelectedWall() {
+        val services = ProjectServices.get(context)
+        val a = Wall("angle-a", Vec2(-1000.0, -1000.0), Vec2(2000.0, -1000.0), 200.0)
+        val b = Wall("angle-b", a.start, Vec2(-1000.0, 2000.0), 200.0)
+        val initial = SketchDocument(walls = mapOf(a.id to a, b.id to b))
+        val project = runBlocking { services.createSketch("Angle fixture").await() }
+        runBlocking { services.saveSketch(project.manifest.projectId, initial, null).await() }
+        val scenario = ActivityScenario.launch<SketchActivity>(Intent(context, SketchActivity::class.java)
+            .putExtra(SketchActivity.EXTRA_PROJECT_ID, project.manifest.projectId))
+        try {
+            compose.waitUntil(5000) {
+                var loaded = false
+                scenario.onActivity { loaded = view(it).isEnabled && view(it).snapshotDocument() == initial }
+                loaded
+            }
+            fun tap(point: Vec2) {
+                var screen = point
+                scenario.onActivity { screen = view(it).worldToScreen(point) }
+                compose.onNodeWithTag("sketch-canvas").performTouchInput { click(Offset(screen.x.toFloat(), screen.y.toFloat())) }
+            }
+            compose.onNodeWithContentDescription(context.getString(R.string.sketch_tool_dimension)).performScrollTo().performClick()
+            compose.onNodeWithContentDescription(context.getString(R.string.sketch_angle_properties)).performClick()
+            tap(Vec2(1000.0, -1000.0))
+            tap(Vec2(-1000.0, 1000.0))
+            tap(Vec2(-500.0, -500.0))
+            scenario.onActivity {
+                val canvas = view(it)
+                val dimension = canvas.snapshotDocument().dimensions.values.single()
+                assertTrue(dimension.angular)
+                canvas.setMode(SketchMode.SELECT)
+                canvas.selectEntity(Selection.Wall(b.id))
+                assertTrue(canvas.applyDimension(dimension.id, 60.0))
+                assertEquals(a, canvas.snapshotDocument().walls[a.id])
+                assertEquals(60.0, WallDimensionGeometry.layout(canvas.snapshotDocument(), dimension)!!.valueMm, .001)
+            }
+        } finally {
+            scenario.close()
+            runBlocking { services.flush().await(); services.delete(project.manifest.projectId).await() }
+        }
+    }
+
     @Test fun draggingPreviewAfterSecondReferenceMovesDimensionWithoutMovingViewportAndPlacesOnRelease() {
         val services = ProjectServices.get(context)
         val initial = room()

@@ -29,7 +29,7 @@ class AnnotationToolbarInstrumentedTest {
         compose.setContent { MaterialTheme {
             AnnotationToolbar(selected.value, tools, "Back fixture", "Share fixture", "Save fixture",
                 { actions += "back" }, { actions += "share" }, { actions += "save" },
-                { modes += it; selected.value = it }, { Text("B") }, { Text("S") }, { Text("G") }, { Text("T") })
+                { modes += it; selected.value = it }, { Text("B") }, { Text("S") }, { Text("G") }, { Text("T") }, exportLabel = "Export fixture")
         } }
         compose.onNodeWithContentDescription("DIMENSION").assertIsOn()
         for (mode in AnnotationMode.entries) {
@@ -39,8 +39,15 @@ class AnnotationToolbarInstrumentedTest {
             }
         }
         compose.onNodeWithContentDescription("Back fixture").assertIsDisplayed().performClick()
-        compose.onNodeWithContentDescription("Share fixture").assertIsDisplayed().performClick()
-        compose.onNodeWithContentDescription("Save fixture").assertIsDisplayed().performClick()
+        compose.onNodeWithText("Share fixture").assertDoesNotExist()
+        compose.onNodeWithText("Save fixture").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Export fixture").performClick()
+        compose.runOnIdle { assertEquals(listOf("back"), actions) }
+        compose.onNodeWithText("Share fixture").assertIsDisplayed().performClick()
+        compose.onNodeWithText("Save fixture").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Export fixture").performClick()
+        compose.onNodeWithText("Save fixture").assertIsDisplayed().performClick()
+        compose.onNodeWithText("Share fixture").assertDoesNotExist()
         compose.runOnIdle {
             assertEquals(AnnotationMode.entries.toList(), modes)
             assertEquals(listOf("back", "share", "save"), actions)

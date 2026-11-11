@@ -140,6 +140,7 @@
     <string name="annotation_tool_angle">角度注釈</string>
     <string name="annotation_tool_area">面積注釈</string>
     <string name="annotation_back">戻る</string>
+    <string name="annotation_export">共有 / 保存</string>
     <string name="annotation_share">WeChatで共有</string>
     <string name="annotation_save_gallery">写真に保存</string>
     <string name="annotation_selection_required">先に注釈を選択してください</string>
@@ -318,7 +319,7 @@
     <string name="annotation_insert_area_point">選択した頂点の次の辺に頂点を追加</string>
     <string name="sketch_wall_edit_preview_hint">2つ目の壁を長押しでプレビュー。破線部分は削除。残す側を選び、離して適用</string>
     <string name="sketch_wall_chain_hint">離して端点を確定。連続して壁を描き、完了で終了</string>
-    <string name="sketch_selection_gestures_hint">壁本体をドラッグして法線方向に移動。ピンチで拡大縮小、空白をドラッグして画面移動</string>
+    <string name="sketch_selection_gestures_hint">タップで選択後、ドラッグで編集。未選択の図形をドラッグして画面移動。2本指で移動・拡大縮小。</string>
     <string name="sketch_endpoint_move_together">壁の端点を一緒に移動</string>
     <string name="sketch_fixed_reference">固定</string>
     <string name="sketch_moving_reference">移動</string>
@@ -362,4 +363,30 @@
     <string name="action_save">保存</string>
     <string name="project_name_required">名前を入力してください</string>
     <string name="project_delete_title">「%1$s」を削除しますか？</string>
+    <string name="sketch_angle_properties">壁の角度</string>
+    <string name="sketch_angle_hint">選択した壁を回転し、もう一方の壁を固定します。0°より大きく180°未満の角度を入力してください。</string>
+    <string name="sketch_angle_value">角度（°）</string>
+    <string name="sketch_linear_dimension">長さ寸法</string>
+    <string name="sketch_angle_creation_hint">2つの壁の基準線を順に選択し、タップして角度寸法を配置します</string>
+    <string name="sketch_angle_invalid">0°より大きく180°未満の有効な角度を入力してください。</string>
+    <string name="sketch_angle_drive_failed">この角度は適用できません。壁の接続または開口部の空間が競合しています。角度や壁の接続を調整してください。</string>
+    <string name="wall_drawing_single">単発</string>
+    <string name="wall_drawing_continuous">連続</string>
+    <string name="sketch_tool_board">床板</string>
+    <string name="board_rectangle">長方形</string>
+    <string name="board_polygon">多角形</string>
+    <string name="board_white">白</string>
+    <string name="board_grid">グリッド</string>
+    <string name="board_wood">フローリング</string>
+    <string name="board_hint">多角形は3点以上でOK、または始点で閉じる。長方形は対角、円形は中心と円周</string>
+    <string name="board_invalid">辺の交差またはサイズを確認してください</string>
+    <string name="board_circle">円形</string>
+    <string name="board_delete_vertex">頂点を削除</string>
+    <string name="board_vertex_hint">辺の＋で追加。頂点を選択し右側ボタンで削除。最低3頂点が必要です</string>
+    <string name="sketch_tool_pan">画面移動</string>
+    <string name="sketch_pan_hint">どこでもドラッグして画面移動。2本指で移動・拡大縮小。</string>
+    <string name="sketch_share">Share</string>
+    <string name="sketch_export_png">Export PNG image</string>
+    <string name="sketch_export_dxf">Export DXF file</string>
+    <string name="sketch_export_failed">Export failed. Please retry.</string>
 </resources>

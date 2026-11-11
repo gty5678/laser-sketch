@@ -8,7 +8,7 @@ fun sketchContentBounds(document: SketchDocument): Rect2 {
         val reference = WallGeometry.referenceLine(wall)
         val center = if (Geometry.length(reference) < 1.0) reference else WallGeometry.build(wall).centerLine
         listOf(center.start, center.end)
-    } + document.columns.values.map { it.center } + document.dimensions.values.flatMap { dimension ->
+    } + document.boards.values.flatMap { it.vertices } + document.columns.values.map { it.center } + document.dimensions.values.flatMap { dimension ->
         WallDimensionGeometry.layout(document, dimension)?.let { listOf(it.line.start, it.line.end) } ?: listOf(dimension.position)
     }
     if (points.isEmpty()) return Rect2(Vec2(-2500.0, -1800.0), Vec2(2500.0, 1800.0))

@@ -8,6 +8,7 @@ object SelectionManager {
         is Selection.Column -> selection.takeIf { it.id in document.columns }
         is Selection.Opening -> selection.takeIf { it.id in document.openings }
         is Selection.Dimension -> selection.takeIf { it.id in document.dimensions }
+        is Selection.Board -> selection.takeIf { it.id in document.boards }
         null -> null
     }
 }

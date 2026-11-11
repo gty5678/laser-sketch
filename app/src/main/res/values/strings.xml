@@ -140,6 +140,7 @@
     <string name="annotation_tool_angle">Angle</string>
     <string name="annotation_tool_area">Area</string>
     <string name="annotation_back">Back</string>
+    <string name="annotation_export">Share / Save</string>
     <string name="annotation_share">Share to WeChat</string>
     <string name="annotation_save_gallery">Save to Photos</string>
     <string name="annotation_selection_required">Select an annotation first</string>
@@ -318,7 +319,7 @@
     <string name="annotation_insert_area_point">Insert vertex on the next edge</string>
     <string name="sketch_wall_edit_preview_hint">Hold the second wall to preview; dashed parts will be removed. Move to select the retained side, release to apply.</string>
     <string name="sketch_wall_chain_hint">Release to confirm endpoint. Continue drawing walls; Finish to exit.</string>
-    <string name="sketch_selection_gestures_hint">Drag wall body along its normal; pinch to zoom; drag empty space to pan</string>
+    <string name="sketch_selection_gestures_hint">Tap to select, then drag to edit. Drag unselected objects to pan; use two fingers to pan and zoom.</string>
     <string name="sketch_endpoint_move_together">Move wall joints together</string>
     <string name="sketch_fixed_reference">Fixed</string>
     <string name="sketch_moving_reference">Moving</string>
@@ -362,4 +363,30 @@
     <string name="action_save">Save</string>
     <string name="project_name_required">Name cannot be empty</string>
     <string name="project_delete_title">Delete “%1$s”?</string>
+    <string name="sketch_angle_properties">墙体角度</string>
+    <string name="sketch_angle_hint">旋转选中的墙，另一堵墙固定。请输入大于 0° 且小于 180° 的角度。</string>
+    <string name="sketch_angle_value">角度（°）</string>
+    <string name="sketch_linear_dimension">线性尺寸</string>
+    <string name="sketch_angle_creation_hint">依次选择两堵墙的控制线，再点击放置角度标注</string>
+    <string name="sketch_angle_invalid">请输入大于 0° 且小于 180° 的有效角度。</string>
+    <string name="sketch_angle_drive_failed">无法应用此角度：墙体连接或门窗空间存在冲突，请调整角度或连接关系。</string>
+    <string name="wall_drawing_single">单次</string>
+    <string name="wall_drawing_continuous">连续</string>
+    <string name="sketch_tool_board">板</string>
+    <string name="board_rectangle">长方形</string>
+    <string name="board_polygon">多边形</string>
+    <string name="board_white">白色</string>
+    <string name="board_grid">网格</string>
+    <string name="board_wood">木地板</string>
+    <string name="board_hint">多边形满三个点后按OK结束，或点首点闭合；矩形点对角，圆形点圆心和边缘</string>
+    <string name="board_invalid">板无法闭合，请检查边线交叉或尺寸</string>
+    <string name="board_circle">圆形</string>
+    <string name="board_delete_vertex">删除顶点</string>
+    <string name="board_vertex_hint">点击边上的＋添加顶点；选中顶点后用右侧按钮删除，至少保留三个顶点</string>
+    <string name="sketch_tool_pan">Pan</string>
+    <string name="sketch_pan_hint">Drag anywhere to pan; use two fingers to pan and zoom.</string>
+    <string name="sketch_share">Share</string>
+    <string name="sketch_export_png">Export PNG image</string>
+    <string name="sketch_export_dxf">Export DXF file</string>
+    <string name="sketch_export_failed">Export failed. Please retry.</string>
 </resources>

@@ -52,6 +52,7 @@ data class SketchOpening(
 )
 
 data class SketchState(
+    val boards: List<com.example.boschlaser.shared.model.Board> = emptyList(),
     val walls: List<SketchWall> = emptyList(),
     val columns: List<SketchColumn> = emptyList(),
     val openings: List<SketchOpening> = emptyList(),
@@ -147,6 +148,10 @@ object SketchProjectStore {
     }
 
     private fun encode(state: SketchState) = JSONObject().apply {
+        put("boards", JSONArray().apply { state.boards.forEach { board -> put(JSONObject().apply {
+            put("id", board.id); put("fill", board.fill.name); put("shape", board.shape.name)
+            put("vertices", JSONArray().apply { board.vertices.forEach { point -> put(JSONArray().put(point.x).put(point.y)) } })
+        }) } })
         put("walls", JSONArray().apply { state.walls.forEach { wall -> put(JSONObject().apply {
             put("id", wall.id); point("start", wall.start); point("end", wall.end)
             put("thickness", wall.thickness); wall.measuredLength?.let { put("measuredLength", it) }
@@ -165,6 +170,14 @@ object SketchProjectStore {
     }
 
     private fun decode(data: JSONObject) = SketchState(
+        boards = data.optJSONArray("boards").objects().map { item ->
+            val points = item.getJSONArray("vertices")
+            com.example.boschlaser.shared.model.Board(item.getString("id"), (0 until points.length()).map { i ->
+                val p = points.getJSONArray(i); com.example.boschlaser.shared.geometry.Vec2(p.getDouble(0), p.getDouble(1))
+            }, com.example.boschlaser.shared.model.BoardFill.valueOf(item.getString("fill"))).let { board ->
+                if (item.has("shape")) board.copy(shape = com.example.boschlaser.shared.model.BoardShape.valueOf(item.getString("shape"))) else board
+            }
+        },
         walls = data.optJSONArray("walls").objects().map { item -> SketchWall(
             item.optString("id", UUID.randomUUID().toString()), item.point("start"), item.point("end"),
             item.optDouble("thickness", 240.0).toFloat(),

@@ -140,6 +140,7 @@
     <string name="annotation_tool_angle">각도 주석</string>
     <string name="annotation_tool_area">면적 주석</string>
     <string name="annotation_back">뒤로</string>
+    <string name="annotation_export">공유 / 저장</string>
     <string name="annotation_share">WeChat으로 공유</string>
     <string name="annotation_save_gallery">사진에 저장</string>
     <string name="annotation_selection_required">먼저 주석을 선택하세요</string>
@@ -318,7 +319,7 @@
     <string name="annotation_insert_area_point">선택한 꼭짓점의 다음 변에 꼭짓점 추가</string>
     <string name="sketch_wall_edit_preview_hint">두 번째 벽을 길게 눌러 미리 보세요. 점선 부분이 제거됩니다. 남길 쪽을 선택하고 놓아 적용하세요</string>
     <string name="sketch_wall_chain_hint">놓아서 끝점을 확정하세요. 연속으로 벽을 그릴 수 있으며 완료로 종료합니다</string>
-    <string name="sketch_selection_gestures_hint">벽 본체를 드래그하여 수직 방향으로 이동하세요. 두 손가락으로 확대/축소하고 빈 곳을 드래그하여 화면을 이동하세요</string>
+    <string name="sketch_selection_gestures_hint">탭하여 선택한 후 드래그하여 편집하세요. 선택하지 않은 객체를 드래그하면 화면이 이동합니다. 두 손가락으로 이동 및 확대/축소하세요.</string>
     <string name="sketch_endpoint_move_together">벽 끝점 함께 이동</string>
     <string name="sketch_fixed_reference">고정</string>
     <string name="sketch_moving_reference">이동</string>
@@ -362,4 +363,30 @@
     <string name="action_save">저장</string>
     <string name="project_name_required">이름을 입력하세요</string>
     <string name="project_delete_title">“%1$s”을(를) 삭제할까요?</string>
+    <string name="sketch_angle_properties">벽 각도</string>
+    <string name="sketch_angle_hint">선택한 벽을 회전하고 다른 벽은 고정합니다. 0°보다 크고 180°보다 작은 각도를 입력하세요.</string>
+    <string name="sketch_angle_value">각도(°)</string>
+    <string name="sketch_linear_dimension">선형 치수</string>
+    <string name="sketch_angle_creation_hint">두 벽의 기준선을 차례로 선택한 다음 눌러 각도 치수를 배치하세요</string>
+    <string name="sketch_angle_invalid">0°보다 크고 180°보다 작은 유효한 각도를 입력하세요.</string>
+    <string name="sketch_angle_drive_failed">이 각도를 적용할 수 없습니다. 벽 연결 또는 문과 창 공간이 충돌합니다. 각도나 벽 연결을 조정하세요.</string>
+    <string name="wall_drawing_single">단일</string>
+    <string name="wall_drawing_continuous">연속</string>
+    <string name="sketch_tool_board">바닥판</string>
+    <string name="board_rectangle">직사각형</string>
+    <string name="board_polygon">다각형</string>
+    <string name="board_white">흰색</string>
+    <string name="board_grid">격자</string>
+    <string name="board_wood">나무 바닥</string>
+    <string name="board_hint">다각형은 3점 이상에서 OK 또는 시작점으로 닫기. 직사각형은 대각점, 원은 중심과 가장자리</string>
+    <string name="board_invalid">교차하는 변이나 크기를 확인하세요</string>
+    <string name="board_circle">원형</string>
+    <string name="board_delete_vertex">꼭짓점 삭제</string>
+    <string name="board_vertex_hint">변의 ＋로 추가. 꼭짓점을 선택하고 오른쪽 버튼으로 삭제. 최소 3개 필요</string>
+    <string name="sketch_tool_pan">화면 이동</string>
+    <string name="sketch_pan_hint">아무 곳이나 드래그하여 화면을 이동하세요. 두 손가락으로 이동 및 확대/축소하세요.</string>
+    <string name="sketch_share">Share</string>
+    <string name="sketch_export_png">Export PNG image</string>
+    <string name="sketch_export_dxf">Export DXF file</string>
+    <string name="sketch_export_failed">Export failed. Please retry.</string>
 </resources>

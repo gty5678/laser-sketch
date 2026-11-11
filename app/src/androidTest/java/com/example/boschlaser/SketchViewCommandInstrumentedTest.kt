@@ -18,6 +18,7 @@ class SketchViewCommandInstrumentedTest {
         val view = newView()
         val original = columnState()
         view.restoreState(original)
+        view.selectEntity(com.example.boschlaser.shared.editor.Selection.Column("test-column"))
         var saves = 0
         view.onStateChanged = { saves++ }
         touch(view, MotionEvent.ACTION_DOWN, 120f, 120f)
@@ -34,6 +35,7 @@ class SketchViewCommandInstrumentedTest {
         val view = newView()
         val original = columnState()
         view.restoreState(original)
+        view.selectEntity(com.example.boschlaser.shared.editor.Selection.Column("test-column"))
         var saves = 0
         view.onStateChanged = { saves++ }
         touch(view, MotionEvent.ACTION_DOWN, 120f, 120f)

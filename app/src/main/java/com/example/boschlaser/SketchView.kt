@@ -66,13 +66,14 @@ import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
 
-enum class SketchMode { SELECT, WALL, RECT_COLUMN, CIRCLE_COLUMN, DOOR, WINDOW, MEASURE, SPLIT, DIMENSION }
+enum class SketchMode { SELECT, PAN, WALL, RECT_COLUMN, CIRCLE_COLUMN, DOOR, WINDOW, MEASURE, SPLIT, DIMENSION, BOARD }
 
 enum class WallJoinResult { SUCCESS, SAME_WALL, WALL_NOT_FOUND, PARALLEL, OPENING_CONFLICT }
 
 enum class WallExtendResult { SUCCESS, SAME_WALL, WALL_NOT_FOUND, PARALLEL, ALREADY_REACHES, TARGET_MISSED, OPENING_CONFLICT }
 
 sealed class SketchSelection {
+    data class Board(val id: String) : SketchSelection()
     data class Wall(val wall: SketchWall) : SketchSelection()
     data class Column(val column: SketchColumn) : SketchSelection()
     data class Opening(val opening: SketchOpening) : SketchSelection()
@@ -149,6 +150,7 @@ class SketchView @JvmOverloads constructor(
     private var offsetY = 0f
     private var initializedCamera = false
     private var multiTouchScale = false
+    private var navigationFocus: Vec2? = null
     private var openingConflictOnLastWallEdit = false
 
     var onSelectionChanged: ((SketchSelection?) -> Unit)? = null
@@ -184,6 +186,11 @@ class SketchView @JvmOverloads constructor(
         setBackgroundColor(Color.WHITE)
         isFocusable = true
         isClickable = true
+    }
+
+    fun setAngularDimension(enabled: Boolean) {
+        editor.setAngularDimension(enabled)
+        requestRender()
     }
 
     fun setMode(value: SketchMode) {
@@ -280,7 +287,7 @@ class SketchView @JvmOverloads constructor(
     }
 
     fun undoPlacement(): Boolean {
-        if (mode != SketchMode.WALL && mode != SketchMode.MEASURE && mode != SketchMode.DIMENSION) return undo()
+        if (mode != SketchMode.BOARD && mode != SketchMode.WALL && mode != SketchMode.MEASURE && mode != SketchMode.DIMENSION) return undo()
         val previous = editor.document
         if (!editor.undoPlacement()) return false
 
@@ -291,6 +298,7 @@ class SketchView @JvmOverloads constructor(
 
     fun deleteSelected(): Boolean {
         val command = when {
+            editor.state.selection is Selection.Board -> com.example.boschlaser.shared.command.DeleteBoardCommand(editor.state.selection!!.id)
             editor.state.selection is Selection.Dimension -> com.example.boschlaser.shared.command.DeleteWallDimensionCommand(editor.state.selection!!.id)
             selectedWallId != null -> DeleteWallCommand(selectedWallId!!)
             selectedColumnId != null -> DeleteColumnCommand(selectedColumnId!!)
@@ -395,9 +403,9 @@ class SketchView @JvmOverloads constructor(
         return true
     }
 
-    fun straightenSelectedWall(moveStart: Boolean): Boolean {
+    fun straightenSelectedWall(moveStart: Boolean? = null): Boolean {
         val wall = selectedWall() ?: return false
-        if (!previewWallEdit(StraightenWallCommand(wall.id, moveStart), recordUndo = true)) return false
+        if (!previewWallEdit(StraightenWallCommand(wall.id, moveStart ?: editor.wallFreeEndpointIsStart(wall.id)), recordUndo = true)) return false
         notifySelection()
         changed()
         return true
@@ -432,6 +440,10 @@ class SketchView @JvmOverloads constructor(
         editor.placement = placementSettings()
         requestRender()
         return true
+    }
+
+    internal fun setContinuousWallDrawing(enabled: Boolean) {
+        editor.continuousWallDrawing = enabled
     }
 
     internal fun wallControlLine(): SketchWallControlLine = currentWallControlLine
@@ -524,10 +536,10 @@ class SketchView @JvmOverloads constructor(
         return true
     }
 
-    fun exportBitmap(widthPx: Int = 1600, heightPx: Int = 1200): Bitmap {
+    fun exportBitmap(widthPx: Int = 1600, heightPx: Int = 1200, transparent: Boolean = false): Bitmap {
         val bitmap = Bitmap.createBitmap(widthPx, heightPx, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
-        canvas.drawColor(Color.WHITE)
+        if (!transparent) canvas.drawColor(Color.WHITE)
         val viewport = sketchExportViewport(editor.renderDocument, Vec2(widthPx.toDouble(), heightPx.toDouble()))
         drawScene(canvas, viewport, false, false)
         return bitmap
@@ -600,12 +612,43 @@ class SketchView @JvmOverloads constructor(
     internal var drawingWallFill = com.example.boschlaser.shared.model.WallFill.BLANK
         set(value) { field = value; editor.placement = placementSettings(); invalidate() }
 
+    var boardShape = com.example.boschlaser.shared.model.BoardShape.RECTANGLE
+        set(value) { editor.cancelPointer(); field = value; editor.placement = placementSettings(); requestRender() }
+    var boardFill = com.example.boschlaser.shared.model.BoardFill.WHITE
+        set(value) { field = value; editor.placement = placementSettings(); requestRender() }
+    fun finishBoardPlacement(): Boolean {
+        val result = editor.finishBoardPlacement()
+        if (result.failure != null) {
+            android.widget.Toast.makeText(context,R.string.board_invalid,android.widget.Toast.LENGTH_SHORT).show()
+            return false
+        }
+        if (result.documentChanged) onStateChanged?.invoke()
+        requestRender(); notifySelection()
+        return true
+    }
+    fun deleteSelectedBoardVertex(): Boolean {
+        val changed = editor.deleteSelectedBoardVertex()
+        if (changed) { requestRender(); onStateChanged?.invoke(); notifySelection() }
+        return changed
+    }
+    fun setBoardShape(id: String, shape: com.example.boschlaser.shared.model.BoardShape): Boolean {
+        val board = editor.document.boards[id] ?: return false
+        val changed = editor.execute(com.example.boschlaser.shared.command.UpdateBoardCommand(board.withShape(shape)))
+        if (changed) { requestRender(); onStateChanged?.invoke(); notifySelection() }
+        return changed
+    }
+    fun setBoardFill(id: String, fill: com.example.boschlaser.shared.model.BoardFill): Boolean {
+        val board = editor.document.boards[id] ?: return false
+        val changed = editor.execute(com.example.boschlaser.shared.command.UpdateBoardCommand(board.copy(fill = fill)))
+        if (changed) { requestRender(); onStateChanged?.invoke(); notifySelection() }
+        return changed
+    }
     private fun placementSettings() = PlacementSettings(currentWallThickness.toDouble(), when (currentWallControlLine) {
         SketchWallControlLine.CENTER -> WallAlignment.CENTER
         SketchWallControlLine.INNER -> WallAlignment.LEFT
         SketchWallControlLine.OUTER -> WallAlignment.RIGHT
     }, defaultDoorWidth.toDouble(), defaultWindowWidth.toDouble(), placementDoorStyle,
-        placementColumnWidth, placementColumnDepth, placementColumnRotation, columnFill = drawingColumnFill, wallFill = drawingWallFill)
+        placementColumnWidth, placementColumnDepth, placementColumnRotation, columnFill = drawingColumnFill, wallFill = drawingWallFill, boardShape = boardShape, boardFill = boardFill)
 
     private fun sceneDrawingStyle(density: Density): SketchSceneStyle =
         androidSketchDrawingStyle(context, density, COLUMN_ROTATION_HANDLE_RADIUS_DP * density.density).copy(
@@ -621,10 +664,20 @@ class SketchView @JvmOverloads constructor(
         if (event.pointerCount > 1 || event.actionMasked == MotionEvent.ACTION_POINTER_DOWN) {
             multiTouchScale = true
         }
+        if (event.actionMasked == MotionEvent.ACTION_DOWN) navigationFocus = null
+        if (event.pointerCount > 1) {
+            val focus = Vec2((0 until event.pointerCount).sumOf { event.getX(it).toDouble() } / event.pointerCount,
+                (0 until event.pointerCount).sumOf { event.getY(it).toDouble() } / event.pointerCount)
+            if (event.actionMasked == MotionEvent.ACTION_MOVE) navigationFocus?.let {
+                offsetX += (focus.x - it.x).toFloat()
+                offsetY += (focus.y - it.y).toFloat()
+            }
+            navigationFocus = if (event.actionMasked == MotionEvent.ACTION_POINTER_UP) null else focus
+        }
         scaleDetector.onTouchEvent(event)
         if (event.pointerCount > 1 || scaleDetector.isInProgress || event.actionMasked == MotionEvent.ACTION_POINTER_DOWN) {
+            if (!zoomGesture) editor.interruptPointerForViewportChange()
             zoomGesture = true
-            editor.interruptPointerForViewportChange()
 
             requestRender()
             return true
@@ -641,9 +694,11 @@ class SketchView @JvmOverloads constructor(
         val world = Viewport(scale.toDouble(), Vec2(offsetX.toDouble(), offsetY.toDouble()))
             .screenToWorld(Vec2(event.x.toDouble(), event.y.toDouble()))
         when (mode) {
+            SketchMode.BOARD -> handlePlacement(event, world)
             SketchMode.WALL -> handlePlacement(event, world)
             SketchMode.RECT_COLUMN, SketchMode.CIRCLE_COLUMN -> handlePlacement(event, world)
             SketchMode.DOOR, SketchMode.WINDOW, SketchMode.MEASURE, SketchMode.SPLIT, SketchMode.DIMENSION -> handlePlacement(event, world)
+            SketchMode.PAN -> handleSelect(event, world)
             SketchMode.SELECT -> if (editor.state.wallEditSession != null) handleWallPick(event) else handleSelect(event, world)
         }
         if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) {
@@ -690,6 +745,9 @@ class SketchView @JvmOverloads constructor(
         }
 
         if (update != null) { offsetX += update.panBy.x.toFloat(); offsetY += update.panBy.y.toFloat() }
+        if (update?.failure == com.example.boschlaser.shared.tool.ToolFailure.INVALID_BOARD) {
+            android.widget.Toast.makeText(this.context, R.string.board_invalid, android.widget.Toast.LENGTH_SHORT).show()
+        }
         if (update?.failure == com.example.boschlaser.shared.tool.ToolFailure.INVALID_SPLIT) {
             android.widget.Toast.makeText(this.context, R.string.sketch_split_invalid, android.widget.Toast.LENGTH_SHORT).show()
         }
@@ -707,6 +765,7 @@ class SketchView @JvmOverloads constructor(
         if (update?.documentChanged == true) {
             if (editor.state.selection is Selection.Dimension) onDimensionPlaced?.invoke()
             when (val selection = editor.state.selection) {
+                is Selection.Board -> selectEntity(selection)
                 is Selection.Wall -> selectWall(selection.id)
                 is Selection.Column -> selectColumn(selection.id)
                 is Selection.Opening -> selectOpening(selection.id)
@@ -836,6 +895,7 @@ class SketchView @JvmOverloads constructor(
 
     private fun notifySelection() {
         onSelectionChanged?.invoke(when {
+            editor.state.selection is Selection.Board -> SketchSelection.Board(editor.state.selection!!.id)
             editor.state.selection is Selection.Dimension -> SketchSelection.Dimension(editor.state.selection!!.id)
             selectedWallId != null -> selectedWall()?.let(SketchSelection::Wall)
             selectedColumnId != null -> columns.firstOrNull { it.id == selectedColumnId }?.let(SketchSelection::Column)

@@ -46,3 +46,14 @@ fun SelectionActions(
         }
     }
 }
+
+
+/** A vertex action occupies the same right-side slot as other selected-object actions. */
+@Composable
+fun BoardVertexAction(visible: Boolean, enabled: Boolean, label: String, onDelete: () -> Unit,
+    icon: @Composable () -> Unit) {
+    if (visible) androidx.compose.material3.FilledIconButton(onClick = onDelete, enabled = enabled,
+        modifier = Modifier.size(56.dp).semantics { contentDescription = label }, shape = CircleShape,
+        colors = androidx.compose.material3.IconButtonDefaults.filledIconButtonColors(
+            containerColor = MaterialTheme.colorScheme.error, contentColor = MaterialTheme.colorScheme.onError), content = icon)
+}

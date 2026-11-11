@@ -29,6 +29,7 @@ class SketchViewColumnMoveInstrumentedTest {
         view.restoreState(SketchState(walls = walls, columns = listOf(column)))
         // At the default 0.12 viewport scale, the wall endpoint has a 200 mm hit radius.
         // Grab the column's far corner so this exercises column movement rather than that endpoint.
+        view.selectEntity(Selection.Column(column.id))
         val start = SketchPoint(650f, 650f)
         view.sendWorldPointer(android.view.MotionEvent.ACTION_DOWN, start)
         assertEquals(Selection.Column(column.id), view.editorState().selection)

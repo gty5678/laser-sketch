@@ -23,6 +23,7 @@ class SketchViewEditorStateInstrumentedTest {
             view.restoreDocument(SketchDocument(walls = mapOf(wall.id to wall)))
             // A binary-exact camera scale keeps the MotionEvent fixture's world steps exact.
             SketchView::class.java.getDeclaredField("scale").apply { isAccessible = true }.setFloat(view, .125f)
+            view.selectEntity(Selection.Wall(wall.id))
             var notifications = 0
             var selection: SketchSelection? = null
             view.onSelectionChanged = { notifications++; selection = it }

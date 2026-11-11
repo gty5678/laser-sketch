@@ -215,6 +215,7 @@ class AnnotationActivity : AppCompatActivity() {
                         AnnotationToolItem(AnnotationMode.AREA, getString(R.string.annotation_tool_area)),
                     ),
                     backLabel = getString(R.string.annotation_back),
+                    exportLabel = getString(R.string.annotation_export),
                     shareLabel = getString(R.string.annotation_share),
                     saveLabel = getString(R.string.annotation_save_gallery),
                     onBack = { finish() }, onShare = ::shareToWeChat, onSave = ::saveToGallery,

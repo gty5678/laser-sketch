@@ -1,13 +1,21 @@
 package com.example.boschlaser.ui
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Text
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.IconToggleButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -31,7 +39,9 @@ fun AnnotationToolbar(
     shareIcon: @Composable () -> Unit,
     saveIcon: @Composable () -> Unit,
     toolIcon: @Composable (AnnotationMode) -> Unit,
+    exportLabel: String,
 ) {
+    var exportMenuExpanded by remember { mutableStateOf(false) }
     Surface {
         Row(Modifier.fillMaxWidth()) {
             IconButton(onClick = onBack, modifier = Modifier.semantics { contentDescription = backLabel }, content = backIcon)
@@ -44,8 +54,20 @@ fun AnnotationToolbar(
                             checkedContentColor = MaterialTheme.colorScheme.onPrimary)) { toolIcon(tool.mode) }
                 }
             }
-            IconButton(onClick = onShare, modifier = Modifier.semantics { contentDescription = shareLabel }, content = shareIcon)
-            IconButton(onClick = onSave, modifier = Modifier.semantics { contentDescription = saveLabel }, content = saveIcon)
+            Box {
+                IconButton(onClick = { exportMenuExpanded = true },
+                    modifier = Modifier.semantics { contentDescription = exportLabel }, content = shareIcon)
+                DropdownMenu(expanded = exportMenuExpanded, onDismissRequest = { exportMenuExpanded = false }) {
+                    DropdownMenuItem(text = { Text(shareLabel) }, leadingIcon = shareIcon, onClick = {
+                        exportMenuExpanded = false
+                        onShare()
+                    })
+                    DropdownMenuItem(text = { Text(saveLabel) }, leadingIcon = saveIcon, onClick = {
+                        exportMenuExpanded = false
+                        onSave()
+                    })
+                }
+            }
         }
     }
 }

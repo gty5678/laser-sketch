@@ -18,10 +18,16 @@ import com.example.boschlaser.shared.model.WallAlignment
 @Composable
 fun DrawingWallTools(alignment: WallAlignment, lineLabel: String, lineLabels: List<String>,
     thicknessLabel: String, onAlignment: (WallAlignment) -> Unit, onThickness: () -> Unit,
-    fill: com.example.boschlaser.shared.model.WallFill, fillLabels: List<String>, onFill: (com.example.boschlaser.shared.model.WallFill) -> Unit) {
+    fill: com.example.boschlaser.shared.model.WallFill, fillLabels: List<String>, onFill: (com.example.boschlaser.shared.model.WallFill) -> Unit,
+    continuous: Boolean, singleLabel: String, continuousLabel: String, onContinuous: (Boolean) -> Unit) {
     require(lineLabels.size == 3)
     require(fillLabels.size == 3)
     ScrollableTools(Modifier.fillMaxWidth()) {
+        val modeLabel = if (continuous) continuousLabel else singleLabel
+        TextButton(onClick = { onContinuous(!continuous) },
+            modifier = Modifier.semantics { contentDescription = modeLabel }) {
+            Text(modeLabel, style = MaterialTheme.typography.labelMedium)
+        }
         Box(Modifier.height(48.dp), contentAlignment = Alignment.Center) {
             WallFillPicker(fill, fillLabels, onFill)
         }

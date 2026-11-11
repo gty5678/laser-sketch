@@ -66,6 +66,7 @@ import androidx.core.view.WindowInsetsCompat
 import kotlin.math.roundToInt
 
 class SketchActivity : AppCompatActivity() {
+    private var angularDimension by mutableStateOf(false)
     companion object {
         const val EXTRA_PROJECT_ID = "sketch_project_id"
         const val EXTRA_MEASUREMENTS_MM = "sketch_measurements_mm"
@@ -77,6 +78,7 @@ class SketchActivity : AppCompatActivity() {
 
     private lateinit var sketchView: SketchView
     private var propertyPanelPresent by mutableStateOf(false)
+    private var selectedBoardVertex by mutableStateOf<Int?>(null)
     private var propertyPanelResetKey by mutableIntStateOf(0)
     private var animatePropertyDismiss by mutableStateOf(false)
     private var propertySelection by mutableStateOf<SketchSelection?>(null)
@@ -95,6 +97,7 @@ class SketchActivity : AppCompatActivity() {
     private var creationProperty by mutableStateOf<Int?>(null)
     private var creationSettingsRevision by mutableIntStateOf(0)
     private var drawingColumnFill by mutableStateOf(com.example.boschlaser.shared.model.ColumnFill.BLACK)
+    private var continuousWallDrawing by mutableStateOf(true)
     private var drawingFill by mutableStateOf(com.example.boschlaser.shared.model.WallFill.BLANK)
     private var drawingThickness by mutableStateOf(240f)
     private var drawingThicknessVisible by mutableStateOf(false)
@@ -165,6 +168,7 @@ class SketchActivity : AppCompatActivity() {
     private fun buildInterface() {
         sketchView = SketchView(this).apply {
             onSelectionChanged = {
+                selectedBoardVertex = editorState().selectedBoardVertex
                 drawingControlLine = wallControlLine()
                 drawingThickness = drawingWallThickness()
                 if (!joinWallsActive && !extendWallActive) showSelection(it)
@@ -206,17 +210,24 @@ class SketchActivity : AppCompatActivity() {
             MaterialTheme(colorScheme = lightColorScheme(primary = colorResource(R.color.sketch_tool_active))) {
                 SketchToolbar(ToolType.valueOf(currentMode.name), listOf(
                     SketchToolItem(ToolType.SELECT, getString(R.string.sketch_tool_select)),
+                    SketchToolItem(ToolType.PAN, getString(R.string.sketch_tool_pan)),
                     SketchToolItem(ToolType.WALL, getString(R.string.sketch_tool_wall)),
                     SketchToolItem(ToolType.RECT_COLUMN, getString(R.string.sketch_tool_column)),
                     SketchToolItem(ToolType.DOOR, getString(R.string.sketch_tool_door)),
                     SketchToolItem(ToolType.WINDOW, getString(R.string.sketch_tool_window)),
+                    SketchToolItem(ToolType.BOARD, getString(R.string.sketch_tool_board)),
                     SketchToolItem(ToolType.DIMENSION, getString(R.string.sketch_tool_dimension))),
                     getString(R.string.sketch_back), getString(R.string.sketch_settings),
                     onBack = { finish() }, onSettings = ::showDrawingSettings,
                     onTool = { setMode(SketchMode.valueOf(it.name)) },
                     backIcon = { Icon(painterResource(R.drawable.ic_back), contentDescription = null) },
                     settingsIcon = { Icon(painterResource(R.drawable.ic_settings), contentDescription = null) },
+                    shareLabel = getString(R.string.sketch_share), pngLabel = getString(R.string.sketch_export_png),
+                    cadLabel = getString(R.string.sketch_export_dxf), onSharePng = { shareSketch(false) }, onShareCad = { shareSketch(true) },
+                    shareIcon = { Icon(painterResource(R.drawable.ic_share), contentDescription = null) },
                     toolIcon = { tool -> Icon(painterResource(when (tool) {
+                        ToolType.BOARD -> R.drawable.ic_board
+                        ToolType.PAN -> R.drawable.ic_pan
                         ToolType.SELECT -> R.drawable.ic_select
                         ToolType.WALL -> R.drawable.ic_wall
                         ToolType.RECT_COLUMN, ToolType.CIRCLE_COLUMN -> R.drawable.ic_column
@@ -231,7 +242,25 @@ class SketchActivity : AppCompatActivity() {
 
         @Composable fun EditToolbar() {
             MaterialTheme(colorScheme = lightColorScheme(primary = colorResource(R.color.sketch_tool_active))) {
-                if (currentMode == SketchMode.WALL) {
+                if (currentMode == SketchMode.DIMENSION) {
+                    androidx.compose.foundation.layout.Row {
+                        val colors = androidx.compose.material3.IconButtonDefaults.iconToggleButtonColors(
+                            checkedContainerColor = MaterialTheme.colorScheme.primary,
+                            checkedContentColor = MaterialTheme.colorScheme.onPrimary)
+                        androidx.compose.material3.IconToggleButton(checked = !angularDimension,
+                            onCheckedChange = { angularDimension = false; sketchView.setAngularDimension(false) },
+                            colors = colors) {
+                            Icon(painterResource(R.drawable.ic_dimension),
+                                contentDescription = getString(R.string.sketch_linear_dimension))
+                        }
+                        androidx.compose.material3.IconToggleButton(checked = angularDimension,
+                            onCheckedChange = { angularDimension = true; sketchView.setAngularDimension(true) },
+                            colors = colors) {
+                            Icon(painterResource(R.drawable.ic_angle),
+                                contentDescription = getString(R.string.sketch_angle_properties))
+                        }
+                    }
+                } else if (currentMode == SketchMode.WALL) {
                     DrawingWallTools(when (drawingControlLine) {
                         SketchWallControlLine.CENTER -> WallAlignment.CENTER
                         SketchWallControlLine.INNER -> WallAlignment.LEFT
@@ -250,7 +279,10 @@ class SketchActivity : AppCompatActivity() {
                         }, onThickness = { drawingThicknessVisible = true },
                         fill = drawingFill, fillLabels = listOf(getString(R.string.wall_fill_blank),
                             getString(R.string.wall_fill_hatch), getString(R.string.wall_fill_black)),
-                        onFill = { drawingFill = it; sketchView.drawingWallFill = it })
+                        onFill = { drawingFill = it; sketchView.drawingWallFill = it },
+                        continuous = continuousWallDrawing, singleLabel = getString(R.string.wall_drawing_single),
+                        continuousLabel = getString(R.string.wall_drawing_continuous),
+                        onContinuous = { continuousWallDrawing = it; sketchView.setContinuousWallDrawing(it) })
                     if (drawingThicknessVisible) {
                         AlertDialog(onDismissRequest = { drawingThicknessVisible = false },
                             confirmButton = {}, text = {
@@ -266,6 +298,8 @@ class SketchActivity : AppCompatActivity() {
                                 }
                             })
                     }
+                } else if (currentMode == SketchMode.BOARD) {
+                    BoardControls()
                 } else if (currentMode in listOf(SketchMode.RECT_COLUMN, SketchMode.CIRCLE_COLUMN, SketchMode.DOOR, SketchMode.WINDOW)) {
                     CreationTools()
                 } else if (currentMode in listOf(SketchMode.SELECT, SketchMode.SPLIT, SketchMode.MEASURE)) {
@@ -321,7 +355,7 @@ class SketchActivity : AppCompatActivity() {
                     confirmLabel = getString(R.string.sketch_action_confirm),
                     onUndo = { if (!sketchView.undoPlacement()) toast(getString(R.string.sketch_undo_empty)) },
                     onDelete = { if (!sketchView.deleteSelected()) toast(getString(R.string.sketch_selection_required)) },
-                    onConfirm = { setMode(SketchMode.SELECT) },
+                    onConfirm = { if (currentMode != SketchMode.BOARD || sketchView.finishBoardPlacement()) setMode(SketchMode.SELECT) },
                     undoIcon = { Icon(painterResource(R.drawable.ic_undo), null) },
                     deleteIcon = { Icon(painterResource(R.drawable.ic_delete), null) },
                     confirmIcon = { Icon(painterResource(R.drawable.ic_confirm), null) },
@@ -334,13 +368,19 @@ class SketchActivity : AppCompatActivity() {
                 primary = colorResource(R.color.sketch_tool_active),
                 onPrimary = colorResource(R.color.white),
             )) {
+                val board = (propertySelection as? SketchSelection.Board)?.let { sketchView.renderDocument().boards[it.id] }
+                com.example.boschlaser.ui.BoardVertexAction(
+                    visible = currentMode == SketchMode.SELECT && board?.shape == com.example.boschlaser.shared.model.BoardShape.POLYGON && selectedBoardVertex != null,
+                    enabled = selectedBoardVertex?.let { board?.removedVertex(it) != null } == true,
+                    label = getString(R.string.board_delete_vertex), onDelete = { sketchView.deleteSelectedBoardVertex() },
+                    icon = { Icon(painterResource(R.drawable.ic_delete), null) })
                 SelectionActions(
                     target = selectionActionTarget,
                     straightenLabel = getString(R.string.sketch_action_straighten),
                     hingeLabel = getString(R.string.door_flip_left_right),
                     sideLabel = getString(R.string.door_flip_up_down),
                     onStraighten = {
-                        if (!sketchView.straightenSelectedWall(false)) toast(getString(R.string.sketch_wall_required))
+                        if (!sketchView.straightenSelectedWall()) toast(getString(R.string.sketch_wall_required))
                     },
                     onFlipHinge = {
                         sketchView.selectedOpening()?.takeIf { it.type == SketchOpeningType.DOOR }
@@ -379,7 +419,9 @@ class SketchActivity : AppCompatActivity() {
                         Text(getString(when {
                             wallEditSession?.first != null -> R.string.sketch_wall_edit_preview_hint
                             wallEditSession != null -> R.string.sketch_extend_pick_first
-                            currentMode == SketchMode.DIMENSION -> R.string.sketch_dimension_hint
+                            currentMode == SketchMode.DIMENSION -> if (angularDimension) R.string.sketch_angle_creation_hint else R.string.sketch_dimension_hint
+                            currentMode == SketchMode.PAN -> R.string.sketch_pan_hint
+                            currentMode == SketchMode.BOARD -> R.string.board_hint
                             currentMode == SketchMode.WALL -> R.string.sketch_wall_chain_hint
                             else -> R.string.sketch_selection_gestures_hint
                         }))
@@ -484,6 +526,22 @@ class SketchActivity : AppCompatActivity() {
         } else propertyPanelVisible = true
     }
 
+    @Composable
+    private fun BoardControls(id: String? = null) {
+        var revision by remember { mutableStateOf(0) }
+        val fill = id?.let { sketchView.renderDocument().boards[it]?.fill } ?: sketchView.boardFill
+        key(revision) {
+            com.example.boschlaser.ui.BoardTools(id?.let { sketchView.renderDocument().boards[it]?.shape } ?: sketchView.boardShape, fill,
+                listOf(getString(R.string.board_rectangle), getString(R.string.board_polygon), getString(R.string.board_circle)),
+                listOf(getString(R.string.board_white), getString(R.string.board_grid), getString(R.string.board_wood)),
+                { if (id == null) sketchView.boardShape = it else sketchView.setBoardShape(id, it); revision++ },
+                { if (id == null) sketchView.boardFill = it else sketchView.setBoardFill(id, it); revision++ })
+        }
+        val board = id?.let { sketchView.renderDocument().boards[it] }
+        if (board?.shape == com.example.boschlaser.shared.model.BoardShape.POLYGON) {
+            androidx.compose.material3.Text(getString(R.string.board_vertex_hint))
+        }
+    }
     private fun hideProperties() {
         animatePropertyDismiss = false
         propertyPanelVisible = false
@@ -493,6 +551,7 @@ class SketchActivity : AppCompatActivity() {
     private fun Properties() {
         val selection = propertySelection
         val title = when (selection) {
+            is SketchSelection.Board -> getString(R.string.sketch_tool_board)
             is SketchSelection.Dimension -> getString(R.string.sketch_dimension_properties)
             is SketchSelection.Wall -> getString(R.string.sketch_wall_properties)
             is SketchSelection.Column -> getString(if (selection.column.type == SketchColumnType.CIRCLE)
@@ -515,6 +574,7 @@ class SketchActivity : AppCompatActivity() {
             }) {
             key(propertyPanelResetKey) {
                 when (selection) {
+                    is SketchSelection.Board -> BoardControls(selection.id)
                     is SketchSelection.Dimension -> Unit
                     is SketchSelection.Wall -> WallProperties(selection.wall.id)
                     is SketchSelection.Column -> ColumnProperties(selection.column.id)
@@ -539,23 +599,27 @@ class SketchActivity : AppCompatActivity() {
     @Composable
     private fun FaceDistanceDialog() {
         val dimension = editingFaceDimension ?: return
+        var invalidAngle by remember(dimension) { mutableStateOf(false) }
         val records by MeasurementServices.get(this).service.records.collectAsStateWithLifecycle()
         val value = com.example.boschlaser.shared.geometry.WallDimensionGeometry.layout(sketchView.snapshotDocument(), dimension)?.valueMm
             ?: return
         MaterialTheme(colorScheme = lightColorScheme(primary = colorResource(R.color.sketch_tool_active))) {
-            com.example.boschlaser.ui.WallFaceDistanceDialog(formatSketchMillimeters(value),
-                getString(R.string.sketch_dimension_properties), getString(if (dimension.first is com.example.boschlaser.shared.model.WallFaceReference &&
+            com.example.boschlaser.ui.WallFaceDistanceDialog(if (dimension.angular) value.toString() else formatSketchMillimeters(value),
+                getString(if (dimension.angular) R.string.sketch_angle_properties else R.string.sketch_dimension_properties), getString(if (dimension.angular) R.string.sketch_angle_hint else if (dimension.first is com.example.boschlaser.shared.model.WallFaceReference &&
                     dimension.second is com.example.boschlaser.shared.model.WallFaceReference && dimension.first.entityId == dimension.second.entityId)
                     R.string.sketch_wall_length_dimension_hint else R.string.sketch_wall_face_drive_hint),
-                getString(R.string.sketch_dimension_value), getString(R.string.sketch_dimension_apply),
-                getString(R.string.sketch_settings_cancel), getString(R.string.sketch_dimension_drive_failed),
+                getString(if (dimension.angular) R.string.sketch_angle_value else R.string.sketch_dimension_value), getString(R.string.sketch_dimension_apply),
+                getString(R.string.sketch_settings_cancel), getString(if (dimension.angular) {
+                    if (invalidAngle) R.string.sketch_angle_invalid else R.string.sketch_angle_drive_failed
+                } else R.string.sketch_dimension_drive_failed),
                 onApply = { text ->
                     val requested = text.toDoubleOrNull()
-                    val applied = requested != null && sketchView.applyWallFaceDistance(dimension, requested)
+                    invalidAngle = dimension.angular && (requested == null || !requested.isFinite() || requested <= 0.0 || requested >= 180.0)
+                    val applied = !invalidAngle && requested != null && sketchView.applyWallFaceDistance(dimension, requested)
                     if (applied) editingFaceDimension = null
                     applied
                 }, onDismiss = { editingFaceDimension = null },
-                recentMeasurements = records.asReversed().take(3).map { formatSketchMillimeters(it.measurement.valueMm) },
+                recentMeasurements = if (dimension.angular) emptyList() else records.asReversed().take(3).map { formatSketchMillimeters(it.measurement.valueMm) },
                 recentMeasurementsLabel = getString(R.string.sketch_recent_measurements))
         }
     }
@@ -765,6 +829,37 @@ class SketchActivity : AppCompatActivity() {
                     success
                 }
             })
+    }
+
+    private fun shareSketch(cad: Boolean) {
+        val document = sketchView.snapshotDocument()
+        val bitmap = if (cad) null else sketchView.exportBitmap(transparent = true)
+        Thread {
+            val result = runCatching {
+                val directory = java.io.File(cacheDir, "shared").apply { mkdirs() }
+                val file = java.io.File.createTempFile("LaserSketch-", if (cad) ".dxf" else ".png", directory)
+                if (cad) file.writeText(com.example.boschlaser.shared.export.sketchDxf(document))
+                else file.outputStream().use { check(bitmap!!.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)) }
+                androidx.core.content.FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
+            }
+            bitmap?.recycle()
+            runOnUiThread {
+                result.onSuccess { uri ->
+                    val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                        type = if (cad) "application/dxf" else "image/png"
+                        putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                        clipData = android.content.ClipData.newRawUri(getString(R.string.sketch_share), uri)
+                        addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        setPackage("com.tencent.mm")
+                    }
+                    try { startActivity(intent) } catch (_: android.content.ActivityNotFoundException) {
+                        android.widget.Toast.makeText(this, R.string.annotation_share_install_wechat, android.widget.Toast.LENGTH_LONG).show()
+                    }
+                }.onFailure {
+                    android.widget.Toast.makeText(this, R.string.sketch_export_failed, android.widget.Toast.LENGTH_LONG).show()
+                }
+            }
+        }.start()
     }
 
     @Composable

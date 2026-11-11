@@ -140,6 +140,7 @@
     <string name="annotation_tool_angle">Angle</string>
     <string name="annotation_tool_area">Area</string>
     <string name="annotation_back">Back</string>
+    <string name="annotation_export">Share / Save</string>
     <string name="annotation_share">Share to WeChat</string>
     <string name="annotation_save_gallery">Save to Photos</string>
     <string name="annotation_selection_required">Select an annotation first</string>
@@ -318,7 +319,7 @@
     <string name="annotation_insert_area_point">Insert vertex on the next edge</string>
     <string name="sketch_wall_edit_preview_hint">Hold the second wall to preview; dashed parts will be removed. Move to select the retained side, release to apply.</string>
     <string name="sketch_wall_chain_hint">Release to confirm endpoint. Continue drawing walls; Finish to exit.</string>
-    <string name="sketch_selection_gestures_hint">Drag wall body along its normal; pinch to zoom; drag empty space to pan</string>
+    <string name="sketch_selection_gestures_hint">Tap to select, then drag to edit. Drag unselected objects to pan; use two fingers to pan and zoom.</string>
     <string name="sketch_endpoint_move_together">Move wall joints together</string>
     <string name="sketch_fixed_reference">Fixed</string>
     <string name="sketch_moving_reference">Moving</string>
@@ -362,4 +363,30 @@
     <string name="action_save">Save</string>
     <string name="project_name_required">Name cannot be empty</string>
     <string name="project_delete_title">Delete “%1$s”?</string>
+    <string name="sketch_angle_properties">Wall angle</string>
+    <string name="sketch_angle_hint">Rotate the selected wall while keeping the other wall fixed. Enter an angle greater than 0° and less than 180°.</string>
+    <string name="sketch_angle_value">Angle (°)</string>
+    <string name="sketch_linear_dimension">Linear dimension</string>
+    <string name="sketch_angle_creation_hint">Select two wall control lines, then tap to place the angle dimension</string>
+    <string name="sketch_angle_invalid">Enter a valid angle greater than 0° and less than 180°.</string>
+    <string name="sketch_angle_drive_failed">Cannot apply this angle: wall connections or opening clearances conflict. Adjust the angle or wall connections.</string>
+    <string name="wall_drawing_single">Single</string>
+    <string name="wall_drawing_continuous">Continuous</string>
+    <string name="sketch_tool_board">Board</string>
+    <string name="board_rectangle">Rectangle</string>
+    <string name="board_polygon">Polygon</string>
+    <string name="board_white">White</string>
+    <string name="board_grid">Grid</string>
+    <string name="board_wood">Wood floor</string>
+    <string name="board_hint">Polygon: OK after 3 points or tap first point to close. Rectangle: corners. Circle: center and edge</string>
+    <string name="board_invalid">Invalid board: check crossing edges or size</string>
+    <string name="board_circle">Circle</string>
+    <string name="board_delete_vertex">Delete vertex</string>
+    <string name="board_vertex_hint">Tap edge + to add; select a vertex and use the right-side delete button. Keep at least 3 vertices</string>
+    <string name="sketch_tool_pan">Pan</string>
+    <string name="sketch_pan_hint">Drag anywhere to pan; use two fingers to pan and zoom.</string>
+    <string name="sketch_share">Share</string>
+    <string name="sketch_export_png">Export PNG image</string>
+    <string name="sketch_export_dxf">Export DXF file</string>
+    <string name="sketch_export_failed">Export failed. Please retry.</string>
 </resources>

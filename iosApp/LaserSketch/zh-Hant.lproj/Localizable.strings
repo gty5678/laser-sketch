@@ -77,7 +77,7 @@
 "flip_side" = "翻方向";
 "wall_edit_hint" = "依次選擇兩面牆，點選位置決定保留側。";
 "dimension_hint" = "先選固定參考，再選移動參考，最後放置尺寸；選擇物件後點粗體尺寸可輸入。";
-"sketch_hint" = "抬手確認落點；空白處拖動平移，雙指縮放。";
+"sketch_hint" = "點選後再次拖動編輯；拖動未選構件平移，雙指平移和縮放。";
 "length_mm_input" = "距離 (mm)";
 "share_image" = "分享圖片";
 "save_album" = "儲存相簿";
@@ -196,3 +196,24 @@
 "language_ja" = "日本語";
 "language_ko" = "한국어";
 "language_en" = "English";
+
+"wall_drawing_single" = "單次";
+"wall_drawing_continuous" = "連續";
+
+"board" = "板";
+"board_rectangle" = "長方形";
+"board_polygon" = "多邊形";
+"board_white" = "白色";
+"board_grid" = "網格";
+"board_wood" = "木地板";
+"board_hint" = "多邊形滿三個點後按OK結束，或點首點閉合；矩形點對角，圓形點圓心和邊緣";
+"board_invalid" = "板無法閉合，請檢查邊線交叉或尺寸";
+"board_circle" = "圓形";
+"board_delete_vertex" = "刪除頂點";
+"board_vertex_hint" = "點擊邊上的＋新增頂點；選中頂點後用右側按鈕刪除，至少保留三個頂點";
+
+"pan" = "平移";
+"pan_hint" = "任意位置單指拖動平移；雙指平移和縮放。";
+
+"export_png" = "导出 PNG 图片";
+"export_dxf" = "导出 DXF 文件";

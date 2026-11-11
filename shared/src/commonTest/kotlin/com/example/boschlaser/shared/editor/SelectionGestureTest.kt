@@ -35,6 +35,7 @@ class SelectionGestureTest {
         val wall = Wall("wall", Vec2(0.0, 0.0), Vec2(2000.0, 0.0))
         val editor = SketchEditor(SketchDocument(walls = mapOf(wall.id to wall)))
         val start = Vec2(1000.0, 0.0)
+        editor.select(Selection.Wall(wall.id))
         editor.pointerDown(start, context(start))
         for (step in 1..8) {
             val point = start + Vec2(0.0, step.toDouble())
@@ -54,6 +55,7 @@ class SelectionGestureTest {
         val wall = Wall("wall", Vec2(0.0, 0.0), Vec2(2000.0, 0.0))
         val editor = SketchEditor(SketchDocument(walls = mapOf(wall.id to wall)))
         val start = Vec2(1000.0, 0.0)
+        editor.select(Selection.Wall(wall.id))
         editor.pointerDown(start, context(start))
         listOf(1.0, -1.0, 2.0, 0.0).forEach {
             val point = start + Vec2(0.0, it)
@@ -73,6 +75,7 @@ class SelectionGestureTest {
         // Grab away from the center: movement must preserve the original finger offset.
         val start = column.center + Vec2(20.0, 10.0)
         val editor = SketchEditor(initial)
+        editor.select(Selection.Column(column.id))
         editor.pointerDown(start, moveContext(start))
         assertEquals(SelectionGestureTarget.Column(column.id), editor.state.selectionGesture?.target)
         for (step in 1..10) {
@@ -83,6 +86,7 @@ class SelectionGestureTest {
         val end = start + Vec2(50.0, 50.0)
         assertEquals(Vec2(250.0, 250.0), editor.renderDocument.columns.getValue(column.id).center)
         val singleMove = SketchEditor(initial)
+        singleMove.select(Selection.Column(column.id))
         singleMove.pointerDown(start, moveContext(start))
         singleMove.pointerMove(end, moveContext(end))
         assertEquals(singleMove.renderDocument, editor.renderDocument)
@@ -104,6 +108,7 @@ class SelectionGestureTest {
         val first = column("first", 300.123456789)
         val second = column("second", 1000.0)
         val editor = SketchEditor(SketchDocument(columns = mapOf(first.id to first, second.id to second)))
+        editor.select(Selection.Column(first.id))
         editor.pointerDown(first.center, context(first.center))
         assertEquals(SelectionGestureTarget.Column(first.id), editor.state.selectionGesture?.target)
         assertEquals(first.center, editor.state.selectionGesture?.lastWorld)
@@ -127,6 +132,7 @@ class SelectionGestureTest {
         val first = column("first", 300.0)
         val initial = SketchDocument(columns = mapOf(first.id to first))
         val editor = SketchEditor(initial)
+        editor.select(Selection.Column(first.id))
         editor.pointerDown(first.center, context(first.center))
         val point = first.center + Vec2(40.0, 50.0)
         editor.pointerMove(point, context(point))
@@ -145,6 +151,7 @@ class SelectionGestureTest {
         val first = column("first", 300.0)
         val editor = SketchEditor(SketchDocument(columns = mapOf(first.id to first)))
         val handle = first.center + Vec2(0.0, -100.0)
+        editor.select(Selection.Column(first.id))
         editor.pointerDown(handle, context(handle, first.id))
         assertEquals(SelectionGestureTarget.ColumnRotation(first.id), editor.state.selectionGesture?.target)
         val point = first.center + Vec2(100.0, 0.0)
@@ -160,6 +167,7 @@ class SelectionGestureTest {
     @Test fun endpointAndWallBodyTargetsAreDistinct() {
         val wall = Wall("wall", Vec2(0.0, 0.0), Vec2(2000.0, 0.0), 200.0)
         val editor = SketchEditor(SketchDocument(walls = mapOf(wall.id to wall)))
+        editor.select(Selection.Wall(wall.id))
         editor.pointerDown(wall.start, context(wall.start))
         assertEquals(SelectionGestureTarget.WallEndpoint(wall.id, true), editor.state.selectionGesture?.target)
         editor.cancelPointer()
@@ -190,6 +198,7 @@ class SelectionGestureTest {
     @Test fun commitAndCancelEditClearGestureWithoutASecondPointerRelease() {
         val first = column("first", 300.0)
         val editor = SketchEditor(SketchDocument(columns = mapOf(first.id to first)))
+        editor.select(Selection.Column(first.id))
         editor.pointerDown(first.center, context(first.center))
         val point = first.center + Vec2(20.0, 30.0)
         editor.pointerMove(point, context(point))
@@ -205,6 +214,7 @@ class SelectionGestureTest {
     @Test fun permanentCommandCancelsPreviewAndCannotLeaveADanglingGestureTarget() {
         val first = column("first", 300.0)
         val editor = SketchEditor(SketchDocument(columns = mapOf(first.id to first)))
+        editor.select(Selection.Column(first.id))
         editor.pointerDown(first.center, context(first.center))
         val point = first.center + Vec2(20.0, 30.0)
         editor.pointerMove(point, context(point))

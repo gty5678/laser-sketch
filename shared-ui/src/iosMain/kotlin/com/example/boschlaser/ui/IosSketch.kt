@@ -58,7 +58,7 @@ internal fun IosSketch(project: Project, platform: IosPlatform, services: IosApp
     fun apply(result: ToolUpdate) {
         viewport = viewport.copy(offset = viewport.offset + result.panBy)
         result.editFaceDimension?.let { dimension = it }
-        result.failure?.let { notice = label("invalid_value") }
+        result.failure?.let { notice = label(if (it == com.example.boschlaser.shared.tool.ToolFailure.INVALID_BOARD) "board_invalid" else "invalid_value") }
         update()
     }
     val latestSave by rememberUpdatedState(save)
@@ -73,6 +73,7 @@ internal fun IosSketch(project: Project, platform: IosPlatform, services: IosApp
     LaunchedEffect(editor.state.selection) { properties = editor.state.selection != null }
     fun delete() {
         val command = when (val selection = editor.state.selection) {
+            is Selection.Board -> DeleteBoardCommand(selection.id)
             is Selection.Wall -> DeleteWallCommand(selection.id)
             is Selection.Column -> DeleteColumnCommand(selection.id)
             is Selection.Opening -> DeleteOpeningCommand(selection.id)
@@ -160,17 +161,29 @@ internal fun IosSketch(project: Project, platform: IosPlatform, services: IosApp
                     }
                 })
             }, toolbar = {
-                SketchToolbar(editor.state.tool, ToolType.entries.filter { it !in listOf(ToolType.MEASURE, ToolType.SPLIT) }
+                SketchToolbar(editor.state.tool, listOf(ToolType.SELECT, ToolType.PAN, ToolType.WALL,
+                    ToolType.RECT_COLUMN, ToolType.CIRCLE_COLUMN, ToolType.DOOR, ToolType.WINDOW,
+                    ToolType.BOARD, ToolType.DIMENSION)
                     .map { SketchToolItem(it, label(it.name.lowercase())) }, label("save_back"), label("settings"),
                     onBack = { editor.cancelPointer(); save(editor.document, true) }, onSettings = { settings = true }, onTool = ::tool,
                     backIcon = { DrawingIcon("back") }, settingsIcon = { DrawingIcon("settings") },
+                    shareLabel = label("share"), pngLabel = label("export_png"), cadLabel = label("export_dxf"),
+                    onSharePng = { services.run { platform.share(sketchPng(editor.document, style, measurer), "png") } },
+                    onShareCad = { services.run { platform.share(com.example.boschlaser.shared.export.sketchDxf(editor.document).encodeToByteArray(), "dxf") } },
+                    shareIcon = { DrawingIcon("share") },
                     toolIcon = { DrawingIcon(if (it == ToolType.RECT_COLUMN || it == ToolType.CIRCLE_COLUMN) "column" else it.name.lowercase()) })
             }, editToolbar = {
                 when (editor.state.tool) {
+                    ToolType.BOARD -> BoardTools(editor.placement.boardShape, editor.placement.boardFill,
+                        listOf(label("board_rectangle"), label("board_polygon"), label("board_circle")), listOf(label("board_white"), label("board_grid"), label("board_wood")),
+                        { editor.cancelPointer(); editor.placement = editor.placement.copy(boardShape = it); update() },
+                        { editor.placement = editor.placement.copy(boardFill = it); update() })
                     ToolType.WALL -> DrawingWallTools(editor.placement.alignment, label("control_line"), lineLabels, label("wall_thickness"),
                         { editor.placement = editor.placement.copy(alignment = it); update() }, { creation = "wall" }, editor.placement.wallFill,
                         listOf(label("wall_fill_blank"), label("wall_fill_hatch"), label("wall_fill_black")),
-                        { editor.placement = editor.placement.copy(wallFill = it); update() })
+                        { editor.placement = editor.placement.copy(wallFill = it); update() },
+                        editor.continuousWallDrawing, label("wall_drawing_single"), label("wall_drawing_continuous"),
+                        { editor.continuousWallDrawing = it; update() })
                     ToolType.RECT_COLUMN, ToolType.CIRCLE_COLUMN -> ColumnPropertyTools(editor.placement.columnFill,
                         listOf(label("column_fill_white"), label("column_fill_black")),
                         listOfNotNull("${label("column_size")} ${decimal(editor.placement.columnWidth)} × ${decimal(editor.placement.columnDepth)}",
@@ -183,7 +196,7 @@ internal fun IosSketch(project: Project, platform: IosPlatform, services: IosApp
                             { editor.placement = editor.placement.copy(doorStyle = value); update() }, label = { Text(text) }) } }
                     }
                     ToolType.WINDOW -> CreationPropertyTools(listOf(label("width"))) { creation = "window" }
-                    ToolType.DIMENSION -> Unit
+                    ToolType.DIMENSION, ToolType.PAN -> Unit
                     else -> SketchEditTools(editor.state.wallEditSession?.operation == WallEditOperation.TRIM,
                         editor.state.wallEditSession?.operation == WallEditOperation.EXTEND, label("trim"), label("extend"),
                         { editor.startWallEdit(WallEditOperation.TRIM); update() }, { editor.startWallEdit(WallEditOperation.EXTEND); update() },
@@ -201,10 +214,11 @@ internal fun IosSketch(project: Project, platform: IosPlatform, services: IosApp
                             modifier = Modifier.semantics { contentDescription = label("redo") }) { DrawingIcon("undo", Modifier.graphicsLayer { scaleX = -1f }) }
                         if (editor.state.selection != null) IconButton(onClick = ::delete,
                             modifier = Modifier.semantics { contentDescription = label("delete") }) { DrawingIcon("delete") }
-                        if (editor.state.tool != ToolType.SELECT || editor.state.wallEditSession != null) IconButton(onClick = { tool(ToolType.SELECT) },
+                        if (editor.state.tool != ToolType.SELECT || editor.state.wallEditSession != null) IconButton(onClick = {
+                            val result = editor.finishBoardPlacement()
+                            if (result.failure != null) apply(result) else tool(ToolType.SELECT)
+                        },
                             modifier = Modifier.semantics { contentDescription = label("finish") }) { DrawingIcon("confirm") }
-                        IconButton(onClick = { services.run { platform.share(sketchPng(editor.document, style, measurer), "png") } },
-                            modifier = Modifier.semantics { contentDescription = label("share_image") }) { DrawingIcon("share") }
                         IconButton(onClick = { services.run { platform.savePhoto(sketchPng(editor.document, style, measurer)) { notice = label(if (it) "photo_saved" else "photo_error") } } },
                             modifier = Modifier.semantics { contentDescription = label("save_album") }) { DrawingIcon("save") }
                     }
@@ -213,9 +227,14 @@ internal fun IosSketch(project: Project, platform: IosPlatform, services: IosApp
                 val selected = editor.state.selection
                 val wall = (selected as? Selection.Wall)?.let { editor.document.walls[it.id] }
                 val opening = (selected as? Selection.Opening)?.let { editor.document.openings[it.id] }
+                val board = (selected as? Selection.Board)?.let { editor.document.boards[it.id] }
+                val vertex = editor.state.selectedBoardVertex
+                BoardVertexAction(editor.state.tool == ToolType.SELECT && board?.shape == BoardShape.POLYGON && vertex != null,
+                    vertex?.let { board?.removedVertex(it) != null } == true, label("board_delete_vertex"),
+                    { if (editor.deleteSelectedBoardVertex()) update() }, { DrawingIcon("delete") })
                 SelectionActions(if (wall != null) SelectionActionTarget.WALL else if (opening?.type == OpeningType.DOOR) SelectionActionTarget.DOOR else SelectionActionTarget.NONE,
                     label("straighten"), label("flip_hinge"), label("flip_side"),
-                    { wall?.let { accept(StraightenWallCommand(it.id, false)) } },
+                    { wall?.let { accept(StraightenWallCommand(it.id, editor.wallFreeEndpointIsStart(it.id))) } },
                     { opening?.let { accept(ChangeOpeningPropertiesCommand(it.id, it.width, flipHinge = true)) } },
                     { opening?.let { accept(ChangeOpeningPropertiesCommand(it.id, it.width, flip = true)) } },
                     { DrawingIcon("straighten") }, { DrawingIcon("flip_vertical") }, { DrawingIcon("flip_horizontal") })
@@ -239,7 +258,7 @@ internal fun IosSketch(project: Project, platform: IosPlatform, services: IosApp
                     },
                     content = { IosSketchProperties(editor, ::accept, ::update) })
             }, guidance = {
-                Text(notice ?: label(if (editor.state.wallEditSession != null) "wall_edit_hint" else if (editor.state.tool == ToolType.DIMENSION) "dimension_hint" else "sketch_hint"),
+                Text(notice ?: label(if (editor.state.wallEditSession != null) "wall_edit_hint" else if (editor.state.tool == ToolType.PAN) "pan_hint" else if (editor.state.tool == ToolType.BOARD) "board_hint" else if (editor.state.tool == ToolType.DIMENSION) "dimension_hint" else "sketch_hint"),
                     style = MaterialTheme.typography.bodySmall, maxLines = 1)
                 Text(label("sketch_counts").replace("%w", editor.document.walls.size.toString())
                     .replace("%o", editor.document.openings.size.toString()).replace("%c", editor.document.columns.size.toString()),

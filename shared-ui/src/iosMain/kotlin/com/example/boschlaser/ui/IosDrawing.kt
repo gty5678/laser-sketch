@@ -78,7 +78,7 @@ internal fun IosProjectThumbnail(project: Project, store: IosProjectStore) {
     Canvas(Modifier.fillMaxSize()) {
         drawRect(Color.White)
         val thumbnail = photo
-        if (thumbnail != null && project.sketch.walls.isEmpty() && project.sketch.columns.isEmpty()) {
+        if (thumbnail != null && project.sketch.boards.isEmpty() && project.sketch.walls.isEmpty() && project.sketch.columns.isEmpty()) {
             drawImage(thumbnail, dstSize = IntSize(size.width.toInt(), size.height.toInt()))
         } else {
             val dimensions = Vec2(size.width.toDouble(), size.height.toDouble())
@@ -91,7 +91,6 @@ internal fun IosProjectThumbnail(project: Project, store: IosProjectStore) {
 internal fun sketchPng(document: SketchDocument, style: SketchSceneStyle, measurer: TextMeasurer): ByteArray {
     val bitmap = ImageBitmap(2000, 2000)
     CanvasDrawScope().draw(Density(1f), LayoutDirection.Ltr, Canvas(bitmap), Size(2000f, 2000f)) {
-        drawRect(Color.White)
         val sizePx = Vec2(2000.0, 2000.0)
         drawSketchScene(document, EditorState(), PlacementSettings(), sketchExportViewport(document, sizePx), sizePx, style,
             SketchSceneOptions(100.0, showGrid = false, showSelection = false, rotationHandleOffsetPx = 0.0), measurer, ::millimeters)

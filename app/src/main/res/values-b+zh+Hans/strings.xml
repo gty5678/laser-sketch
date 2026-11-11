@@ -140,6 +140,7 @@
     <string name="annotation_tool_angle">角度标注</string>
     <string name="annotation_tool_area">面积标注</string>
     <string name="annotation_back">返回</string>
+    <string name="annotation_export">分享 / 保存</string>
     <string name="annotation_share">分享到微信</string>
     <string name="annotation_save_gallery">保存到相册</string>
     <string name="annotation_selection_required">请先选择一条标注</string>
@@ -318,7 +319,7 @@
     <string name="annotation_insert_area_point">在所选顶点的下一条边添加顶点</string>
     <string name="sketch_wall_edit_preview_hint">按住第二面墙预览，虚线为移除段；移动选择保留侧，抬手应用</string>
     <string name="sketch_wall_chain_hint">抬手确定端点；可连续画墙，完成退出</string>
-    <string name="sketch_selection_gestures_hint">拖动墙身沿法线移动；双指缩放，空白处拖动平移</string>
+    <string name="sketch_selection_gestures_hint">点选后再次拖动编辑；拖动未选构件平移，双指平移和缩放。</string>
     <string name="sketch_endpoint_move_together">墙端点共同移动</string>
     <string name="sketch_fixed_reference">固定</string>
     <string name="sketch_moving_reference">移动</string>
@@ -362,4 +363,30 @@
     <string name="action_save">保存</string>
     <string name="project_name_required">名字不能为空</string>
     <string name="project_delete_title">删除“%1$s”？</string>
+    <string name="sketch_angle_properties">墙体角度</string>
+    <string name="sketch_angle_hint">旋转选中的墙，另一堵墙固定。请输入大于 0° 且小于 180° 的角度。</string>
+    <string name="sketch_angle_value">角度（°）</string>
+    <string name="sketch_linear_dimension">线性尺寸</string>
+    <string name="sketch_angle_creation_hint">依次选择两堵墙的控制线，再点击放置角度标注</string>
+    <string name="sketch_angle_invalid">请输入大于 0° 且小于 180° 的有效角度。</string>
+    <string name="sketch_angle_drive_failed">无法应用此角度：墙体连接或门窗空间存在冲突，请调整角度或连接关系。</string>
+    <string name="wall_drawing_single">单次</string>
+    <string name="wall_drawing_continuous">连续</string>
+    <string name="sketch_tool_board">板</string>
+    <string name="board_rectangle">长方形</string>
+    <string name="board_polygon">多边形</string>
+    <string name="board_white">白色</string>
+    <string name="board_grid">网格</string>
+    <string name="board_wood">木地板</string>
+    <string name="board_hint">多边形满三个点后按OK结束，或点首点闭合；矩形点对角，圆形点圆心和边缘</string>
+    <string name="board_invalid">板无法闭合，请检查边线交叉或尺寸</string>
+    <string name="board_circle">圆形</string>
+    <string name="board_delete_vertex">删除顶点</string>
+    <string name="board_vertex_hint">点击边上的＋添加顶点；选中顶点后用右侧按钮删除，至少保留三个顶点</string>
+    <string name="sketch_tool_pan">平移</string>
+    <string name="sketch_pan_hint">任意位置单指拖动平移；双指平移和缩放。</string>
+    <string name="sketch_share">分享</string>
+    <string name="sketch_export_png">导出 PNG 图片</string>
+    <string name="sketch_export_dxf">导出 DXF 文件</string>
+    <string name="sketch_export_failed">导出失败，请重试</string>
 </resources>

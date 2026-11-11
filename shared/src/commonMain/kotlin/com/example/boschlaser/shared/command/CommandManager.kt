@@ -1,5 +1,6 @@
 package com.example.boschlaser.shared.command
 
+import com.example.boschlaser.shared.model.Board
 import com.example.boschlaser.shared.model.Column
 import com.example.boschlaser.shared.model.Opening
 import com.example.boschlaser.shared.model.SketchDocument
@@ -10,7 +11,7 @@ import com.example.boschlaser.shared.model.WallDimension
 class CommandManager(initial: SketchDocument = SketchDocument(), private val historyLimit: Int = 100) {
     init { require(historyLimit > 0) }
     var document: SketchDocument = initial.copy(
-        walls = initial.walls.toMap(), openings = initial.openings.toMap(), columns = initial.columns.toMap(), dimensions = initial.dimensions.toMap(),
+        walls = initial.walls.toMap(), openings = initial.openings.toMap(), columns = initial.columns.toMap(), dimensions = initial.dimensions.toMap(), boards = initial.boards.toMap(),
     )
         private set
     private val undoStack = ArrayDeque<DocumentDelta>()
@@ -42,7 +43,7 @@ class CommandManager(initial: SketchDocument = SketchDocument(), private val his
     }
     fun replace(document: SketchDocument) {
         this.document = document.copy(walls = document.walls.toMap(),
-            openings = document.openings.toMap(), columns = document.columns.toMap(), dimensions = document.dimensions.toMap())
+            openings = document.openings.toMap(), columns = document.columns.toMap(), dimensions = document.dimensions.toMap(), boards = document.boards.toMap())
         undoStack.clear()
         redoStack.clear()
     }
@@ -50,6 +51,8 @@ class CommandManager(initial: SketchDocument = SketchDocument(), private val his
 
 private data class EntityChange<T>(val before: T?, val after: T?)
 private data class DocumentDelta(
+    val boards: Map<String, EntityChange<Board>>,
+    val boardOrder: Pair<List<String>, List<String>>?,
     val walls: Map<String, EntityChange<Wall>>,
     val openings: Map<String, EntityChange<Opening>>,
     val columns: Map<String, EntityChange<Column>>,
@@ -60,6 +63,7 @@ private data class DocumentDelta(
     val dimensionOrder: Pair<List<String>, List<String>>?,
 ) {
     fun apply(document: SketchDocument, forward: Boolean) = document.copy(
+        boards = applyChanges(document.boards, boards, boardOrder, forward),
         walls = applyChanges(document.walls, walls, wallOrder, forward),
         openings = applyChanges(document.openings, openings, openingOrder, forward),
         columns = applyChanges(document.columns, columns, columnOrder, forward),
@@ -67,6 +71,7 @@ private data class DocumentDelta(
     )
     companion object {
         fun between(before: SketchDocument, after: SketchDocument) = DocumentDelta(
+            changes(before.boards, after.boards), order(before.boards, after.boards),
             changes(before.walls, after.walls), changes(before.openings, after.openings), changes(before.columns, after.columns),
             changes(before.dimensions, after.dimensions),
             order(before.walls, after.walls), order(before.openings, after.openings), order(before.columns, after.columns),

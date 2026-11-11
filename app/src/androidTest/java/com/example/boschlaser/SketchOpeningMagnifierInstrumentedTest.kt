@@ -20,6 +20,7 @@ class SketchOpeningMagnifierInstrumentedTest {
                 view.restoreState(SketchState(
                     walls = listOf(SketchWall("wall", SketchPoint(0f, 0f), SketchPoint(3000f, 0f))),
                     openings = listOf(SketchOpening("opening", type, "wall", 1f / 3f, 600f))))
+                view.selectEntity(com.example.boschlaser.shared.editor.Selection.Opening("opening"))
                 val original = view.snapshotDocument()
                 fun touch(action: Int, point: Vec2) {
                     val screen = view.worldToScreen(point)

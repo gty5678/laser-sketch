@@ -3,7 +3,7 @@ package com.example.boschlaser.shared.model
 import com.example.boschlaser.shared.geometry.Vec2
 
 /** Physical side/axis or end section relative to the wall's start-to-end direction. */
-enum class WallFaceSide { LEFT, RIGHT, CENTER, START, END }
+enum class WallFaceSide { LEFT, RIGHT, CENTER, START, END, CONTROL }
 
 sealed interface DimensionReference {
     val entityId: String
@@ -49,6 +49,10 @@ data class WallDimension(
     val first: DimensionReference,
     val second: DimensionReference,
     val position: Vec2,
+    val angular: Boolean = false,
 ) {
-    init { require(id.isNotBlank() && first.canDimensionWith(second)) }
+    init {
+        require(id.isNotBlank() && first.canDimensionWith(second))
+        require(!angular || (first is WallFaceReference && second is WallFaceReference && first.wallId != second.wallId))
+    }
 }

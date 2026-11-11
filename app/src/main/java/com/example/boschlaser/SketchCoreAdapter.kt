@@ -48,6 +48,7 @@ internal fun SketchState.toDocument(): SketchDocument {
     val coreWalls = walls.associate { it.id to it.toCoreWall() }
     return SketchDocument(
         walls = coreWalls,
+        boards = boards.associateBy { it.id },
         openings = openings.filter { it.wallId in coreWalls }.associate { opening ->
             val host = coreWalls.getValue(opening.wallId)
             opening.id to Opening(opening.id, opening.wallId,
@@ -65,6 +66,7 @@ internal fun SketchState.toDocument(): SketchDocument {
 }
 
 internal fun SketchDocument.toSketchState() = SketchState(
+    boards = boards.values.toList(),
     walls = walls.values.map { it.toSketchWall() },
     columns = columns.values.map { column -> when (column) {
         is RectColumn -> SketchColumn(column.id, SketchColumnType.RECTANGLE, column.center.toSketchPoint(),

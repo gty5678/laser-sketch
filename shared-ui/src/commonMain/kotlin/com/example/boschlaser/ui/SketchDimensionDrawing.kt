@@ -45,9 +45,9 @@ fun sketchDimensionLabelBounds(document: SketchDocument, dimension: WallDimensio
     measurer: TextMeasurer, labelStyle: TextStyle, density: Density, editable: Boolean = false,
     textGapPx: Float = 2 * density.density, format: (Double) -> String): Rect2? {
     val layout = WallDimensionGeometry.layout(document, dimension) ?: return null
-    val measured = measurer.measure(format(layout.valueMm), dimensionLabelStyle(labelStyle, editable),
+    val measured = measurer.measure((if (dimension.angular) (round(layout.valueMm * 100.0) / 100.0).toString() + "°" else format(layout.valueMm)), dimensionLabelStyle(labelStyle, editable),
         softWrap = false, maxLines = 1, density = density)
-    return dimensionTextPlacement(Segment2(viewport.worldToScreen(layout.line.start), viewport.worldToScreen(layout.line.end)),
+    return dimensionTextPlacement(dimensionTextLine(layout, viewport),
         Vec2(measured.size.width.toDouble(), measured.size.height.toDouble()), textGapPx.toDouble(),
         Vec2(4.0 * density.density, 4.0 * density.density)).bounds
 }
@@ -83,13 +83,35 @@ fun DrawScope.drawSketchDimension(document: SketchDocument, dimension: WallDimen
     }
     witness(layout.firstWitness, start)
     witness(layout.secondWitness, end)
-    line(start, end)
+    if (layout.arcCenter != null) {
+        val center = layout.arcCenter!!
+        val firstRay = layout.line.start - center
+        val startAngle = atan2(firstRay.y, firstRay.x)
+        val radius = Geometry.length(Segment2(center, layout.line.start))
+        var previous = start
+        for (step in 1..64) {
+            val angle = startAngle + layout.sweep * step / 64.0
+            val next = viewport.worldToScreen(center + Vec2(cos(angle), sin(angle)) * radius)
+            line(previous, next)
+            previous = next
+        }
+    } else line(start, end)
     val label = dimensionLabelStyle(style.label, editable).copy(color = color)
-    val measured = measurer.measure(format(layout.valueMm), label, softWrap = false, maxLines = 1, density = this)
-    val text = dimensionTextPlacement(Segment2(start, end), Vec2(measured.size.width.toDouble(), measured.size.height.toDouble()),
+    val measured = measurer.measure((if (dimension.angular) (round(layout.valueMm * 100.0) / 100.0).toString() + "°" else format(layout.valueMm)), label, softWrap = false, maxLines = 1, density = this)
+    val text = dimensionTextPlacement(dimensionTextLine(layout, viewport), Vec2(measured.size.width.toDouble(), measured.size.height.toDouble()),
         appearance.textGapPx.toDouble(), Vec2(0.0, 0.0))
     val center = Offset(text.center.x.toFloat(), text.center.y.toFloat())
     withTransform({ rotate(text.rotationDegrees, center) }) {
         drawText(measured, topLeft = center - Offset(measured.size.width / 2f, measured.size.height / 2f))
     }
+}
+
+private fun dimensionTextLine(layout: WallDimensionLayout, viewport: Viewport): Segment2 {
+    val center = layout.arcCenter ?: return Segment2(viewport.worldToScreen(layout.line.start), viewport.worldToScreen(layout.line.end))
+    val ray = layout.line.start - center
+    val angle = atan2(ray.y, ray.x) + layout.sweep / 2.0
+    val radius = Geometry.distance(center, layout.line.start)
+    val middle = center + Vec2(cos(angle), sin(angle)) * radius
+    val shift = middle - (layout.line.start + layout.line.end) * .5
+    return Segment2(viewport.worldToScreen(layout.line.start + shift), viewport.worldToScreen(layout.line.end + shift))
 }

@@ -14,6 +14,7 @@ import com.example.boschlaser.shared.model.Wall
 import com.example.boschlaser.shared.topology.WallEndpoint
 
 sealed interface HitResult {
+    data class Board(val boardId: String) : HitResult
     data class Wall(val wallId: String) : HitResult
     data class WallEndpoint(val wallId: String, val endpoint: com.example.boschlaser.shared.topology.WallEndpoint) : HitResult
     data class Opening(val openingId: String) : HitResult
@@ -56,6 +57,7 @@ class HitTestEngine {
         document.walls.values.toList().asReversed().forEach { wall ->
             if (hitsWall(wall, point, context.wallTolerance)) add(HitResult.Wall(wall.id))
         }
+        document.boards.values.toList().asReversed().forEach { if (it.contains(point)) add(HitResult.Board(it.id)) }
     }
 
     fun hitsWall(wall: Wall, point: Vec2, tolerance: Double): Boolean {
@@ -92,5 +94,6 @@ class HitTestEngine {
         document.walls.values.toList().asReversed().forEach { wall ->
             if (hitsWall(wall, point, tolerance)) add(HitResult.Wall(wall.id))
         }
+        document.boards.values.toList().asReversed().forEach { if (it.contains(point)) add(HitResult.Board(it.id)) }
     }
 }

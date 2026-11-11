@@ -3,7 +3,8 @@ package com.example.boschlaser.ui
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
+import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -15,7 +16,10 @@ data class SketchToolItem(val type: ToolType, val label: String)
 @Composable
 fun SketchToolbar(selected: ToolType, tools: List<SketchToolItem>, backLabel: String, settingsLabel: String,
     onBack: () -> Unit, onSettings: () -> Unit, onTool: (ToolType) -> Unit,
-    backIcon: @Composable () -> Unit, settingsIcon: @Composable () -> Unit, toolIcon: @Composable (ToolType) -> Unit) {
+    backIcon: @Composable () -> Unit, settingsIcon: @Composable () -> Unit, toolIcon: @Composable (ToolType) -> Unit,
+    shareLabel: String = "", pngLabel: String = "", cadLabel: String = "",
+    onSharePng: (() -> Unit)? = null, onShareCad: (() -> Unit)? = null,
+    shareIcon: @Composable () -> Unit = {}) {
     Surface {
         Row(Modifier.fillMaxWidth()) {
             IconButton(onClick = onBack, modifier = Modifier.semantics { contentDescription = backLabel }) { backIcon() }
@@ -23,6 +27,17 @@ fun SketchToolbar(selected: ToolType, tools: List<SketchToolItem>, backLabel: St
                 SketchToolButtons(selected, tools, onTool, toolIcon)
             }
             IconButton(onClick = onSettings, modifier = Modifier.semantics { contentDescription = settingsLabel }) { settingsIcon() }
+            if (onSharePng != null && onShareCad != null) {
+                var expanded by remember { mutableStateOf(false) }
+                Box {
+                    IconButton(onClick = { expanded = true }, modifier = Modifier.semantics { contentDescription = shareLabel }) { shareIcon() }
+                    DropdownMenu(expanded, onDismissRequest = { expanded = false }) {
+                        DropdownMenuItem(text = { Text(pngLabel) }, onClick = { expanded = false; onSharePng() })
+                        DropdownMenuItem(text = { Text(cadLabel) }, onClick = { expanded = false; onShareCad() })
+                    }
+                }
+            }
+
         }
     }
 }

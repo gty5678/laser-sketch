@@ -3,6 +3,10 @@ package com.example.boschlaser
 import androidx.activity.ComponentActivity
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -18,6 +22,26 @@ import org.junit.runner.RunWith
 class EditorActionsInstrumentedTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
     @After fun finishScreen() { finishAndCloseScenario(compose.activityRule.scenario) }
+
+    @Test fun undoPositionStaysFixedWhenTrailingActionIsHidden() {
+        val delete = mutableStateOf(false)
+        val confirm = mutableStateOf(false)
+        compose.setContent {
+            MaterialTheme {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomEnd) {
+                    EditorActions(delete.value, confirm.value, "Undo fixture", "Delete fixture", "Confirm fixture",
+                        {}, {}, {}, { Text("U") }, { Text("D") }, { Text("C") })
+                }
+            }
+        }
+        val initial = compose.onNodeWithContentDescription("Undo fixture").fetchSemanticsNode().boundsInRoot
+        for ((showDelete, showConfirm) in listOf(true to false, false to true, false to false)) {
+            compose.runOnIdle { delete.value = showDelete; confirm.value = showConfirm }
+            val bounds = compose.onNodeWithContentDescription("Undo fixture").fetchSemanticsNode().boundsInRoot
+            assertEquals(initial.left, bounds.left, 0.5f)
+            assertEquals(initial.right, bounds.right, 0.5f)
+        }
+    }
 
     @Test fun visibilityAndCallbacksFollowHostState() {
         val delete = mutableStateOf(false)

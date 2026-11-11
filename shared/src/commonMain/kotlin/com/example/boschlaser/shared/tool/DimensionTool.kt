@@ -12,7 +12,7 @@ class DimensionTool : SketchTool {
         val preview = editor.state.preview as? SketchPreview.Dimension
         val movingDimension = preview != null && (context.dimensionPreviewLabelHit ||
             WallDimensionGeometry.layout(editor.document, preview.dimension)?.let {
-                Geometry.distanceToSegment(point, it.line) <= context.wallTolerance
+                WallDimensionGeometry.distanceToLayout(point, it) <= context.wallTolerance
             } == true)
         editor.updateState(editor.state.copy(dimensionGesture = DimensionGesture(context.screenPoint, context.screenPoint,
             point, preview, movingDimension), dragging = false))
@@ -38,7 +38,7 @@ class DimensionTool : SketchTool {
         val candidate = if (gesture?.movingDimension == true) {
             gesture.previewBefore!!.dimension.position + (point - gesture.startWorld)
         } else point
-        val endpoint = WallDimensionGeometry.snapEndpoint(editor.document, candidate, context.snapTolerance,
+        val endpoint = if (editor.state.angularDimension) null else WallDimensionGeometry.snapEndpoint(editor.document, candidate, context.snapTolerance,
             if (preview == null) editor.state.dimensionFirst else null)
         val position = endpoint?.point ?: candidate
         editor.updateState(editor.state.copy(
@@ -57,7 +57,7 @@ class DimensionTool : SketchTool {
             return update
         }
         val preview = editor.state.preview as? SketchPreview.Dimension
-        val endpoint = WallDimensionGeometry.snapEndpoint(editor.document, point, context.snapTolerance,
+        val endpoint = if (editor.state.angularDimension) null else WallDimensionGeometry.snapEndpoint(editor.document, point, context.snapTolerance,
             if (preview == null) editor.state.dimensionFirst else null)
         val position = endpoint?.point ?: point
         if (preview != null) {
@@ -68,15 +68,20 @@ class DimensionTool : SketchTool {
             return ToolUpdate(changed)
         }
         val first = editor.state.dimensionFirst
-        val reference = endpoint?.reference ?: WallDimensionGeometry.pickFace(editor.document, point, context.wallTolerance, first)
-            ?: return if (first != null && WallDimensionGeometry.pickFace(editor.document, point, context.wallTolerance) != null)
-                ToolUpdate(failure = ToolFailure.INVALID_DIMENSION) else ToolUpdate()
+        val reference = if (editor.state.angularDimension) {
+            editor.document.walls.values.filter { it.id != first?.entityId }
+                .map { it to Geometry.distanceToSegment(point, WallGeometry.referenceLine(it)) }
+                .filter { it.second <= context.wallTolerance }.minByOrNull { it.second }
+                ?.let { com.example.boschlaser.shared.model.WallFaceReference(it.first.id, com.example.boschlaser.shared.model.WallFaceSide.CONTROL) }
+        } else endpoint?.reference ?: WallDimensionGeometry.pickFace(editor.document, point, context.wallTolerance, first)
+        if (reference == null) return if (first != null && WallDimensionGeometry.pickFace(editor.document, point, context.wallTolerance) != null)
+            ToolUpdate(failure = ToolFailure.INVALID_DIMENSION) else ToolUpdate()
         if (first == null) {
             editor.updateState(editor.state.copy(dimensionFirst = reference, snap = null, magnifierTarget = null))
             return ToolUpdate()
         }
         if (!first.canDimensionWith(reference)) return ToolUpdate(failure = ToolFailure.INVALID_DIMENSION)
-        val dimension = WallDimension(editor.nextId(), first, reference, position)
+        val dimension = WallDimension(editor.nextId(), first, reference, position, editor.state.angularDimension)
         val layout = WallDimensionGeometry.layout(editor.document, dimension)
         if (layout == null || layout.valueMm < 1.0) return ToolUpdate(failure = ToolFailure.INVALID_DIMENSION)
         editor.updateState(editor.state.copy(preview = SketchPreview.Dimension(dimension), snap = null, magnifierTarget = null))

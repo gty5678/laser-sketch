@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="app/src/main/res/mipmap-xxxhdpi/ic_launcher.webp" width="120" alt="LaserSketch 应用图标">
+<img src="docs/assets/lasersketch-logo.png" width="144" alt="LaserSketch Logo：工程平面图与红色尺寸标注">
 
 <h1>LaserSketch</h1>
 

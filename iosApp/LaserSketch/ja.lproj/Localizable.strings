@@ -77,7 +77,7 @@
 "flip_side" = "開く方向を反転";
 "wall_edit_hint" = "2つの壁を順に選択。タップした位置の側を残します。";
 "dimension_hint" = "固定基準、移動基準を選び寸法を配置。オブジェクトを選び太字の寸法をタップして編集。";
-"sketch_hint" = "指を離して確定。空白をドラッグして画面移動、ピンチで拡大縮小。";
+"sketch_hint" = "タップで選択後、ドラッグで編集。未選択の図形をドラッグして画面移動。2本指で移動・拡大縮小。";
 "length_mm_input" = "距離 (mm)";
 "share_image" = "画像を共有";
 "save_album" = "写真に保存";
@@ -196,3 +196,24 @@
 "language_ja" = "日本語";
 "language_ko" = "한국어";
 "language_en" = "English";
+
+"wall_drawing_single" = "単発";
+"wall_drawing_continuous" = "連続";
+
+"board" = "床板";
+"board_rectangle" = "長方形";
+"board_polygon" = "多角形";
+"board_white" = "白";
+"board_grid" = "グリッド";
+"board_wood" = "フローリング";
+"board_hint" = "多角形は3点以上でOK、または始点で閉じる。長方形は対角、円形は中心と円周";
+"board_invalid" = "辺の交差またはサイズを確認してください";
+"board_circle" = "円形";
+"board_delete_vertex" = "頂点を削除";
+"board_vertex_hint" = "辺の＋で追加。頂点を選択し右側ボタンで削除。最低3頂点が必要です";
+
+"pan" = "画面移動";
+"pan_hint" = "どこでもドラッグして画面移動。2本指で移動・拡大縮小。";
+
+"export_png" = "Export PNG image";
+"export_dxf" = "Export DXF file";

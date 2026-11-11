@@ -77,7 +77,7 @@
 "flip_side" = "Side";
 "wall_edit_hint" = "Choose two walls. Your tap selects the retained side.";
 "dimension_hint" = "Pick the fixed reference, the moving reference, then place the dimension. Select an object and tap a bold dimension to edit.";
-"sketch_hint" = "Release to confirm. Drag empty space to pan; pinch to zoom.";
+"sketch_hint" = "Tap to select, then drag to edit. Drag unselected objects to pan; use two fingers to pan and zoom.";
 "length_mm_input" = "Distance (mm)";
 "share_image" = "Share image";
 "save_album" = "Save to Photos";
@@ -196,3 +196,24 @@
 "language_ja" = "日本語";
 "language_ko" = "한국어";
 "language_en" = "English";
+
+"wall_drawing_single" = "Single";
+"wall_drawing_continuous" = "Continuous";
+
+"board" = "Board";
+"board_rectangle" = "Rectangle";
+"board_polygon" = "Polygon";
+"board_white" = "White";
+"board_grid" = "Grid";
+"board_wood" = "Wood floor";
+"board_hint" = "Polygon: OK after 3 points or tap first point to close. Rectangle: corners. Circle: center and edge";
+"board_invalid" = "Invalid board: check crossing edges or size";
+"board_circle" = "Circle";
+"board_delete_vertex" = "Delete vertex";
+"board_vertex_hint" = "Tap edge + to add; select a vertex and use the right-side delete button. Keep at least 3 vertices";
+
+"pan" = "Pan";
+"pan_hint" = "Drag anywhere to pan; use two fingers to pan and zoom.";
+
+"export_png" = "Export PNG image";
+"export_dxf" = "Export DXF file";

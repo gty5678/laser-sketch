@@ -17,6 +17,7 @@ class OpenDoorwayGestureTest {
             val initial = SketchDocument(walls = mapOf(wall.id to wall), openings = mapOf(opening.id to opening))
             val editor = SketchEditor(initial)
             val center = OpeningGeometry.center(opening, wall)
+            editor.select(Selection.Opening(opening.id))
             editor.pointerDown(center, context(center))
             assertEquals(SelectionGestureTarget.Opening(opening.id), editor.state.selectionGesture?.target)
             val end = center + direction * 400.0

@@ -106,6 +106,8 @@ class SketchActivityProjectInstrumentedTest {
                 scenario.onActivity {
                     val canvas = view(it)
                     touch(canvas, MotionEvent.ACTION_DOWN, canvas.worldToScreen(Vec2(-800.0, 0.0)))
+                    touch(canvas, MotionEvent.ACTION_UP, canvas.worldToScreen(Vec2(-800.0, 0.0)))
+                    touch(canvas, MotionEvent.ACTION_DOWN, canvas.worldToScreen(Vec2(-800.0, 0.0)))
                     touch(canvas, MotionEvent.ACTION_MOVE, canvas.worldToScreen(Vec2(200.0, 0.0)))
                     touch(canvas, MotionEvent.ACTION_UP, canvas.worldToScreen(Vec2(200.0, 0.0)))
                     moved = canvas.snapshotDocument()
@@ -141,6 +143,8 @@ class SketchActivityProjectInstrumentedTest {
             scenario.onActivity {
                 val canvas = view(it)
                 val start = canvas.worldToScreen(Vec2(0.0, 0.0))
+                touch(canvas, MotionEvent.ACTION_DOWN, start)
+                touch(canvas, MotionEvent.ACTION_UP, start)
                 val end = canvas.worldToScreen(Vec2(400.0, 0.0))
                 touch(canvas, MotionEvent.ACTION_DOWN, start)
                 assertEquals(SelectionGestureTarget.Opening(doorway.id), canvas.editorState().selectionGesture?.target)

@@ -2,6 +2,7 @@ package com.example.boschlaser.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.FloatingActionButton
@@ -43,6 +44,9 @@ fun EditorActions(
                 modifier = Modifier.size(56.dp).semantics { contentDescription = confirmLabel },
                 containerColor = MaterialTheme.colorScheme.primary,
                 contentColor = MaterialTheme.colorScheme.onPrimary, content = confirmIcon)
+        }
+        if (!showDelete && !showConfirm) {
+            Spacer(Modifier.size(56.dp))
         }
     }
 }

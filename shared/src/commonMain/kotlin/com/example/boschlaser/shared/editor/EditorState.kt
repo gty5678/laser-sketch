@@ -5,15 +5,17 @@ import com.example.boschlaser.shared.geometry.Vec2
 import com.example.boschlaser.shared.model.Column as SketchColumn
 import com.example.boschlaser.shared.model.WallAlignment
 
-enum class ToolType { SELECT, WALL, RECT_COLUMN, CIRCLE_COLUMN, DOOR, WINDOW, MEASURE, SPLIT, DIMENSION }
+enum class ToolType { SELECT, PAN, WALL, RECT_COLUMN, CIRCLE_COLUMN, DOOR, WINDOW, MEASURE, SPLIT, DIMENSION, BOARD }
 sealed interface Selection {
     val id: String
     data class Wall(override val id: String) : Selection
     data class Column(override val id: String) : Selection
     data class Opening(override val id: String) : Selection
     data class Dimension(override val id: String) : Selection
+    data class Board(override val id: String) : Selection
 }
 sealed interface SketchPreview {
+    data class Board(val vertices: List<Vec2>) : SketchPreview
     data class Measurement(val line: Segment2, val complete: Boolean = false) : SketchPreview
     data class Wall(val line: Segment2) : SketchPreview
     data class Column(val column: SketchColumn) : SketchPreview
@@ -27,6 +29,9 @@ sealed interface SelectionGestureTarget {
     data class ColumnRotation(val id: String) : SelectionGestureTarget
     data class Opening(val id: String) : SelectionGestureTarget
     data class Dimension(val id: String) : SelectionGestureTarget
+    data class BoardEdge(val id: String, val index: Int) : SelectionGestureTarget
+    data class BoardVertex(val id: String, val index: Int) : SelectionGestureTarget
+    data class Board(val id: String) : SelectionGestureTarget
     data class FaceDimension(val dimension: com.example.boschlaser.shared.model.WallDimension) : SelectionGestureTarget
 }
 
@@ -36,6 +41,8 @@ data class SelectionGesture(
     val lastWorld: Vec2,
     val lastScreen: Vec2,
     val startWorld: Vec2 = lastWorld,
+    val selectOnTap: Boolean = false,
+    val tapSelection: Selection? = null,
 )
 
 data class DimensionGesture(val startScreen: Vec2, val lastScreen: Vec2, val startWorld: Vec2, val previewBefore: SketchPreview.Dimension?,
@@ -47,11 +54,14 @@ data class EditorState(
     val preview: SketchPreview? = null,
     val snap: SnapResult? = null,
     val wallAnchor: Vec2? = null,
+    val boardPoints: List<Vec2> = emptyList(),
+    val selectedBoardVertex: Int? = null,
     val magnifierTarget: Vec2? = null,
     val dragging: Boolean = false,
     val selectionGesture: SelectionGesture? = null,
     val wallEditSession: WallEditSession? = null,
     val wallEditRemovedParts: List<Segment2> = emptyList(),
+    val angularDimension: Boolean = false,
     val dimensionFirst: com.example.boschlaser.shared.model.DimensionReference? = null,
     val dimensionGesture: DimensionGesture? = null,
 )
@@ -66,6 +76,8 @@ data class PlacementSettings(
     val columnRotation: Double = 0.0,
     val columnFill: com.example.boschlaser.shared.model.ColumnFill = com.example.boschlaser.shared.model.ColumnFill.BLACK,
     val wallFill: com.example.boschlaser.shared.model.WallFill = com.example.boschlaser.shared.model.WallFill.BLANK,
+    val boardShape: com.example.boschlaser.shared.model.BoardShape = com.example.boschlaser.shared.model.BoardShape.RECTANGLE,
+    val boardFill: com.example.boschlaser.shared.model.BoardFill = com.example.boschlaser.shared.model.BoardFill.WHITE,
 ) {
     init {
         require(columnWidth.isFinite() && columnWidth >= 50.0)

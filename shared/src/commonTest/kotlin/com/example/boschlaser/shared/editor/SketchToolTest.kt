@@ -30,6 +30,45 @@ class SketchToolTest {
         assertTrue(editor.undoPlacement())
         assertNull(editor.state.wallAnchor)
     }
+    @Test fun singleWallsRequireANewStartAndUndoRestoresTheWallStart() {
+        val editor = SketchEditor()
+        editor.setTool(ToolType.WALL)
+        assertTrue(editor.continuousWallDrawing)
+        editor.continuousWallDrawing = false
+        tap(editor, Vec2(0.0, 0.0))
+        tap(editor, Vec2(1000.0, 0.0))
+        assertEquals(1, editor.document.walls.size)
+        assertNull(editor.state.wallAnchor)
+        assertNull(editor.state.preview)
+        tap(editor, Vec2(3000.0, 0.0))
+        assertEquals(1, editor.document.walls.size)
+        tap(editor, Vec2(4000.0, 0.0))
+        assertEquals(2, editor.document.walls.size)
+        assertNull(editor.state.wallAnchor)
+        assertTrue(editor.undoPlacement())
+        assertEquals(1, editor.document.walls.size)
+        assertEquals(Vec2(3000.0, 0.0), editor.state.wallAnchor)
+    }
+    @Test fun wallModeSwitchPreservesAnchorAndInvalidWallDoesNotConsumeIt() {
+        val editor = SketchEditor()
+        editor.setTool(ToolType.WALL)
+        tap(editor, Vec2(0.0, 0.0))
+        editor.continuousWallDrawing = false
+        tap(editor, Vec2(40.0, 0.0))
+        assertTrue(editor.document.walls.isEmpty())
+        assertEquals(Vec2(0.0, 0.0), editor.state.wallAnchor)
+        assertFalse(editor.canUndo)
+        editor.continuousWallDrawing = true
+        tap(editor, Vec2(1000.0, 0.0))
+        assertEquals(Vec2(1000.0, 0.0), editor.state.wallAnchor)
+        editor.continuousWallDrawing = false
+        tap(editor, Vec2(2000.0, 0.0))
+        assertEquals(2, editor.document.walls.size)
+        assertNull(editor.state.wallAnchor)
+        editor.setTool(ToolType.SELECT)
+        editor.setTool(ToolType.WALL)
+        assertFalse(editor.continuousWallDrawing)
+    }
     @Test fun cancellingFirstWallAnchorAndColumnPreviewCreatesNoHistory() {
         val editor = SketchEditor()
         editor.setTool(ToolType.WALL)
@@ -61,6 +100,7 @@ class SketchToolTest {
         val editor = SketchEditor(initial)
         val start = column.center
         val end = Vec2(1500.0, 1300.0)
+        editor.select(Selection.Column(column.id))
         editor.pointerDown(start, context(start))
         editor.pointerMove(end, context(end))
         assertEquals(initial, editor.document)
@@ -116,6 +156,7 @@ class SketchToolTest {
         val column = RectColumn("column", Vec2(1000.0, 1000.0), 400.0, 400.0)
         val editor = SketchEditor(SketchDocument(columns = mapOf(column.id to column)))
         val start = Vec2(1000.0, 700.0)
+        editor.select(Selection.Column(column.id))
         editor.pointerDown(start, context(start).copy(rotationHandleColumnId = column.id))
         val end = Vec2(1300.0, 1000.0)
         editor.pointerMove(end, context(end))

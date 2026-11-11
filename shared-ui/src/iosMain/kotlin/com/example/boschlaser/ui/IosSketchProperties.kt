@@ -64,6 +64,13 @@ internal fun IosSketchProperties(editor: SketchEditor, accept: (SketchCommand) -
     val document = editor.document
     Column(Modifier.heightIn(max = 330.dp).verticalScroll(rememberScrollState())) {
         when (selection) {
+            is Selection.Board -> document.boards[selection.id]?.let { board ->
+                BoardTools(board.shape, board.fill, listOf(label("board_rectangle"), label("board_polygon"), label("board_circle")), listOf(label("board_white"), label("board_grid"), label("board_wood")), { accept(UpdateBoardCommand(board.withShape(it))) },
+                    { accept(UpdateBoardCommand(board.copy(fill = it))) })
+                if (board.shape == BoardShape.POLYGON) {
+                    Text(label("board_vertex_hint"))
+                }
+            }
             is Selection.Wall -> document.walls[selection.id]?.let { wall ->
                 var thicknessVisible by remember(wall.id) { mutableStateOf(false) }
                 Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {

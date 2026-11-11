@@ -18,6 +18,7 @@ class OpeningMagnifierTest {
             val start = (segment.start + segment.end) * 0.5
             for (cancel in listOf(false, true)) {
                 val editor = SketchEditor(initial)
+                editor.select(Selection.Opening(opening.id))
                 editor.pointerDown(start, context(start))
                 assertEquals(SelectionGestureTarget.Opening(opening.id), editor.state.selectionGesture?.target)
                 assertNull(editor.state.magnifierTarget)

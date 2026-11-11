@@ -44,9 +44,9 @@ object ProjectSerializer {
             val metadata = ProjectManifest(manifest.string("projectId"), manifest.string("name"), manifest.long("updatedAt"))
             val assets = unique(manifest.array("assets").map { asset(it.obj()) }) { it.id }
             val sketch = parseMetadata(files.getValue("sketch.json")).obj()
-            sketch.keys("formatVersion", "walls", "openings", "columns", "bindings", "dimensions")
+            sketch.keys("formatVersion", "walls", "openings", "columns", "bindings", "dimensions", "boards")
             if (sketch.int("formatVersion") != 1) fail(ProjectFormatFailure.UNSUPPORTED_VERSION)
-            val document = SketchDocument(walls = unique(sketch.array("walls").map { wall(it.obj()) }) { it.id },
+            val document = SketchDocument(boards = unique(sketch["boards"]?.array()?.map { board(it.obj()) }.orEmpty()) { it.id }, walls = unique(sketch.array("walls").map { wall(it.obj()) }) { it.id },
                 openings = unique(sketch.array("openings").map { opening(it.obj()) }) { it.id },
                 columns = unique(sketch.array("columns").map { column(it.obj()) }) { it.id },
                 dimensions = unique(sketch["dimensions"]?.array()?.map { dimension(it.obj()) }.orEmpty()) { it.id })
@@ -72,6 +72,9 @@ object ProjectSerializer {
     }
     private fun sketch(project: Project) = buildJsonObject {
         put("formatVersion", project.sketch.formatVersion)
+        if (project.sketch.boards.isNotEmpty()) put("boards", JsonArray(project.sketch.boards.values.map { board -> buildJsonObject {
+            put("id", board.id); put("fill", board.fill.name); put("shape", board.shape.name); put("vertices", JsonArray(board.vertices.map { point(it.x,it.y) }))
+        } }))
         if (project.sketch.dimensions.isNotEmpty()) put("dimensions", JsonArray(project.sketch.dimensions.values.map { dimension -> buildJsonObject {
             put("id", dimension.id)
             fun reference(value: DimensionReference) = buildJsonObject {
@@ -83,6 +86,7 @@ object ProjectSerializer {
             }
             put("first", reference(dimension.first)); put("second", reference(dimension.second))
             put("position", point(dimension.position.x, dimension.position.y))
+            if (dimension.angular) put("angular", true)
         } }))
         put("walls", JsonArray(project.sketch.walls.values.map { wall -> buildJsonObject {
             put("id", wall.id); put("start", point(wall.start.x, wall.start.y)); put("end", point(wall.end.x, wall.end.y))
@@ -107,7 +111,7 @@ object ProjectSerializer {
         } }))
     }
     private fun dimension(data: JsonObject): WallDimension {
-        data.keys("id", "first", "second", "position")
+        data.keys("id", "first", "second", "position", "angular")
         fun reference(key: String): DimensionReference {
             val value = data.required(key).obj()
             return when {
@@ -125,7 +129,7 @@ object ProjectSerializer {
                 }
             }
         }
-        return WallDimension(data.string("id"), reference("first"), reference("second"), data.vector("position"))
+        return WallDimension(data.string("id"), reference("first"), reference("second"), data.vector("position"), data["angular"]?.jsonPrimitive?.boolean ?: false)
     }
     private fun measurement(record: MeasurementRecord) = buildJsonObject {
         val item = record.measurement
@@ -163,6 +167,12 @@ object ProjectSerializer {
         return Opening(data.string("id"), data.string("hostWallId"), data.double("offset"), data.double("width"),
             OpeningType.valueOf(data.string("type")), data.boolean("flipped"), data.boolean("hingeFlipped"),
             if ("doorStyle" in data) DoorStyle.valueOf(data.string("doorStyle")) else DoorStyle.SINGLE)
+    }
+    private fun board(data: JsonObject): Board {
+        data.keys("id", "fill", "vertices", "shape")
+        val points = data.array("vertices").map { val p = it.coordinates(); Vec2(p.first, p.second) }
+        return Board(data.string("id"), points, BoardFill.valueOf(data.string("fill")),
+            data.optionalString("shape")?.let(BoardShape::valueOf) ?: Board.inferShape(points))
     }
     private fun column(data: JsonObject): Column = when (data.string("type")) {
         "RECTANGLE" -> {

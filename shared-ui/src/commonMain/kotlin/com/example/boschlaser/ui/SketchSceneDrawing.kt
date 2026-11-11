@@ -1,5 +1,8 @@
 package com.example.boschlaser.ui
 
+import com.example.boschlaser.shared.model.WallFaceReference
+import com.example.boschlaser.shared.model.WallFaceSide
+
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
@@ -59,6 +62,9 @@ internal fun DrawScope.drawSketchScene(document: SketchDocument, state: EditorSt
     measurer: TextMeasurer, formatWallLength: (Double) -> String, geometryCache: SketchWallGeometryCache?) {
     val selection = state.selection.takeIf { options.showSelection }
     if (options.showGrid) drawSketchGrid(viewport, sizePx, options.gridStepMm, style.grid)
+    document.boards.values.forEach { drawSketchBoard(it.vertices, it.fill, viewport,
+        if (selection == Selection.Board(it.id)) style.selectedControls.line else style.controls.line, selection == Selection.Board(it.id), it.shape, state.selectedBoardVertex.takeIf { _ -> selection == Selection.Board(it.id) },
+        showControls = false) }
     drawSketchWallNetwork(document, viewport, style.wall, geometryCache)
     (selection as? Selection.Wall)?.let { document.walls[it.id] }?.let {
         drawSketchWallControls(it, viewport, true, style.selectedControls)
@@ -87,6 +93,10 @@ internal fun DrawScope.drawSketchScene(document: SketchDocument, state: EditorSt
         drawSketchDimension(document, it, viewport, style, selection == Selection.Dimension(it.id), measurer,
             style.formatDimensionValue ?: formatWallLength, editable)
     }
+    (selection as? Selection.Board)?.let { document.boards[it.id] }?.let {
+        drawSketchBoardControls(it.vertices,viewport,style.selectedControls.line,it.shape,state.selectedBoardVertex,
+            showEdgeControls = state.tool == ToolType.SELECT)
+    }
     if (!options.showGrid) return
     state.wallEditRemovedParts.forEach { removed ->
         val start = viewport.worldToScreen(removed.start)
@@ -97,7 +107,8 @@ internal fun DrawScope.drawSketchScene(document: SketchDocument, state: EditorSt
     }
     if (state.tool == ToolType.DIMENSION) {
         // Expose otherwise invisible center axes only while choosing references.
-        WallDimensionGeometry.references(document).forEach { reference ->
+        (if (state.angularDimension) document.walls.keys.map { WallFaceReference(it, WallFaceSide.CONTROL) }
+        else WallDimensionGeometry.references(document)).forEach { reference ->
             WallDimensionGeometry.face(document, reference)?.let { line ->
                 val start = viewport.worldToScreen(line.start)
                 val end = viewport.worldToScreen(line.end)
@@ -130,6 +141,7 @@ internal fun DrawScope.drawSketchScene(document: SketchDocument, state: EditorSt
         document.walls.values.forEach { drawSketchWallControls(it, viewport, false, style.controls) }
     }
     when (val preview = state.preview) {
+        is SketchPreview.Board -> drawSketchBoard(preview.vertices, placement.boardFill, viewport, style.selectedControls.line, true, placement.boardShape)
         is SketchPreview.Dimension -> drawSketchDimension(document, preview.dimension, viewport, style, true, measurer,
             style.formatDimensionValue ?: formatWallLength)
         is SketchPreview.Measurement -> {

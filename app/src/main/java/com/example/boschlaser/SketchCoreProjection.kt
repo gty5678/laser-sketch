@@ -39,6 +39,7 @@ internal class SketchCoreProjection {
         if (document === lastDocument) return lastState
         val projected = document.toSketchState()
         lastState = SketchState(
+            boards = projected.boards,
             walls = projected.walls.map { walls[document.walls.getValue(it.id)] ?: it },
             columns = projected.columns.map { columns[document.columns.getValue(it.id)] ?: it },
             openings = projected.openings.map { opening ->

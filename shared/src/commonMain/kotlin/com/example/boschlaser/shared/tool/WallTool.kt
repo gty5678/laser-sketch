@@ -46,7 +46,11 @@ class WallTool : SketchTool {
             if (changed) { starts.addLast(line.start); editor.select(Selection.Wall(wall.id)) }
         }
         val anchor = if (!hadAnchor || changed) line.end else line.start
-        resume(editor, anchor)
+        if (changed && !editor.continuousWallDrawing) {
+            editor.updateState(editor.state.copy(wallAnchor = null, preview = null))
+        } else {
+            resume(editor, anchor)
+        }
         editor.updateState(editor.state.copy(magnifierTarget = null, snap = null))
         return ToolUpdate(changed)
     }
